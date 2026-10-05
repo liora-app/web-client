@@ -1,0 +1,40 @@
+name: Feature
+description: Нова можливість або зміна поведінки
+title: "feat: "
+labels: [enhancement]
+projects: ["liora-app/1"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Проблема / навіщо
+      description: Чия це проблема і чому вона важлива зараз.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Пропозиція
+      description: Що саме має зʼявитись. Без опису реалізації, якщо вона ще не обрана.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Критерії готовності
+      description: Як зрозуміти, що зроблено — перевірювані пункти.
+      placeholder: |
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+  - type: dropdown
+    id: adr
+    attributes:
+      label: Потрібен ADR?
+      options:
+        - "Ні"
+        - "Так — змінює архітектуру / стек / домовленості"
+        - "Не знаю"
+    validations:
+      required: true

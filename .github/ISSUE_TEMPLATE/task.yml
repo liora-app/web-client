@@ -1,0 +1,26 @@
+name: Task
+description: Технічна задача — chore, refactor, docs, CI, дослідження
+title: "chore: "
+labels: [chore]
+projects: ["liora-app/1"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Що зробити
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Навіщо
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Критерії готовності
+      placeholder: |
+        - [ ]
+    validations:
+      required: true

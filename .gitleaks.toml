@@ -1,0 +1,19 @@
+title = "liora gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known-safe paths and placeholders"
+
+paths = [
+    # Lockfiles carry integrity hashes, not secrets.
+    '''.*\.lock$''',
+    '''package-lock\.json$''',
+    '''pnpm-lock\.yaml$''',
+]
+
+regexes = [
+    # Placeholder values documented in .env.example.
+    '''REPLACE_ME''',
+]

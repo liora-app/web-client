@@ -1,0 +1,23 @@
+name: CI
+
+# Shared org CI (ADR-003): logic lives in liora-app/devops. PRs only, plus main when the
+# hook set changes — that re-seeds the pre-commit cache every PR can restore.
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths:
+      - ".pre-commit-config.yaml"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    uses: liora-app/devops/.github/workflows/reusable-checks.yml@main

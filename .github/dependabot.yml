@@ -1,0 +1,20 @@
+version: 2
+updates:
+  # Add one entry per package ecosystem (npm, pip/uv, docker, ...) once the stack is chosen.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      # Monthly + one grouped PR: each Dependabot PR costs CI minutes.
+      interval: monthly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - ci
+    # Conventional PR titles ("ci(deps): bump ...") so the PR-title check passes.
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      github-actions:
+        patterns:
+          - "*"

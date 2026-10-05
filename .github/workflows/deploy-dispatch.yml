@@ -1,0 +1,35 @@
+name: Deploy
+
+# Merge to main → ask liora-app/devops to deploy this service at this commit (ADR-004).
+# devops runs the actual SSH deploy and serializes all deploys.
+# Dormant until the repo variable DEPLOY_ENABLED is 'true' (devops/docs/runbooks/deploy.md).
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - ".github/ISSUE_TEMPLATE/**"
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch deploy to devops
+        env:
+          GH_TOKEN: ${{ secrets.DEVOPS_DISPATCH_TOKEN }}
+          SERVICE: web-client
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::secret DEVOPS_DISPATCH_TOKEN is not set (liora-app/devops: docs/runbooks/deploy.md)"
+            exit 1
+          fi
+          gh api "repos/liora-app/devops/dispatches" \
+            -f event_type=deploy \
+            -f "client_payload[service]=$SERVICE" \
+            -f "client_payload[sha]=$GITHUB_SHA"

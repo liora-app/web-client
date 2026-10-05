@@ -1,0 +1,7 @@
+# Default owner for everything in the repo.
+# Note: on a free private repo GitHub does not auto-request code-owner reviews
+# (Pro / public only); the file documents ownership and activates on upgrade.
+*                @s1ronw
+
+# CI/CD and repo automation.
+/.github/        @s1ronw

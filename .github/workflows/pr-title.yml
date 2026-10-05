@@ -1,0 +1,14 @@
+name: PR title
+
+# No `synchronize`: the title does not change on push, and every run is a billed minute.
+on:
+  pull_request_target:
+    types: [opened, edited, reopened]
+
+permissions:
+  pull-requests: read
+  statuses: write
+
+jobs:
+  title:
+    uses: liora-app/devops/.github/workflows/reusable-pr-title.yml@main

@@ -1,0 +1,38 @@
+name: Bug
+description: Щось працює не так, як має
+title: "fix: "
+labels: [bug]
+projects: ["liora-app/1"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Що сталося
+      description: Фактична поведінка. Текст помилки — дослівно.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Що очікувалось
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Як відтворити
+      description: Мінімальні кроки або команда.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Середовище
+      description: Версія / коміт, ОС, браузер — що релевантно.
+  - type: markdown
+    attributes:
+      value: "⚠️ Без реальних діалогів, імен чи контактів користувачів — тільки синтетичні приклади."
