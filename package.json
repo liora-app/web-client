@@ -24,7 +24,7 @@
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "~1.63.0",
     "@types/three": "~0.186.0",
-    "typescript": "~6.0.3",
+    "typescript": "~7.0.2",
     "vite": "^8.3.3"
   }
 }
