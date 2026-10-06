@@ -1,5 +1,7 @@
-// Soma body: a warm core seen through a cool rim, one glossy highlight, brighter while the signal
-// passes. Additive and premultiplied (rgb <= alpha), like the particles.
+// Soma body: a luminous pearl lit from the upper left (the glass's key light): a warm body that
+// glows a little on its own, a cool rim and one glossy highlight; it brightens while the signal
+// passes. Normal blending, premultiplied (rgb <= alpha): the bodies cover what is behind them, which
+// is what makes them read as objects rather than more light.
 
 uniform float uOpacity;
 uniform vec3 uCool;
@@ -15,16 +17,15 @@ void main() {
   vec3 n = normalize(vNormal);
   vec3 v = normalize(vView);
   float ndv = clamp(dot(n, v), 0.0, 1.0);
-  float core = pow(ndv, 2.2);
-  float rim = pow(1.0 - ndv, 2.0);
   vec3 keyLight = normalize(vec3(-0.5, 0.7, 0.55));
-  float spec = pow(max(dot(reflect(-keyLight, n), v), 0.0), 40.0) * 0.7;
+  float lit = max((dot(n, keyLight) + 0.3) / 1.3, 0.0); // a soft terminator
+  float rim = pow(1.0 - ndv, 2.5);
+  float spec = pow(max(dot(reflect(-keyLight, n), v), 0.0), 48.0);
 
-  vec3 tint = mix(uCool, mix(uWarm, uHighlight, 0.35 + 0.65 * vFire), core / (core + rim + 1e-3));
-  tint = mix(tint, uHighlight, min(1.0, spec));
-  float alpha = clamp(core * (0.5 + 0.5 * vFire) + rim * 0.45 + spec, 0.0, 1.0);
+  vec3 body = mix(uWarm, uHighlight, 0.45 + 0.5 * vFire);
+  vec3 color = body * (0.32 + 0.6 * lit + 0.3 * vFire) + uCool * rim * 0.5 + vec3(spec * 0.9);
   // No MSAA: soften the last two pixels of the silhouette (see glass.frag.glsl).
   float edge = smoothstep(0.0, 2.0, ndv / max(2.0 * fwidth(ndv), 1e-4));
-  alpha *= uOpacity * vMask * edge;
-  gl_FragColor = vec4(tint * alpha, alpha);
+  float alpha = 0.85 * uOpacity * vMask * edge;
+  gl_FragColor = vec4(min(color, vec3(1.0)) * alpha, alpha);
 }

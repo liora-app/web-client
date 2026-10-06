@@ -37,7 +37,19 @@ test.describe('WebGL scene', () => {
     const stats = await sceneStats(page)
     expect(stats.pixelRatio).toBeLessThanOrEqual(2)
     expect(stats.particles).toBeGreaterThanOrEqual(4000)
+    // Halo, bokeh, particles, soma bodies, glass: no post-processing, no extra passes.
+    expect(stats.draws).toBeGreaterThanOrEqual(4)
+    expect(stats.draws).toBeLessThanOrEqual(6)
     expect(problems).toEqual([])
+  })
+
+  test('?tier=low starts the lightest tier', GPU, async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', 'one browser is enough for the override')
+    await page.goto('/?tier=low')
+    await waitForScene(page)
+    const stats = await sceneStats(page)
+    expect(stats.tier).toBe('low')
+    expect(stats.particles).toBe(12000)
   })
 
   test('the glass outline is smooth, not a staircase', GPU, async ({ page }, testInfo) => {
@@ -165,10 +177,14 @@ test.describe('WebGL scene', () => {
     await page.goto('/')
     await waitForScene(page)
     expect((await sceneStats(page)).quiet).toBeLessThan(0.05)
+    expect((await sceneStats(page)).fire, 'the signal runs through the light').toBeGreaterThan(0.5)
     await centre(page, '#safety')
     await expect.poll(async () => (await sceneStats(page)).quiet, { timeout: 6_000 }).toBeGreaterThan(0.6)
+    // By the crisis contacts no signal runs: nothing flashes while someone reads the numbers.
+    await expect.poll(async () => (await sceneStats(page)).fire, { timeout: 6_000 }).toBeLessThan(0.05)
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
     await expect.poll(async () => (await sceneStats(page)).quiet, { timeout: 6_000 }).toBeLessThan(0.1)
+    await expect.poll(async () => (await sceneStats(page)).fire, { timeout: 6_000 }).toBeGreaterThan(0.5)
   })
 
   test('high contrast mode pauses the scene and turning it off resumes it', GPU, async ({ page }) => {

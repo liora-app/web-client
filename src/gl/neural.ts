@@ -1,29 +1,20 @@
-// Spike (?scene=neural): a small neural network instead of the orb's points (state 0, inside the
-// glass) and instead of the threads (state 2, a chain the signal runs along). The soma bodies are 3D
-// instances (see scene.ts); the particles draw their halo, the axons and the dendrites.
-// A signal leaves the root of a spanning tree and reaches each soma one axon later per tree level.
+// The networks the particle story is told with: somas (cell bodies, instanced spheres in scene.ts),
+// axons between them and dendrites around them. Particles draw the axons, the dendrites, a halo
+// around each soma and, in the light, a warm glow. In every net a signal leaves the root of a
+// spanning tree and reaches each level one axon later (see particles.vert.glsl).
 
-import { type ShapeSet, type Vec3, gaussian, mulberry32, onSphere } from './shapes'
+import { type Vec3, gaussian, onSphere } from './random'
 
+/** Soma instances: enough for the largest net (the chain); smaller nets leave the rest at radius 0. */
 export const SOMAS = 28
-/** Wave period in axon lengths: a new signal leaves the root this often (state 0, state 2). */
-export const WAVE_PERIOD: [number, number] = [4, 5]
+/** Axon lengths between two signals: core, chain, theses, diary. */
+export const WAVE_PERIOD: [number, number, number, number] = [4, 5, 3, 5]
 
-export interface NeuralSet {
-  /** Per particle: x, y = state 0 (t, wave offset), z, w = the same for state 2. t: -2 dust,
-   *  -1 soma halo, 0..1 along an axon (parent → child, by arc length), 2..3 along a dendrite. */
-  particles: Float32Array
-  /** Per soma instance: centre and radius in state 0 (A) and state 2 (B); radius 0 = absent. */
-  somaA: Float32Array
-  somaB: Float32Array
-  /** x: wave offset in state 0, y: in state 2, z: random. */
-  somaWave: Float32Array
-}
-
-interface Soma {
+export interface Soma {
   p: Vec3
   r: number
-  depth: number
+  depth: number // tree level plus a phase offset, in axon lengths
+  dropped: boolean // a thesis let go at step 4
 }
 
 interface Axon {
@@ -41,21 +32,33 @@ interface Dendrite {
   tip: Vec3
 }
 
-interface Net {
+export interface Net {
   somas: Soma[]
   axons: Axon[]
   dendrites: Dendrite[]
+  axonLength: number
+}
+
+/** Shares of a net's particles; the rest draw dendrites. */
+interface Mix {
+  glow: number
+  halo: number
+  axon: number
 }
 
 const LUT_STEPS = 32
-const CORE_RADIUS = 0.74 // soma centres; with dendrites everything stays within ~0.9 (glass: 1.14)
-const CORE_LIMIT = 0.9
+// The core's soma centres; with dendrites and halo everything stays within CORE_LIMIT (glass: 1.14).
+const CORE_RADIUS = 0.76
+export const CORE_LIMIT = 0.9
 
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 const scale = (a: Vec3, k: number): Vec3 => [a[0] * k, a[1] * k, a[2] * k]
 const length = (a: Vec3): number => Math.hypot(a[0], a[1], a[2])
 const distance = (a: Vec3, b: Vec3): number => length(sub(a, b))
+const limited = (p: Vec3, limit: number): Vec3 => (length(p) > limit ? scale(p, limit / length(p)) : p)
+const jittered = (p: Vec3, rand: () => number, amount: number): Vec3 =>
+  add(p, [gaussian(rand) * amount, gaussian(rand) * amount, gaussian(rand) * amount])
 
 function bezier(a: Vec3, c: Vec3, b: Vec3, t: number): Vec3 {
   const u = 1 - t
@@ -99,17 +102,19 @@ function atLength(axon: Axon, u: number): number {
 function dendrites(somas: Soma[], count: () => number, reach: [number, number], rand: () => number, limit = Infinity): Dendrite[] {
   const out: Dendrite[] = []
   somas.forEach((soma, index) => {
-    if (soma.r === 0) return
     for (let k = count(); k > 0; k--) {
       const dir = onSphere(rand)
       const len = reach[0] + rand() * (reach[1] - reach[0])
-      let tip = add(soma.p, scale(dir, soma.r + len))
-      if (length(tip) > limit) tip = scale(tip, limit / length(tip))
+      const tip = limited(add(soma.p, scale(dir, soma.r + len)), limit)
       const ctrl = add(add(soma.p, scale(dir, soma.r + len * 0.5)), scale(perpendicular(dir, rand), len * 0.35))
       out.push({ soma: index, ctrl, tip })
     }
   })
   return out
+}
+
+function net(somas: Soma[], axons: Axon[], dendriteList: Dendrite[]): Net {
+  return { somas, axons, dendrites: dendriteList, axonLength: axons.reduce((sum, a) => sum + a.length, 0) }
 }
 
 // Prim's spanning tree from `root`: every axon points from parent to child, depth = tree level.
@@ -138,20 +143,21 @@ function spanningTree(somas: Soma[], root: number, curl: number, rand: () => num
   return axons
 }
 
-// State 0: a ball of neurons inside the glass.
-function buildCore(rand: () => number): Net {
+/** State 0 (and 1, 7): a ball of neurons inside the glass. */
+export function buildCore(rand: () => number): Net {
+  const COUNT = 24
   const somas: Soma[] = []
   let guard = 0
-  while (somas.length < SOMAS && guard++ < 20000) {
+  while (somas.length < COUNT && guard++ < 40000) {
     const p = scale(onSphere(rand), CORE_RADIUS * Math.cbrt(rand()))
-    if (somas.every((s) => distance(s.p, p) > 0.2)) somas.push({ p, r: 0.04 + rand() * 0.025, depth: 0 })
+    if (somas.every((s) => distance(s.p, p) > 0.22)) somas.push({ p, r: 0.045 + rand() * 0.02, depth: 0, dropped: false })
   }
   let root = 0
   somas.forEach((s, i) => {
     if (length(s.p) < length(somas[root].p)) root = i
   })
   const axons = spanningTree(somas, root, 0.3, rand)
-  // A few short loops, so it reads as a network rather than a tree.
+  // Short loops, so it reads as a network rather than a tree.
   const linked = new Set(axons.map((a) => `${Math.min(a.from, a.to)}:${Math.max(a.from, a.to)}`))
   const extra: [number, number, number][] = []
   for (let a = 0; a < somas.length; a++) {
@@ -160,96 +166,124 @@ function buildCore(rand: () => number): Net {
     }
   }
   extra.sort((x, y) => x[2] - y[2])
-  for (const [a, b] of extra.slice(0, 14)) {
+  for (const [a, b] of extra.slice(0, 12)) {
     const [from, to] = somas[a].depth <= somas[b].depth ? [a, b] : [b, a]
     axons.push(axon(somas, from, to, 0.35, rand))
   }
-  while (somas.length < SOMAS) somas.push({ p: [0, 0, 0], r: 0, depth: 0 })
-  return { somas, axons, dendrites: dendrites(somas, () => 3 + Math.floor(rand() * 3), [0.05, 0.12], rand, CORE_LIMIT) }
+  return net(somas, axons, dendrites(somas, () => 3 + Math.floor(rand() * 2), [0.05, 0.11], rand, CORE_LIMIT))
 }
 
-// State 2: a chain across the screen with side branches; the signal runs left to right.
-function buildChain(rand: () => number): Net {
+/** State 2: a chain across the screen with side branches; the signal runs left to right. */
+export function buildChain(rand: () => number): Net {
   const MAIN = 12
+  const CHAIN = 28
   const somas: Soma[] = []
   for (let i = 0; i < MAIN; i++) {
     somas.push({
       p: [-4 + (i * 8) / (MAIN - 1), 0.32 * Math.sin(i * 1.25 + 0.4) + gaussian(rand) * 0.06, 0.4 * Math.cos(i * 0.85) + gaussian(rand) * 0.05],
-      r: 0.08 + rand() * 0.02,
+      r: 0.1 + rand() * 0.025,
       depth: i,
+      dropped: false,
     })
   }
   const axons: Axon[] = []
   for (let i = 0; i < MAIN - 1; i++) axons.push(axon(somas, i, i + 1, 0.12 + rand() * 0.1, rand, 0.4))
   let guard = 0
-  while (somas.length < SOMAS && guard++ < 20000) {
+  while (somas.length < CHAIN && guard++ < 20000) {
     const parent = rand() < 0.7 || somas.length === MAIN ? Math.floor(rand() * MAIN) : MAIN + Math.floor(rand() * (somas.length - MAIN))
     const side = rand() < 0.5 ? -1 : 1
     const p = add(somas[parent].p, [(rand() * 2 - 1) * 0.45, side * (0.45 + rand() * 0.45), (rand() * 2 - 1) * 0.5])
     if (Math.abs(p[1]) > 1.2 || Math.abs(p[0]) > 4.2) continue
     if (!somas.every((s) => distance(s.p, p) > 0.38)) continue
-    somas.push({ p, r: 0.05 + rand() * 0.02, depth: somas[parent].depth + 1 })
+    somas.push({ p, r: 0.065 + rand() * 0.02, depth: somas[parent].depth + 1, dropped: false })
     axons.push(axon(somas, parent, somas.length - 1, 0.25, rand, 0.4))
   }
-  return { somas, axons, dendrites: dendrites(somas, () => 3 + Math.floor(rand() * 3), [0.1, 0.28], rand) }
+  return net(somas, axons, dendrites(somas, () => 3 + Math.floor(rand() * 3), [0.1, 0.28], rand))
 }
 
-// One particle's place in a net: [x, y, z, t, wave offset].
-function place(net: Net, rand: () => number, jitter: number, axonLengthSum: number, limit = Infinity): [Vec3, number, number] {
-  const role = rand()
-  if (role < 0.2) {
-    const live = net.somas.filter((s) => s.r > 0)
-    const s = live[Math.floor(rand() * live.length)]
-    const spread = s.r * 0.8
-    return [add(s.p, [gaussian(rand) * spread, gaussian(rand) * spread, gaussian(rand) * spread]), -1, s.depth]
-  }
-  if (role < 0.72) {
-    let r = rand() * axonLengthSum
-    let index = 0
-    while (index < net.axons.length - 1 && r > net.axons[index].length) r -= net.axons[index++].length
-    const a = net.axons[index]
-    const u = rand()
-    const p = bezier(net.somas[a.from].p, a.ctrl, net.somas[a.to].p, atLength(a, u))
-    return [add(p, [gaussian(rand) * jitter, gaussian(rand) * jitter, gaussian(rand) * jitter]), u, net.somas[a.from].depth]
-  }
-  const d = net.dendrites[Math.floor(rand() * net.dendrites.length)]
-  const u = Math.pow(rand(), 1.4) // denser near the soma
-  let p = bezier(net.somas[d.soma].p, d.ctrl, d.tip, u)
-  p = add(p, [gaussian(rand) * jitter * 0.7, gaussian(rand) * jitter * 0.7, gaussian(rand) * jitter * 0.7])
-  if (length(p) > limit) p = scale(p, limit / length(p))
-  return [p, 2 + u, net.somas[d.soma].depth]
+export interface Thesis {
+  center: Vec3
+  radius: number
+  weight: number
+  dropped: boolean
 }
 
-/** Rewrites the orb (state 0) and thread (state 2) slots of every non-dust particle. */
-export function buildNeural(shapes: ShapeSet, seed = 20261007): NeuralSet {
-  const rand = mulberry32(seed)
-  const core = buildCore(rand)
-  const chain = buildChain(rand)
-  const coreLength = core.axons.reduce((sum, a) => sum + a.length, 0)
-  const chainLength = chain.axons.reduce((sum, a) => sum + a.length, 0)
+/** State 3 (and 5): each thesis a small net — one large soma and two or three around it. */
+export function buildThesis(thesis: Thesis, index: number, rand: () => number): Net {
+  const somas: Soma[] = [{ p: thesis.center, r: 0.07 + thesis.weight * 0.02, depth: index * 0.8, dropped: thesis.dropped }]
+  const satellites = thesis.weight >= 1 ? 3 : 2
+  let guard = 0
+  while (somas.length <= satellites && guard++ < 4000) {
+    const p = add(thesis.center, scale(onSphere(rand), thesis.radius * (1.3 + rand() * 0.6)))
+    if (somas.every((s) => distance(s.p, p) > 0.14)) somas.push({ p, r: 0.04 + rand() * 0.012, depth: index * 0.8 + 1, dropped: thesis.dropped })
+  }
+  const axons = somas.slice(1).map((_, i) => axon(somas, 0, i + 1, 0.3, rand))
+  return net(somas, axons, dendrites(somas, () => 3, [0.04, 0.09], rand))
+}
 
-  const particles = new Float32Array(shapes.count * 4)
-  for (let i = 0; i < shapes.count; i++) {
-    if (shapes.random[i * 4 + 3] > 0.75) {
-      particles.set([-2, 0, -2, 0], i * 4) // dust keeps its orb halo and thread field
-      continue
+// The static diary constellation (index.html, .diary__sky, viewBox 560×360): the WebGL graph uses the
+// same nodes and links, so both show the same themes.
+const DIARY_NODES: [number, number, number][] = [
+  [40, 150, 3], [150, 80, 4], [270, 45, 5], [360, 120, 6], [290, 190, 4], [500, 60, 3],
+  [460, 170, 5], [470, 310, 3], [360, 300, 4], [180, 215, 4], [150, 310, 3], [30, 280, 3],
+]
+const DIARY_LINKS: [number, number][] = [
+  [0, 1], [1, 2], [2, 3], [3, 4], [4, 9], [9, 0], [3, 6], [6, 5], [6, 7], [7, 8], [8, 4], [9, 10], [10, 11],
+]
+
+/** State 4: the diary graph — themes are somas, the links between them are axons. */
+export function buildDiary(rand: () => number): Net {
+  const somas: Soma[] = DIARY_NODES.map(([x, y, r]) => ({
+    p: [((x - 280) / 280) * 3.1, (-(y - 180) / 180) * 1.55, (rand() * 2 - 1) * 0.6],
+    r: 0.035 + r * 0.012,
+    depth: Infinity,
+    dropped: false,
+  }))
+  // Breadth-first from the strongest theme: the signal spreads from there.
+  const root = DIARY_NODES.reduce((best, node, i) => (node[2] > DIARY_NODES[best][2] ? i : best), 0)
+  somas[root].depth = 0
+  const queue = [root]
+  const axons: Axon[] = []
+  const seen = new Set<string>()
+  while (queue.length) {
+    const a = queue.shift() as number
+    for (const [x, y] of DIARY_LINKS) {
+      const b = x === a ? y : y === a ? x : -1
+      const key = `${Math.min(a, b)}:${Math.max(a, b)}`
+      if (b < 0 || seen.has(key)) continue
+      seen.add(key)
+      if (somas[b].depth === Infinity) {
+        somas[b].depth = somas[a].depth + 1
+        queue.push(b)
+      }
+      axons.push(axon(somas, a, b, 0.15, rand, 0.4))
     }
-    const [p0, t0, w0] = place(core, rand, 0.007, coreLength, CORE_LIMIT)
-    shapes.orb.set(p0, i * 3)
-    const [p2, t2, w2] = place(chain, rand, 0.012, chainLength)
-    shapes.thread.set(p2, i * 3)
-    particles.set([t0, w0, t2, w2], i * 4)
   }
+  return net(somas, axons, dendrites(somas, () => 3 + Math.floor(rand() * 2), [0.08, 0.2], rand))
+}
 
-  const somaA = new Float32Array(SOMAS * 4)
-  const somaB = new Float32Array(SOMAS * 4)
-  const somaWave = new Float32Array(SOMAS * 4)
-  for (let i = 0; i < SOMAS; i++) {
-    const a = core.somas[i]
-    const b = chain.somas[i] ?? { p: [0, 0, 0], r: 0, depth: 0 }
-    somaA.set([...a.p, a.r], i * 4)
-    somaB.set([...b.p, b.r], i * 4)
-    somaWave.set([a.depth, b.depth, rand(), 0], i * 4)
+/** One particle's place in a net: position, t (-2 glow, -1 halo, 0..1 axon, 2..3 dendrite), wave offset. */
+export function place(n: Net, rand: () => number, mix: Mix, jitter: number, limit = Infinity): [Vec3, number, number] {
+  const role = rand()
+  if (role < mix.glow) {
+    // A warm cloud at the centre of the light, densest in the middle.
+    return [scale(onSphere(rand), Math.pow(rand(), 0.8) * 0.62), -2, 0]
   }
-  return { particles, somaA, somaB, somaWave }
+  if (role < mix.glow + mix.halo) {
+    const s = n.somas[Math.floor(rand() * n.somas.length)]
+    return [limited(jittered(s.p, rand, s.r * 0.9), limit), -1, s.depth]
+  }
+  if (role < mix.glow + mix.halo + mix.axon) {
+    let r = rand() * n.axonLength
+    let index = 0
+    while (index < n.axons.length - 1 && r > n.axons[index].length) r -= n.axons[index++].length
+    const a = n.axons[index]
+    const u = rand()
+    const p = bezier(n.somas[a.from].p, a.ctrl, n.somas[a.to].p, atLength(a, u))
+    return [limited(jittered(p, rand, jitter), limit), u, n.somas[a.from].depth]
+  }
+  const d = n.dendrites[Math.floor(rand() * n.dendrites.length)]
+  const u = Math.pow(rand(), 1.4) // denser near the soma
+  const p = bezier(n.somas[d.soma].p, d.ctrl, d.tip, u)
+  return [limited(jittered(p, rand, jitter * 0.7), limit), 2 + u, n.somas[d.soma].depth]
 }
