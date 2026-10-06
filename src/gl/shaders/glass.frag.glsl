@@ -36,5 +36,10 @@ void main() {
   // Scale the whole colour down to alpha instead of clamping each channel: same hue, still premultiplied.
   float peak = max(color.r, max(color.g, color.b));
   color *= min(1.0, alpha / max(peak, 1e-4));
-  gl_FragColor = vec4(color, alpha) * uOpacity;
+  // The silhouette is where the rim is brightest, and the canvas has no MSAA: fade the last two
+  // pixels before the edge so the outline is smooth instead of a staircase. Near the silhouette
+  // ndv ~ sqrt(2d/R) for a pixel d from the edge, so d ~ ndv / (2 * fwidth(ndv)) in screen pixels.
+  float edgePx = ndv / max(2.0 * fwidth(ndv), 1e-4);
+  float edge = smoothstep(0.0, 2.0, edgePx);
+  gl_FragColor = vec4(color, alpha) * (uOpacity * edge);
 }

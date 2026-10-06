@@ -11,6 +11,7 @@ import {
   Group,
   Mesh,
   NormalBlending,
+  type Object3D,
   PerspectiveCamera,
   PlaneGeometry,
   Points,
@@ -64,7 +65,7 @@ export interface SceneStats {
 declare global {
   interface Window {
     /** Read-only diagnostics for tests and manual checks. */
-    __lioraScene?: { stats(): SceneStats; sample(): number[] }
+    __lioraScene?: { stats(): SceneStats; sample(): number[]; edge(y: number): number[] }
   }
 }
 
@@ -692,6 +693,26 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
         }
       }
       return out
+    },
+    // Alpha (0–255) of one full row of drawing-buffer pixels at a CSS y, with only the glass drawn:
+    // how sharp its outline is, without the halo and particles around it.
+    edge: (y: number) => {
+      if (lost) return []
+      const hidden: Object3D[] = []
+      scene.traverse((node) => {
+        if (node !== scene && node !== light && node !== glass && node.visible) {
+          node.visible = false
+          hidden.push(node)
+        }
+      })
+      renderer.render(scene, camera)
+      for (const node of hidden) node.visible = true
+      const gl = renderer.getContext()
+      const ratio = gl.drawingBufferWidth / canvas.clientWidth
+      const width = gl.drawingBufferWidth
+      const pixels = new Uint8Array(width * 4)
+      gl.readPixels(0, Math.round(gl.drawingBufferHeight - y * ratio), width, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+      return Array.from({ length: width }, (_, i) => pixels[i * 4 + 3])
     },
   }
 
