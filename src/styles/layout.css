@@ -7,7 +7,7 @@
   margin-inline: auto;
 }
 
-/* ---------- Header: wordmark left, one pill and the help link right ---------- */
+/* ---------- Header: wordmark left, one pill and the actions right ---------- */
 
 .site-header {
   position: fixed;
@@ -99,7 +99,9 @@
 
 .nav-pill a,
 .help-link,
-.motion-toggle {
+.motion-toggle,
+.sound-toggle,
+.menu-toggle {
   font-family: var(--font-mono);
   font-size: var(--step-label);
   font-weight: 400;
@@ -147,7 +149,9 @@
 }
 
 .help-link,
-.motion-toggle {
+.motion-toggle,
+.sound-toggle,
+.menu-toggle {
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
@@ -246,6 +250,138 @@ html[data-motion='on'] .motion-toggle__bars span:nth-child(3) {
   }
 }
 
+/* «Звук»: four bars, still while off; a slow wave while it plays (and the page may move). */
+.sound-toggle,
+.menu-toggle {
+  cursor: pointer;
+  color: var(--color-text-soft);
+}
+
+.sound-toggle:hover,
+.menu-toggle:hover {
+  color: var(--color-text);
+}
+
+.sound-toggle[hidden],
+.menu-toggle[hidden] {
+  display: none;
+}
+
+.sound-toggle[aria-pressed='true'] {
+  border-color: var(--color-teal);
+  color: var(--color-text);
+}
+
+.sound-toggle__wave {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 12px;
+}
+
+.sound-toggle__wave span {
+  width: 2px;
+  height: 100%;
+  background: currentColor;
+  transform: scaleY(0.3);
+}
+
+.sound-toggle[aria-pressed='true'] .sound-toggle__wave span {
+  background: var(--color-teal);
+  transform: scaleY(0.6);
+}
+
+html[data-sound='on'][data-motion='on'] .sound-toggle__wave span {
+  animation: wave 1.6s var(--ease-in-out) infinite alternate;
+}
+
+html[data-sound='on'][data-motion='on'] .sound-toggle__wave span:nth-child(2) {
+  animation-delay: -0.4s;
+}
+
+html[data-sound='on'][data-motion='on'] .sound-toggle__wave span:nth-child(3) {
+  animation-delay: -0.8s;
+}
+
+html[data-sound='on'][data-motion='on'] .sound-toggle__wave span:nth-child(4) {
+  animation-delay: -1.2s;
+}
+
+@keyframes wave {
+  from {
+    transform: scaleY(0.25);
+  }
+  to {
+    transform: scaleY(0.9);
+  }
+}
+
+/* «Меню»: two lines. */
+.menu-toggle__lines {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 14px;
+}
+
+.menu-toggle__lines span {
+  height: 1.5px;
+  background: currentColor;
+}
+
+/* Which control lives where: the menu holds «Звук» on narrow screens; the pill takes over from the
+   menu where the header is wide enough for both. */
+.site-header .sound-toggle {
+  display: none;
+}
+
+.help-link__number {
+  display: none;
+}
+
+@media (min-width: 64em) {
+  .site-header .sound-toggle:not([hidden]) {
+    display: inline-flex;
+  }
+
+  .help-link__number {
+    display: inline;
+  }
+}
+
+/* 85em: the pill, the actions and the coming «Розмова з AI →» fit side by side (checked at 1360). */
+@media (min-width: 85em) {
+  .menu-toggle:not([hidden]) {
+    display: none;
+  }
+}
+
+/* Phones: three pills next to the mark down to 320 px — tighter pills, and «Меню» shows its icon
+   only (the word stays its accessible name). «Пауза» keeps its word on every screen. */
+@media (max-width: 26em) {
+  .site-header__actions {
+    gap: 0.35rem;
+  }
+
+  .help-link,
+  .motion-toggle,
+  .menu-toggle {
+    gap: 0.45rem;
+    padding: 0 0.7rem;
+    letter-spacing: 0.08em;
+  }
+
+  .menu-toggle__text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
+
 /* The word shows as soon as the header has room for it (≈ 307 CSS px with the help link). */
 .motion-toggle__text {
   display: none;
@@ -257,7 +393,7 @@ html[data-motion='on'] .motion-toggle__bars span:nth-child(3) {
   }
 }
 
-@media (min-width: 64em) {
+@media (min-width: 85em) {
   .nav-pill {
     display: flex;
   }
@@ -273,6 +409,109 @@ html[data-motion='on'] .motion-toggle__bars span:nth-child(3) {
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
   }
+}
+
+/* ---------- Chapter menu (narrow screens): a sheet over the page ---------- */
+
+/* The open modal keeps the page inert; it should not scroll under the sheet either. */
+html:has(.site-menu[open]) {
+  overflow: hidden;
+}
+
+.site-menu {
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: clamp(0.9rem, 2.2vh, 1.5rem) var(--gutter) 2rem;
+  border: 0;
+  /* Opaque: the page behind would ghost through the big chapter names. */
+  background: var(--color-bg);
+  color: var(--color-text);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.site-menu[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.site-menu::backdrop {
+  background: rgb(4 7 8 / 0.6);
+}
+
+.site-menu__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.site-menu__title {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--step-label);
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.site-menu__close {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0 1.1rem;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--step-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.site-menu__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--color-line);
+}
+
+.site-menu__list a {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--color-line);
+  font-family: var(--font-mono);
+  font-size: var(--step-2);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--color-text);
+}
+
+.site-menu__list a:hover {
+  color: var(--color-light-strong);
+}
+
+.site-menu__index {
+  font-size: var(--step-label);
+  letter-spacing: 0.14em;
+  color: var(--color-light);
+}
+
+.site-menu__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: auto;
 }
 
 /* ---------- Chapter HUD (decorative; the nav carries aria-current) ---------- */

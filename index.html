@@ -55,13 +55,47 @@
       </nav>
 
       <div class="site-header__actions">
-        <a class="help-link" href="#safety" data-nav-link>Якщо важко<span class="visually-hidden">: контакти допомоги, 112 і 103</span></a>
+        <a class="help-link" href="#safety" data-nav-link>Якщо важко<span class="help-link__number" aria-hidden="true">&nbsp;· 112</span><span class="visually-hidden">: контакти допомоги, 112 і 103</span></a>
         <button class="motion-toggle" type="button" data-motion-toggle aria-pressed="false" aria-label="Пауза анімації" hidden>
           <span class="motion-toggle__bars" aria-hidden="true"><span></span><span></span><span></span></span>
           <span class="motion-toggle__text" aria-hidden="true">Пауза</span>
         </button>
+        <!-- Shown by src/ui/sound.ts; off on every visit until pressed. -->
+        <button class="sound-toggle" type="button" data-sound-toggle aria-pressed="false" hidden>
+          <span class="sound-toggle__wave" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+          <span class="sound-toggle__text">Звук</span>
+        </button>
+        <button class="menu-toggle" type="button" data-menu-open aria-haspopup="dialog" aria-controls="site-menu" aria-expanded="false" hidden>
+          <span class="menu-toggle__lines" aria-hidden="true"><span></span><span></span></span>
+          <span class="menu-toggle__text">Меню</span>
+        </button>
       </div>
     </header>
+
+    <!-- Narrow screens: every chapter in one list (src/ui/menu.ts). A native modal dialog, no form. -->
+    <dialog class="site-menu" id="site-menu" aria-labelledby="site-menu-title" data-menu>
+      <div class="site-menu__head">
+        <p class="site-menu__title" id="site-menu-title">Меню</p>
+        <button class="site-menu__close" type="button" data-menu-close>Закрити</button>
+      </div>
+      <nav class="site-menu__nav" aria-label="Глави сторінки">
+        <ol class="site-menu__list" role="list">
+          <li><a href="#how" data-menu-link><span class="site-menu__index" aria-hidden="true">01</span> Як це працює</a></li>
+          <li><a href="#scenarios" data-menu-link><span class="site-menu__index" aria-hidden="true">02</span> Сценарії</a></li>
+          <li><a href="#diary" data-menu-link><span class="site-menu__index" aria-hidden="true">03</span> Щоденник</a></li>
+          <li><a href="#privacy" data-menu-link><span class="site-menu__index" aria-hidden="true">04</span> Приватність</a></li>
+          <li><a href="#faq" data-menu-link><span class="site-menu__index" aria-hidden="true">06</span> Запитання</a></li>
+          <li><a href="#final" data-menu-link><span class="site-menu__index" aria-hidden="true">07</span> Що далі</a></li>
+        </ol>
+      </nav>
+      <div class="site-menu__actions">
+        <a class="help-link site-menu__help" href="#safety" data-menu-link>Якщо важко: 112, 103</a>
+        <button class="sound-toggle site-menu__sound" type="button" data-sound-toggle aria-pressed="false" hidden>
+          <span class="sound-toggle__wave" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+          <span class="sound-toggle__text">Звук</span>
+        </button>
+      </div>
+    </dialog>
 
     <p class="hud" aria-hidden="true">
       <span class="hud__index" data-hud-index>00</span>

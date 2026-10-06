@@ -9,14 +9,18 @@ import './styles/sections.css'
 import { bootGL } from './gl/boot'
 import { initDecode } from './ui/decode'
 import { initHeroLight } from './ui/hero-light'
+import { initMenu } from './ui/menu'
 import { initMotionToggle } from './ui/motion'
 import { initNav } from './ui/nav'
 import { initReveal } from './ui/reveal'
+import { initSound } from './ui/sound'
 import { initSteps } from './ui/steps'
 
 initHeroLight()
 initMotionToggle(document.querySelector<HTMLButtonElement>('[data-motion-toggle]'))
 initNav()
+initMenu()
+initSound()
 initReveal()
 initSteps()
 initDecode()
