@@ -1,0 +1,62 @@
+/* Design tokens. WebGL colours mirror these in src/gl/palette.ts.
+   Night, not "AI purple": near-black with a teal haze; colour comes only from light.
+   Contrast (WCAG 2.2) is measured on the lightest sky that sits under text (#0d2226 radial and the
+   haze, L ≈ 0.014–0.02), not only on --color-bg #040708: dim #84918d stays ≥ 4.5:1 there (5.0:1 on
+   #0d2226, 6.2:1 on #040708); text 17.9:1, soft 12.3:1, muted 7.0:1, light 13.1:1, teal 13.6:1 on
+   #040708. De-emphasis uses --color-text-dim, never opacity. */
+
+:root {
+  --color-bg: #040708;
+  --color-sky: #0b1a1e;
+  --color-text: #eef2ee;
+  --color-text-soft: #c2ccc8;
+  --color-text-muted: #8e9b97;
+  --color-text-dim: #84918d;
+  --color-line: rgb(238 242 238 / 0.13);
+  --color-line-strong: rgb(238 242 238 / 0.26);
+  --color-panel: rgb(4 8 9 / 0.62);
+
+  /* Light */
+  --color-light: #ffc58f;
+  --color-light-strong: #ffe1bf;
+  --color-teal: #8fe3d4;
+  --color-violet: #b9a8ff;
+  --color-focus: #ffc58f;
+  --color-selection: rgb(255 197 143 / 0.3);
+
+  /* Type: a techno mono for the voice of the page, a humanist sans for reading */
+  --font-mono: 'Martian Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --font-body: 'Onest Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --step-label: 0.6875rem;
+  --step--1: clamp(0.8rem, 0.77rem + 0.15vw, 0.875rem);
+  --step-0: clamp(1rem, 0.96rem + 0.2vw, 1.0625rem);
+  --step-1: clamp(1.1rem, 1.04rem + 0.3vw, 1.25rem);
+  --step-2: clamp(1.2rem, 1.08rem + 0.6vw, 1.6rem);
+  --display-2: clamp(1.85rem, 1.05rem + 3.3vw, 4.25rem);
+  --display-1: clamp(2.4rem, 0.9rem + 6.2vw, 7.75rem);
+  /* Martian Mono caps: the breve of Й reaches ~1.03em and the tails of Щ/Д and commas dip below the
+     baseline. Below ~1.1 they touch the next line, and Cyrillic display lines run together. */
+  --leading-display: 1.12;
+
+  /* Space */
+  --gutter: clamp(1rem, 4vw, 3.5rem);
+  --frame: 90rem;
+  --chapter-space: clamp(6rem, 20vh, 13rem);
+  --header-offset: 5.5rem;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 0.2s;
+  --dur-med: 0.7s;
+  --dur-slow: 1.2s;
+
+  /* Stacking: sky · display type · WebGL · vignette · text · chrome */
+  --z-stage: 0;
+  --z-behind: 1;
+  --z-scene: 2;
+  --z-vignette: 3;
+  --z-text: 4;
+  --z-chrome: 20;
+}

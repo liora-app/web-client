@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Liora — щоденник саморефлексії з AI</title>
+    <meta
+      name="description"
+      content="Застосунок для саморефлексії: ви розмовляєте з AI, а не з людиною, отримуєте 3–5 коротких тез і самі вирішуєте, що з них зберегти. Зараз — у закритому тестуванні."
+    />
+    <meta name="theme-color" content="#040708" />
+    <meta name="color-scheme" content="dark" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="uk_UA" />
+    <meta property="og:site_name" content="Liora" />
+    <meta property="og:title" content="Liora — щоденник, який ставить запитання" />
+    <meta
+      property="og:description"
+      content="Розмова з AI, а не з людиною: саморефлексія, а не терапія чи медична допомога. Наприкінці — 3–5 коротких тез, і тільки ви вирішуєте, зберегти їх чи видалити."
+    />
+    <!-- Absolute URL (crawlers need one); the only place the domain is written. -->
+    <meta property="og:image" content="https://tryliora.duckdns.org/og.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Заголовок «Щоденник, який ставить запитання» і куля світла на темному небі" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Перейти до вмісту</a>
+
+    <!-- Layers, back to front: night sky (CSS) · display type · WebGL light · vignette · text. -->
+    <div class="stage" data-stage aria-hidden="true">
+      <div class="stage__haze stage__haze--teal"></div>
+      <div class="stage__haze stage__haze--violet"></div>
+      <div class="stage__haze stage__haze--amber"></div>
+      <div class="stage__grain"></div>
+    </div>
+    <canvas class="scene" data-gl-canvas aria-hidden="true"></canvas>
+    <div class="vignette" aria-hidden="true"></div>
+
+    <header class="site-header" data-header>
+      <a class="brand" href="#hero">
+        <span class="brand__mark" aria-hidden="true"></span>
+        <span class="brand__name">Liora</span>
+      </a>
+
+      <nav class="nav-pill" aria-label="Розділи сторінки">
+        <a href="#how" data-nav-link>Як це працює</a>
+        <span class="nav-pill__rule" aria-hidden="true"></span>
+        <a href="#privacy" data-nav-link>Приватність</a>
+        <span class="nav-pill__rule" aria-hidden="true"></span>
+        <a href="#faq" data-nav-link>Запитання</a>
+      </nav>
+
+      <div class="site-header__actions">
+        <a class="help-link" href="#safety" data-nav-link>Якщо важко<span class="visually-hidden">: контакти допомоги, 112 і 103</span></a>
+        <button class="motion-toggle" type="button" data-motion-toggle aria-pressed="false" aria-label="Пауза анімації" hidden>
+          <span class="motion-toggle__bars" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span class="motion-toggle__text" aria-hidden="true">Пауза</span>
+        </button>
+      </div>
+    </header>
+
+    <p class="hud" aria-hidden="true">
+      <span class="hud__index" data-hud-index>00</span>
+      <span class="hud__rule"></span>
+      <span class="hud__name" data-hud-name>Liora</span>
+    </p>
+
+    <main id="main" tabindex="-1">
+      <!-- ============ Hero ============ -->
+      <section class="hero" id="hero" data-gl-state="0" data-chapter="00" data-chapter-name="Liora" aria-labelledby="hero-title">
+        <div class="hero__orb" aria-hidden="true"></div>
+        <div class="hero__frame">
+          <p class="tag hero__tag" data-decode>Закрите тестування</p>
+          <h1 class="display hero__title" id="hero-title">
+            <span class="display__line">Щоденник,</span>
+            <span class="display__line">який ставить</span>
+            <span class="display__line">запитання</span>
+          </h1>
+          <div class="hero__aside">
+            <p class="lead hero__lead">
+              Liora — застосунок для саморефлексії. Ви розмовляєте зі штучним інтелектом (AI), а не з&nbsp;людиною.
+              Наприкінці отримуєте 3–5&nbsp;коротких тез і самі вирішуєте, зберегти їх чи видалити.
+            </p>
+            <p class="hero__note">Не терапія й не медична допомога.</p>
+          </div>
+          <ul class="arrows hero__links" role="list">
+            <li><a href="#how">Як це працює</a></li>
+            <li><a href="#privacy">Що з даними</a></li>
+          </ul>
+        </div>
+        <p class="scroll-cue" aria-hidden="true"><span>Гортайте</span></p>
+      </section>
+
+      <!-- ============ 01 How a session works ============ -->
+      <section class="chapter how" id="how" data-chapter="01" data-chapter-name="Як це працює" aria-labelledby="how-title">
+        <div class="frame">
+          <header class="chapter__head">
+            <p class="tag" data-decode><span class="tag__index">01</span> Як це працює</p>
+            <h2 class="display-2" id="how-title" data-reveal>Розмова, запитання, підсумок&nbsp;— і&nbsp;ваше рішення</h2>
+            <p class="lead" data-reveal>
+              Сесія — це одна розмова. Зберегти з неї можна не весь текст, а&nbsp;лише кілька тез, які ви переглянули самі.
+            </p>
+          </header>
+
+          <div class="how__layout">
+            <ol class="steps" role="list">
+              <li class="step" data-step="1" data-gl-state="1">
+                <span class="step__index" aria-hidden="true">01</span>
+                <h3 class="step__title">Ви пишете</h3>
+                <p>Почніть із порожнього поля й пишіть так, як думаєте. Або оберіть сценарій, якщо не знаєте, з чого почати.</p>
+              </li>
+              <li class="step" data-step="2" data-gl-state="2">
+                <span class="step__index" aria-hidden="true">02</span>
+                <h3 class="step__title">AI уточнює</h3>
+                <p>Ставить уточнювальні запитання, помічає формулювання, що повторюються, і повертає до сказаного раніше в цій розмові.</p>
+              </li>
+              <li class="step" data-step="3" data-gl-state="3">
+                <span class="step__index" aria-hidden="true">03</span>
+                <h3 class="step__title">Підсумок у 3–5 тезах</h3>
+                <p>Наприкінці AI зводить розмову до кількох коротких тез. Кожну можна відредагувати або прибрати ще до збереження.</p>
+              </li>
+              <!-- data-gl-decide: two of the five theses drop away here, three are kept (src/gl/scroll.ts). -->
+              <li class="step" data-step="4" data-gl-state="3" data-gl-decide>
+                <span class="step__index" aria-hidden="true">04</span>
+                <h3 class="step__title">Рішення за вами</h3>
+                <p>Зберегти тези в щоденник чи видалити їх — вирішуєте тільки ви. Повний текст розмови в нашу базу даних не потрапляє.</p>
+              </li>
+            </ol>
+
+            <figure class="transcript" data-transcript data-active-step="1">
+              <figcaption class="caption">Уривок сесії · вигадані дані</figcaption>
+              <ol class="transcript__lines" role="list">
+                <li class="said" data-for="1 2">
+                  <span class="said__who">Ви</span>
+                  <p>Мене знову перебили на нараді, наче моя думка не важлива. Весь вечір прокручую це в голові.</p>
+                </li>
+                <li class="said said--ai" data-for="2">
+                  <span class="said__who">AI</span>
+                  <p>Що в цьому моменті зачепило найбільше?</p>
+                </li>
+                <li class="said" data-for="2">
+                  <span class="said__who">Ви</span>
+                  <p>Здається, що моя думка там не важлива.</p>
+                </li>
+                <li class="said said--ai" data-for="2">
+                  <span class="said__who">AI</span>
+                  <p>Ви вже вдруге кажете «не важлива». Коли ще зʼявляється це відчуття?</p>
+                </li>
+              </ol>
+              <div class="theses" data-for="3 4">
+                <p class="theses__title">Підсумок сесії</p>
+                <ol class="theses__list" role="list">
+                  <li><span class="theses__n" aria-hidden="true">—</span>Вас зачепило не саме перебивання, а думка «моя думка не важлива».</li>
+                  <li><span class="theses__n" aria-hidden="true">—</span>Те саме відчуття ви помічаєте й у робочих чатах.</li>
+                  <li><span class="theses__n" aria-hidden="true">—</span>Ви весь вечір прокручуєте цю нараду в голові.</li>
+                </ol>
+                <!-- A choice shown as a state, not as buttons: there is nothing to press on this page. -->
+                <p class="theses__actions" data-for="4">
+                  <span class="mark mark--on">Зберегти в щоденник</span>
+                  <span class="theses__or" aria-hidden="true">/</span>
+                  <span class="mark">або видалити</span>
+                </p>
+              </div>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 02 Scenarios ============ -->
+      <section class="chapter scenarios" id="scenarios" data-gl-state="3" data-chapter="02" data-chapter-name="Сценарії" aria-labelledby="scenarios-title">
+        <div class="frame">
+          <header class="chapter__head">
+            <p class="tag" data-decode><span class="tag__index">02</span> Сценарії</p>
+            <h2 class="display-2" id="scenarios-title" data-reveal>З чого почати?</h2>
+            <p class="lead" data-reveal>
+              Можна писати вільно, а можна обрати сценарій із кількома кроками, які задають розмові напрям. Згодом сценаріїв
+              стане більше.
+            </p>
+          </header>
+
+          <ul class="rows scenario-list" role="list">
+            <li class="row" data-reveal>
+              <h3 class="row__title"><span class="row__arrow" aria-hidden="true">→</span>Розбір ситуації</h3>
+              <div class="row__body">
+                <p class="row__note">Ключовий сценарій</p>
+                <p>Що стало тригером, як ви відреагували та як ще можна подивитися на ту саму ситуацію. Це вправа для роздумів, а не терапія чи лікування.</p>
+                <p class="flow">
+                  Тригер <span class="flow__arrow" aria-hidden="true">→</span><span class="visually-hidden">, далі</span> Реакція
+                  <span class="flow__arrow" aria-hidden="true">→</span><span class="visually-hidden">, далі</span> Інший погляд
+                </p>
+              </div>
+            </li>
+            <li class="row" data-reveal>
+              <h3 class="row__title"><span class="row__arrow" aria-hidden="true">→</span>Вільна розмова</h3>
+              <div class="row__body">
+                <p>Порожнє поле й будь-яка тема. Можна просто виговоритися, а AI ставитиме уточнювальні запитання.</p>
+              </div>
+            </li>
+            <li class="row" data-reveal>
+              <h3 class="row__title"><span class="row__arrow" aria-hidden="true">→</span>Розбір дня</h3>
+              <div class="row__body">
+                <p>Що сталося за день, що ви відчували та що з цього варте уваги.</p>
+              </div>
+            </li>
+            <li class="row" data-reveal>
+              <h3 class="row__title"><span class="row__arrow" aria-hidden="true">→</span>Повернення до теми</h3>
+              <div class="row__body">
+                <p>Тема вже траплялася у вашому щоденнику? Поверніться до неї в новій розмові — для цього AI отримає ваші збережені тези на цю тему.</p>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ============ 03 Diary ============ -->
+      <section class="chapter diary" id="diary" data-gl-state="4" data-chapter="03" data-chapter-name="Щоденник" aria-labelledby="diary-title">
+        <!-- Static stand-in for the WebGL constellation (motion off, no WebGL2): shown until the scene is on. -->
+        <div class="diary__sky" aria-hidden="true">
+          <svg viewBox="0 0 560 360" focusable="false">
+            <path d="M40 150L150 80L270 45L360 120L290 190L180 215L40 150M360 120L460 170L500 60M460 170L470 310L360 300L290 190M180 215L150 310L30 280" />
+            <circle cx="40" cy="150" r="3" /><circle cx="150" cy="80" r="4" /><circle cx="270" cy="45" r="5" />
+            <circle cx="360" cy="120" r="6" /><circle cx="290" cy="190" r="4" /><circle cx="500" cy="60" r="3" />
+            <circle cx="460" cy="170" r="5" /><circle cx="470" cy="310" r="3" /><circle cx="360" cy="300" r="4" />
+            <circle cx="180" cy="215" r="4" /><circle cx="150" cy="310" r="3" /><circle cx="30" cy="280" r="3" />
+          </svg>
+        </div>
+        <div class="frame">
+          <header class="chapter__head">
+            <p class="tag" data-decode><span class="tag__index">03</span> Щоденник</p>
+            <h2 class="display-2" id="diary-title" data-reveal>З часом видно, які теми повертаються</h2>
+            <p class="lead" data-reveal>
+              Кожен збережений підсумок стає коротким записом у&nbsp;щоденнику, а&nbsp;огляд за тиждень показує, що в записах
+              повторюється.
+            </p>
+          </header>
+
+          <div class="diary__layout">
+            <figure class="log" data-reveal>
+              <figcaption class="caption">Приклад щоденника · вигадані дані</figcaption>
+              <ol class="log__list" role="list">
+                <li class="log__entry">
+                  <span class="log__day">Нд</span>
+                  <p class="log__text">Вечір без телефона — і заснути було легше.</p>
+                  <p class="log__tags">#сон #відпочинок</p>
+                </li>
+                <li class="log__entry">
+                  <span class="log__day">Чт</span>
+                  <p class="log__text">Зачепило не перебивання, а думка «моя думка не важлива».</p>
+                  <p class="log__tags">#робота #межі</p>
+                </li>
+                <li class="log__entry">
+                  <span class="log__day">Вт</span>
+                  <p class="log__text">Ввечері втомлює не стільки робота, скільки список справ у голові.</p>
+                  <p class="log__tags">#сон #справи</p>
+                </li>
+              </ol>
+            </figure>
+
+            <figure class="weekly" data-reveal>
+              <figcaption class="caption">Огляд за тиждень</figcaption>
+              <dl class="weekly__stats">
+                <div class="weekly__stat weekly__stat--big">
+                  <dt>Нових записів</dt>
+                  <dd>3</dd>
+                </div>
+                <div class="weekly__stat">
+                  <dt>Теми, що повторювалися</dt>
+                  <dd>сон</dd>
+                </div>
+                <div class="weekly__stat">
+                  <dt>Що змінилося</dt>
+                  <dd>Нова тема: відпочинок</dd>
+                </div>
+              </dl>
+            </figure>
+          </div>
+
+          <div class="nosave" data-reveal>
+            <p class="nosave__switch" aria-hidden="true"><span class="nosave__track"></span>Не зберігати</p>
+            <div class="nosave__text">
+              <h3 class="row__title">Режим «не зберігати»</h3>
+              <p>
+                Вмикається перед сесією. Після закриття в Liora від такої розмови не залишиться ні тексту, ні тез, ні запису в
+                щоденнику. Під час сесії текст, як і завжди, обробляє зовнішній постачальник AI.
+              </p>
+            </div>
+          </div>
+
+          <ul class="facts" role="list" data-reveal>
+            <li>Усі записи — в одному списку, з пошуком і тегами</li>
+            <li>Будь-який запис можна видалити окремо</li>
+            <li>Огляд рахує лише те, що є в щоденнику</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ============ 04 Privacy ============ -->
+      <!-- The head keeps the light in glass (state 5); the principles are read over quiet dust (state 6). -->
+      <section class="chapter privacy" id="privacy" data-chapter="04" data-chapter-name="Приватність" aria-labelledby="privacy-title">
+        <div class="frame">
+          <header class="chapter__head" data-gl-state="5">
+            <p class="tag" data-decode><span class="tag__index">04</span> Приватність</p>
+            <h2 class="display-2" id="privacy-title">Ми зберігаємо не розмови, а те, що ви вирішили залишити</h2>
+            <p class="lead">Те, про що ви пишете, — особисте. Тому ми збираємо мінімум даних і прямо пояснюємо, що з ними відбувається.</p>
+          </header>
+
+          <ol class="rows principles" role="list" data-gl-state="6">
+            <li class="row">
+              <h3 class="row__title">Ми не зберігаємо повний текст розмови</h3>
+              <div class="row__body">
+                <p>Він не потрапляє в нашу базу даних: із розмови туди потрапляє лише підсумок, який ви переглянули й зберегли.</p>
+              </div>
+            </li>
+            <li class="row">
+              <h3 class="row__title">Відповіді створює зовнішній сервіс AI</h3>
+              <div class="row__body">
+                <p>
+                  Відповіді й підсумки генерує не наш сервер, а зовнішній постачальник AI. Тому під час сесії йому передається текст
+                  розмови й назви ваших тегів, а в сценарії «Повернення до теми» — ще й збережені тези, до яких ви повертаєтеся. Ми
+                  прямо пишемо про це в тексті згоди. Постачальника для відкритого запуску ще обираємо.
+                </p>
+              </div>
+            </li>
+            <li class="row">
+              <h3 class="row__title">Тільки те, що ви написали</h3>
+              <div class="row__body">
+                <p>
+                  Liora не підключається до інших ваших сервісів — ні до листування, ні до документів, ні до фінансів. Єдине джерело
+                  змісту щоденника — текст, який ви самі ввели в застосунку.
+                </p>
+              </div>
+            </li>
+            <li class="row">
+              <h3 class="row__title">Вхід через Google без зайвих дозволів</h3>
+              <div class="row__body">
+                <p>
+                  Застосунок не запитує доступу до ваших листів, Google Диска чи календаря. З акаунта ми зберігаємо тільки
+                  ідентифікатор та адресу email, без імені й фото.
+                </p>
+              </div>
+            </li>
+            <li class="row">
+              <h3 class="row__title">Окрема згода</h3>
+              <div class="row__body">
+                <p>
+                  Перед першою сесією — окремий екран, а не галочка в загальних умовах: що саме зберігається, де й як це видалити.
+                  Там же ви підтверджуєте, що вам виповнилося 18&nbsp;років.
+                </p>
+              </div>
+            </li>
+            <li class="row">
+              <h3 class="row__title">Експорт і видалення — кнопкою</h3>
+              <div class="row__body">
+                <p>
+                  Увесь щоденник можна експортувати у файл, а акаунт — видалити разом з усіма записами щоденника. Без листів і
+                  запитів до нас.
+                </p>
+              </div>
+            </li>
+            <li class="row">
+              <h3 class="row__title">Шифрування зʼєднання й сховища</h3>
+              <div class="row__body">
+                <p>
+                  Зʼєднання й сховище сервера зашифровані. Це захист від сторонніх: сам сервер Liora збережені тези читає — так
+                  працюють щоденник і пошук.
+                </p>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- ============ 05 Safety ============ -->
+      <!-- The numbers come first: a header «Якщо важко» jump lands on them (see sections.css, 05). -->
+      <section class="chapter safety" id="safety" data-gl-state="6" data-gl-quiet data-chapter="05" data-chapter-name="Якщо важко" aria-labelledby="safety-title">
+        <div class="frame">
+          <header class="chapter__head">
+            <p class="tag"><span class="tag__index">05</span> Якщо важко</p>
+            <h2 class="display-2" id="safety-title">Якщо вам зараз дуже важко</h2>
+            <p class="lead">
+              Зверніться до людей, які можуть допомогти просто зараз. В&nbsp;Україні 112 і&nbsp;103 працюють цілодобово
+              й&nbsp;безкоштовно.
+            </p>
+          </header>
+
+          <ul class="help" role="list">
+            <li class="help__item">
+              <a class="help__number" href="tel:112" aria-label="Зателефонувати 112">112</a>
+              <p><strong>Екстрені служби.</strong> Телефонуйте, якщо негайна допомога потрібна вам чи іншій людині. Номер працює в Україні та в усіх країнах ЄС.</p>
+            </li>
+            <li class="help__item">
+              <a class="help__number" href="tel:103" aria-label="Зателефонувати 103">103</a>
+              <p><strong>Швидка медична допомога.</strong> Виклик екстреної медичної допомоги в Україні.</p>
+            </li>
+            <li class="help__item help__item--link">
+              <a class="help__link" href="https://howareu.com/hot-lines" target="_blank" rel="noopener noreferrer">
+                Гарячі лінії «Ти як?»
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5h8v8M15 5 5.5 14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" fill="none" /></svg>
+                <span class="visually-hidden">(відкриється в новій вкладці)</span>
+              </a>
+              <p>Довідник Всеукраїнської програми ментального здоровʼя «Ти як?» з номерами в Україні та за кордоном.</p>
+            </li>
+          </ul>
+
+          <div class="help__check">
+            <h3 class="row__title">Якщо в тексті є фрази про кризу</h3>
+            <p>
+              Якщо в написаному трапляються фрази, які можуть свідчити про кризу, Liora зупиняє сценарій і замість продовження
+              розмови показує контакти служб допомоги. Це автоматична перевірка, і вона може помилитися. Тож якщо допомога потрібна
+              зараз, не чекайте підказки від застосунку.
+            </p>
+          </div>
+
+          <div class="help__check">
+            <h3 class="row__title">Liora — не терапія й не&nbsp;екстрена допомога</h3>
+            <p>
+              Liora не є психологом, психотерапевтом чи медичним сервісом і не призначена для діагностики чи лікування. Ви
+              розмовляєте з&nbsp;AI, а не з&nbsp;людиною, і&nbsp;AI може помилятися.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 06 FAQ ============ -->
+      <section class="chapter faq" id="faq" data-gl-state="6" data-chapter="06" data-chapter-name="Запитання" aria-labelledby="faq-title">
+        <div class="frame">
+          <header class="chapter__head">
+            <p class="tag" data-decode><span class="tag__index">06</span> Запитання</p>
+            <h2 class="display-2" id="faq-title" data-reveal>Часті запитання</h2>
+            <p class="lead" data-reveal>Коротко про головне: що це, що зберігається й коли можна спробувати.</p>
+          </header>
+          <div class="faq__list">
+            <details class="qa">
+              <summary>Liora — це психолог?</summary>
+              <p>
+                Ні. Liora — застосунок для саморефлексії, а не психологічна чи медична допомога. Ви розмовляєте зі штучним інтелектом
+                (AI), а не з&nbsp;людиною. Liora не призначена для діагностики чи лікування, а відповіді AI можуть бути неточними.
+              </p>
+            </details>
+            <details class="qa">
+              <summary>Хто бачить те, що я пишу?</summary>
+              <p>
+                Під час сесії текст розмови проходить через сервер Liora: там його автоматично перевіряють на кризові фрази, але
+                в базу даних і журнали він не записується. Щоб AI міг відповідати, текст і назви ваших тегів передаються зовнішньому
+                постачальнику AI, а в сценарії «Повернення до теми» — ще й збережені тези, до яких ви повертаєтеся. Як довго
+                постачальник зберігає ці дані, визначають його умови. Постачальника для відкритого запуску ми ще обираємо, а на
+                екрані згоди будуть його назва й країна.
+              </p>
+              <p>
+                Збережені тези лежать у зашифрованому сховищі сервера Liora. Це шифрування захищає від сторонніх, але не приховує
+                тези від самого сервера: він їх читає, щоб працювали щоденник і пошук.
+              </p>
+            </details>
+            <details class="qa">
+              <summary>Що саме ви зберігаєте?</summary>
+              <p>
+                З Google-акаунта — лише ідентифікатор та email. Із сесій — підсумки, які ви переглянули й зберегли, разом із тегами.
+                Ще ми зберігаємо запис про вашу згоду, дату реєстрації й дані про входи в акаунт: коли й з якого застосунку.
+                Повного тексту розмов у нашій базі немає.
+              </p>
+              <p>
+                Окремо наш сервер веде технічні журнали без змісту розмов: який запит надійшов і коли, чим завершився, скільки
+                тривав і скільки тексту обробив AI (у токенах). Замість вашого акаунта там псевдонімний ідентифікатор. Від сесій
+                у режимі «не зберігати» в Liora лишаються тільки такі технічні записи — ні тексту, ні тез.
+              </p>
+            </details>
+            <details class="qa">
+              <summary>Чи можна видалити свої записи й акаунт?</summary>
+              <p>
+                Так. Будь-який запис у щоденнику можна видалити окремо. Акаунт можна видалити разом з усіма записами щоденника —
+                кнопкою в застосунку, без листів і запитів до нас. Перед цим щоденник можна експортувати у файл.
+              </p>
+            </details>
+            <details class="qa">
+              <summary>Це безкоштовно? Коли можна буде спробувати?</summary>
+              <p>
+                Ціну й дату відкритого запуску ще не визначено. Зараз Liora в закритому тестуванні, тож завантажити застосунок поки не
+                можна. Щойно визначимося, напишемо про це на цій сторінці.
+              </p>
+            </details>
+            <details class="qa">
+              <summary>З якого віку можна користуватися Liora?</summary>
+              <p>З&nbsp;18&nbsp;років. Liora розрахована лише на дорослих.</p>
+            </details>
+            <details class="qa">
+              <summary>На яких пристроях працюватиме Liora?</summary>
+              <p>
+                Ми готуємо вебверсію та застосунки для iOS і Android. Акаунт буде один, а щоденник синхронізуватиметься між
+                пристроями. На телефоні — ті самі сценарії, щоденник і огляди, що й на компʼютері.
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 07 Final ============ -->
+      <section class="chapter final" id="final" data-gl-state="7" data-chapter="07" data-chapter-name="Що далі" aria-labelledby="final-title">
+        <div class="frame final__inner">
+          <p class="tag" data-decode><span class="tag__index">07</span> Що далі</p>
+          <h2 class="display final__title" id="final-title" data-reveal>Liora ще в&nbsp;закритому тестуванні</h2>
+          <p class="lead" data-reveal>
+            Завантажити застосунок чи записатися в&nbsp;чергу поки не можна. Коли відкриємо доступ, посилання зʼявиться на цій
+            сторінці. Liora розрахована лише на дорослих&nbsp;— від&nbsp;18&nbsp;років.
+          </p>
+          <div class="final__meta" data-reveal>
+            <p class="final__status">Доступ поки закритий</p>
+            <a class="arrow-link" href="#hero"><span aria-hidden="true">↑</span> На початок</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="frame site-footer__inner">
+        <p class="site-footer__brand">Liora</p>
+        <div class="site-footer__note">
+          <p>Liora — застосунок для саморефлексії з AI, а не психологічна, медична чи екстрена допомога. Екстрені служби — 112.</p>
+          <p>Ця сторінка не використовує файли cookie й аналітику. Вибір паузи анімації зберігається лише в цьому браузері.</p>
+        </div>
+        <nav class="site-footer__links" aria-label="Посилання внизу сторінки">
+          <a href="#privacy">Приватність</a>
+          <a href="#safety">Якщо важко<span class="visually-hidden">: контакти допомоги, 112 і 103</span></a>
+          <a href="#faq">Запитання</a>
+        </nav>
+        <p class="site-footer__copy">© 2026 Liora</p>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

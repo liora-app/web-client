@@ -31,15 +31,15 @@ context_portal/
 tmp/
 .tmp/
 
-# ---- Dependencies & build output (stack-agnostic; tighten once the stack is chosen) ----
+# ---- Dependencies & build output (Vite + TypeScript, ADR-006) ----
 node_modules/
 dist/
-build/
 coverage/
-.venv/
-venv/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
+*.tsbuildinfo
+.vite/
+
+# ---- Playwright ----
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/

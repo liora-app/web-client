@@ -1,6 +1,5 @@
 version: 2
 updates:
-  # Add one entry per package ecosystem (npm, pip/uv, docker, ...) once the stack is chosen.
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -16,5 +15,22 @@ updates:
       include: scope
     groups:
       github-actions:
+        patterns:
+          - "*"
+
+  # Landing dependencies (ADR-006). Monthly + one grouped PR, like Actions above:
+  # every Dependabot PR costs CI minutes.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      npm:
         patterns:
           - "*"

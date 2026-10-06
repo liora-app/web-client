@@ -1,0 +1,10 @@
+node_modules
+dist
+test-results
+playwright-report
+blob-report
+.git
+.github
+*.md
+.env
+.env.*

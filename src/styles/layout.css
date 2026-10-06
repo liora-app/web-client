@@ -1,0 +1,379 @@
+/* Page frame, header chrome, chapter HUD and footer. */
+
+.frame {
+  position: relative;
+  z-index: var(--z-text);
+  width: min(100% - 2 * var(--gutter), var(--frame));
+  margin-inline: auto;
+}
+
+/* ---------- Header: wordmark left, one pill and the help link right ---------- */
+
+.site-header {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: var(--z-chrome);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: clamp(0.9rem, 2.2vh, 1.5rem) var(--gutter);
+  pointer-events: none;
+}
+
+.site-header > * {
+  pointer-events: auto;
+}
+
+/* Text fades out under the chrome instead of running through it: ~0.9 behind the wordmark and
+   the pills, then a soft tail (no hard bar edge over the sky). */
+.site-header::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 -2rem;
+  z-index: -1;
+  background: linear-gradient(
+    180deg,
+    rgb(4 7 8 / 0.97) 0%,
+    rgb(4 7 8 / 0.9) 55%,
+    rgb(4 7 8 / 0.45) 78%,
+    rgb(4 7 8 / 0) 100%
+  );
+  pointer-events: none;
+}
+
+/* The hit area is 44 px even when only the mark shows; the negative margin keeps the layout. */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-height: 2.75rem;
+  padding: 0 0.8rem;
+  margin-inline: -0.8rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.brand:focus-visible {
+  outline-offset: -2px;
+}
+
+.brand__mark {
+  position: relative;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 58%, #fff4e2 0 18%, #ffc58f 34%, rgb(255 170 100 / 0.15) 62%, transparent 70%);
+  box-shadow:
+    inset 0 0 0 1px rgb(200 240 236 / 0.45),
+    0 0 14px rgb(255 190 120 / 0.35);
+}
+
+.nav-pill {
+  display: none;
+  align-items: center;
+  gap: 1.1rem;
+  margin-left: auto;
+  padding: 0.85rem 1.6rem;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 999px;
+  background: rgb(4 8 9 / 0.82);
+  position: relative;
+}
+
+/* A soft line of light under the pill, like a lamp over a desk. */
+.nav-pill::after {
+  content: '';
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: -14px;
+  height: 18px;
+  background: radial-gradient(50% 50% at 50% 0%, rgb(143 227 212 / 0.32), rgb(143 227 212 / 0));
+  pointer-events: none;
+}
+
+.nav-pill a,
+.help-link,
+.motion-toggle {
+  font-family: var(--font-mono);
+  font-size: var(--step-label);
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.nav-pill a {
+  position: relative;
+  color: var(--color-text-soft);
+  transition: color var(--dur-fast) ease;
+}
+
+.nav-pill a:hover,
+.nav-pill a[aria-current] {
+  color: var(--color-text);
+}
+
+/* The dot hangs in the gap before the link, so the pill keeps its width when the chapter changes. */
+.nav-pill a[aria-current]::before {
+  content: '';
+  position: absolute;
+  left: calc(-5px - 0.6em);
+  top: calc(50% - 0.1em);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-light);
+  box-shadow: 0 0 8px var(--color-light);
+  translate: 0 -50%;
+}
+
+.nav-pill__rule {
+  width: clamp(1.5rem, 3vw, 3.25rem);
+  height: 1px;
+  background: var(--color-line-strong);
+}
+
+.site-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.help-link,
+.motion-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.75rem;
+  padding: 0 1.1rem;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 999px;
+  /* Opaque enough that no blur is needed: no backdrop-filter re-rendered over the WebGL layer. */
+  background: rgb(4 8 9 / 0.82);
+}
+
+.help-link {
+  color: var(--color-light);
+  border-color: rgb(255 197 143 / 0.45);
+}
+
+.help-link:hover {
+  background:
+    linear-gradient(rgb(255 197 143 / 0.12), rgb(255 197 143 / 0.12)),
+    rgb(4 8 9 / 0.82);
+}
+
+/* The crisis chapter is on screen: the link is marked like the current nav item, not like hover. */
+.help-link[aria-current] {
+  border-color: var(--color-light);
+  background:
+    linear-gradient(rgb(255 197 143 / 0.14), rgb(255 197 143 / 0.14)),
+    rgb(4 8 9 / 0.82);
+}
+
+.motion-toggle {
+  cursor: pointer;
+  color: var(--color-text-soft);
+}
+
+.motion-toggle[hidden] {
+  display: none;
+}
+
+.motion-toggle:hover {
+  color: var(--color-text);
+}
+
+/* Paused: a lit outline and two still bars (‖), quieter than the crisis link next to it. */
+.motion-toggle[aria-pressed='true'],
+.motion-toggle[aria-pressed='true']:hover {
+  border-color: var(--color-text);
+  background:
+    linear-gradient(rgb(238 242 238 / 0.16), rgb(238 242 238 / 0.16)),
+    rgb(4 8 9 / 0.82);
+  color: var(--color-text);
+}
+
+.motion-toggle[aria-pressed='true'] .motion-toggle__bars span {
+  transform: none;
+}
+
+.motion-toggle[aria-pressed='true'] .motion-toggle__bars span:nth-child(3) {
+  display: none;
+}
+
+/* Three bars, like a sound toggle: they move while the page moves. */
+.motion-toggle__bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.motion-toggle__bars span {
+  width: 2px;
+  height: 100%;
+  background: currentColor;
+  transform-origin: bottom;
+  transform: scaleY(0.35);
+}
+
+html[data-motion='on'] .motion-toggle__bars span {
+  animation: bars 1.4s var(--ease-in-out) infinite alternate;
+}
+
+html[data-motion='on'] .motion-toggle__bars span:nth-child(2) {
+  animation-delay: -0.5s;
+}
+
+html[data-motion='on'] .motion-toggle__bars span:nth-child(3) {
+  animation-delay: -0.9s;
+}
+
+@keyframes bars {
+  from {
+    transform: scaleY(0.25);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* The word shows as soon as the header has room for it (≈ 307 CSS px with the help link). */
+.motion-toggle__text {
+  display: none;
+}
+
+@media (min-width: 20em) {
+  .motion-toggle__text {
+    display: inline;
+  }
+}
+
+@media (min-width: 64em) {
+  .nav-pill {
+    display: flex;
+  }
+}
+
+/* Narrow phones: the mark alone; the name stays for screen readers (the link needs a name). */
+@media (max-width: 26em) {
+  .brand__name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
+
+/* ---------- Chapter HUD (decorative; the nav carries aria-current) ---------- */
+
+/* Runs vertically in the right margin, where no text goes. */
+.hud {
+  position: fixed;
+  right: calc(var(--gutter) / 2);
+  top: 50%;
+  z-index: var(--z-chrome);
+  display: none;
+  align-items: center;
+  gap: 0.8rem;
+  writing-mode: vertical-rl;
+  transform: translate(50%, -50%) rotate(180deg);
+  font-family: var(--font-mono);
+  font-size: var(--step-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.hud__index {
+  color: var(--color-light);
+}
+
+.hud__rule {
+  width: 1px;
+  height: 2.5rem;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+@media (min-width: 64em) {
+  .hud {
+    display: flex;
+  }
+}
+
+/* ---------- Footer ---------- */
+
+.site-footer {
+  position: relative;
+  z-index: var(--z-text);
+  padding: 3.5rem 0 calc(3rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--color-line);
+  background: linear-gradient(180deg, rgb(3 5 5 / 0.4), rgb(3 5 5 / 0.85));
+  font-size: var(--step--1);
+  color: var(--color-text-muted);
+}
+
+.site-footer__inner {
+  display: grid;
+  gap: 1.75rem;
+}
+
+.site-footer__brand {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--color-text);
+}
+
+.site-footer__note {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 62ch;
+}
+
+.site-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.75rem;
+}
+
+.site-footer__links a,
+.site-footer__copy {
+  font-family: var(--font-mono);
+  font-size: var(--step-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.site-footer__links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  color: var(--color-text-soft);
+  text-decoration: none;
+}
+
+.site-footer__links a:hover {
+  color: var(--color-text);
+}
+
+@media (min-width: 64em) {
+  .site-footer__inner {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: start;
+    column-gap: 3rem;
+  }
+}

@@ -1,0 +1,119 @@
+/* The night behind the page. Layers, back to front:
+     .stage     CSS sky: gradient, slow haze, grain — the same with or without WebGL
+     .hero__orb static light (sections.css), shown while the scene is not on
+     .scene     transparent WebGL canvas: the light, particles, bokeh (src/gl)
+     .vignette  darkens the edges over the light
+   html[data-gl] is set by src/gl/boot.ts: loading → on, or off with a reason. */
+
+.stage {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-stage);
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 85% at 74% -5%, #0d2226 0%, rgb(13 34 38 / 0) 62%),
+    radial-gradient(90% 70% at 10% 105%, #120f1c 0%, rgb(18 15 28 / 0) 70%),
+    linear-gradient(180deg, #071012 0%, #040708 55%, #030505 100%);
+}
+
+.stage__haze {
+  position: absolute;
+  width: 90vmax;
+  height: 90vmax;
+  border-radius: 50%;
+  will-change: transform;
+}
+
+.stage__haze--teal {
+  left: -30vmax;
+  top: -38vmax;
+  background: radial-gradient(closest-side, rgb(38 112 112 / 0.42), rgb(38 112 112 / 0));
+}
+
+.stage__haze--violet {
+  right: -42vmax;
+  top: 12vh;
+  background: radial-gradient(closest-side, rgb(78 62 150 / 0.26), rgb(78 62 150 / 0));
+}
+
+/* The warm light rises as the page comes to its end (--progress is set by src/ui/nav.ts). */
+.stage__haze--amber {
+  left: 5vw;
+  bottom: -62vmax;
+  background: radial-gradient(closest-side, rgb(170 102 46 / 0.34), rgb(170 102 46 / 0));
+  opacity: calc(0.35 + var(--progress, 0) * 0.65);
+}
+
+/* The haze drifts only while motion is on: the pause button stops everything (WCAG 2.2.2). */
+html[data-motion='on'] .stage__haze--teal {
+  animation: haze-teal 80s var(--ease-in-out) infinite alternate;
+}
+
+html[data-motion='on'] .stage__haze--violet {
+  animation: haze-violet 96s var(--ease-in-out) infinite alternate;
+}
+
+html[data-motion='on'] .stage__haze--amber {
+  animation: haze-amber 88s var(--ease-in-out) infinite alternate;
+}
+
+@keyframes haze-teal {
+  to {
+    transform: translate3d(14vmax, 8vmax, 0) scale(1.12);
+  }
+}
+
+@keyframes haze-violet {
+  to {
+    transform: translate3d(-12vmax, 10vmax, 0) scale(0.92);
+  }
+}
+
+@keyframes haze-amber {
+  to {
+    transform: translate3d(10vmax, -6vmax, 0) scale(1.08);
+  }
+}
+
+/* Static film grain under the light: no blend mode, so it costs nothing per frame. */
+.stage__grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.09;
+  background-image: url('../assets/grain.svg');
+  background-size: 240px 240px;
+}
+
+.scene {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-scene);
+  width: 100%;
+  height: 100vh;
+  height: 100lvh;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1.4s var(--ease-out);
+}
+
+html[data-gl='on'] .scene {
+  opacity: 1;
+}
+
+.vignette {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-vignette);
+  pointer-events: none;
+  background: radial-gradient(130% 110% at 50% 42%, rgb(3 5 5 / 0) 52%, rgb(3 5 5 / 0.62) 100%);
+}
+
+/* Windows High Contrast and similar: the user's palette wins, the decoration goes away. */
+@media (forced-colors: active) {
+  .stage,
+  .scene,
+  .vignette {
+    display: none;
+  }
+}
