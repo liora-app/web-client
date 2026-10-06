@@ -1,0 +1,21 @@
+# Static server inside the web-client container. Only the edge Caddy (devops/caddy/Caddyfile) talks to
+# it over the compose network; TLS, HSTS and the other edge headers are set there.
+# No access log: the landing collects nothing, its server does not either.
+{
+	admin off
+	auto_https off
+}
+
+:8080 {
+	root * /srv
+	encode zstd gzip
+
+	# Vite fingerprints everything under /assets/: safe to keep for a year.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+	# The page itself and unhashed files (favicon, og image) are revalidated on every visit.
+	@other not path /assets/*
+	header @other Cache-Control "no-cache"
+
+	file_server
+}

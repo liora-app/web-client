@@ -3,6 +3,7 @@ name: Deploy
 # Merge to main → ask liora-app/devops to deploy this service at this commit (ADR-004).
 # devops runs the actual SSH deploy and serializes all deploys.
 # Dormant until the repo variable DEPLOY_ENABLED is 'true' (devops/docs/runbooks/deploy.md).
+# workflow_dispatch: redeploy main or test the web-client → devops link without a commit (main only).
 on:
   push:
     branches: [main]
@@ -10,13 +11,15 @@ on:
       - "docs/**"
       - "**/*.md"
       - ".github/ISSUE_TEMPLATE/**"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   dispatch:
-    if: vars.DEPLOY_ENABLED == 'true'
+    # A manual run from another branch would deploy an unmerged commit, so main only.
+    if: vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:

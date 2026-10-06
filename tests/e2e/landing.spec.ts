@@ -32,6 +32,16 @@ test.describe('content and structure', () => {
     const og = ((await page.locator('meta[property="og:description"]').getAttribute('content')) ?? '').toLowerCase()
     expect(og).toMatch(/не з людиною/)
     expect(og).toMatch(/не терапі/)
+
+    // The preview image: an absolute URL for crawlers, and the file itself ships with the site. The file is
+    // fetched from the site under test, not from that URL (production may still serve an older build).
+    const image = page.locator('meta[property="og:image"]')
+    await expect(image).toHaveAttribute('content', /^https:\/\/[^/]+\/og\.jpg$/)
+    await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'summary_large_image')
+    await expect(page.locator('meta[property="og:image:alt"]')).toHaveAttribute('content', /.{20,}/)
+    const file = await page.request.get('/og.jpg')
+    expect(file.status()).toBe(200)
+    expect(file.headers()['content-type']).toBe('image/jpeg')
   })
 
   test('crisis block lists 112, 103 and the hotline directory, never the paused 7333', async ({ page }) => {

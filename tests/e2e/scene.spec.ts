@@ -1,13 +1,17 @@
 import { expect, test } from '@playwright/test'
 import { NO_WEBGL2, SLOW_DRAWS, SOFTWARE_RENDERER, centre, litSamples, sceneStats, waitForScene, watchConsole } from './helpers'
 
+// Needs a working WebGL2 context (a real GPU here). CI runners have none, so CI runs the suite with
+// --grep-invert @gpu (scripts/ci-e2e.sh); the full suite runs locally before a PR (README).
+const GPU = { tag: '@gpu' }
+
 // The GPU path is asserted in Chromium (channel: 'chromium' uses the real GPU, see config).
 // WebKit on Windows rasterises WebGL on the CPU here, so it checks that the fallback is sane.
 
 test.describe('WebGL scene', () => {
   test.skip(({ browserName }) => browserName !== 'chromium', 'GPU path is asserted in Chromium')
 
-  test('starts after the page and draws a non-blank frame', async ({ page }) => {
+  test('starts after the page and draws a non-blank frame', GPU, async ({ page }) => {
     const problems = watchConsole(page)
     await page.goto('/')
     await waitForScene(page)
@@ -46,7 +50,7 @@ test.describe('WebGL scene', () => {
     await expect(page.locator('.vignette')).toHaveCSS('pointer-events', 'none')
   })
 
-  test('scrolling moves the scene through its states', async ({ page }) => {
+  test('scrolling moves the scene through its states', GPU, async ({ page }) => {
     await page.goto('/')
     await waitForScene(page)
     expect((await sceneStats(page)).state).toBeLessThan(0.2)
@@ -65,7 +69,7 @@ test.describe('WebGL scene', () => {
     expect(seen.size).toBe(8)
   })
 
-  test('the scene follows the text layout, not the screen shape', async ({ page }, testInfo) => {
+  test('the scene follows the text layout, not the screen shape', GPU, async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop', 'one browser is enough for the breakpoint')
     await page.goto('/')
     await waitForScene(page)
@@ -75,7 +79,7 @@ test.describe('WebGL scene', () => {
     await expect.poll(async () => (await sceneStats(page)).layout).toBe('column')
   })
 
-  test('lost WebGL context shows the static backdrop and recovers', async ({ page }) => {
+  test('lost WebGL context shows the static backdrop and recovers', GPU, async ({ page }) => {
     await page.goto('/')
     const html = page.locator('html')
     await waitForScene(page)
@@ -101,7 +105,7 @@ test.describe('WebGL scene', () => {
     await expect(orb).toHaveCSS('opacity', '0')
   })
 
-  test('pause button stops the animation and the choice survives a reload', async ({ page }) => {
+  test('pause button stops the animation and the choice survives a reload', GPU, async ({ page }) => {
     await page.goto('/')
     const html = page.locator('html')
     await waitForScene(page)
@@ -127,7 +131,7 @@ test.describe('WebGL scene', () => {
     await expect(html).toHaveAttribute('data-gl', 'on', { timeout: 15_000 })
   })
 
-  test('the crisis section calms the scene while it is in the middle of the screen, then lets go', async ({ page }) => {
+  test('the crisis section calms the scene while it is in the middle of the screen, then lets go', GPU, async ({ page }) => {
     await page.goto('/')
     await waitForScene(page)
     expect((await sceneStats(page)).quiet).toBeLessThan(0.05)
@@ -137,7 +141,7 @@ test.describe('WebGL scene', () => {
     await expect.poll(async () => (await sceneStats(page)).quiet, { timeout: 6_000 }).toBeLessThan(0.1)
   })
 
-  test('high contrast mode pauses the scene and turning it off resumes it', async ({ page }) => {
+  test('high contrast mode pauses the scene and turning it off resumes it', GPU, async ({ page }) => {
     await page.goto('/')
     const html = page.locator('html')
     await waitForScene(page)
@@ -157,7 +161,7 @@ test.describe('WebGL scene', () => {
     await expect.poll(async () => (await sceneStats(page)).frames).toBeGreaterThan(frames)
   })
 
-  test('a device too slow for the first frames gets the static page for the rest of the visit', async ({ page }, testInfo) => {
+  test('a device too slow for the first frames gets the static page for the rest of the visit', GPU, async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop', 'one project is enough for the governor path')
     await page.addInitScript(SLOW_DRAWS)
     await page.goto('/')
@@ -188,7 +192,7 @@ test.describe('WebGL scene', () => {
 })
 
 test.describe('static backdrop', () => {
-  test('reduced motion keeps the scene off until the visitor asks for it', async ({ page, browserName, isMobile }) => {
+  test('reduced motion keeps the scene off until the visitor asks for it', GPU, async ({ page, browserName, isMobile }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto('/')
     const html = page.locator('html')
@@ -254,7 +258,7 @@ test.describe('static backdrop', () => {
     expect(problems).toEqual([])
   })
 
-  test('if the scene chunk cannot load, the page is still complete', async ({ page, browserName }) => {
+  test('if the scene chunk cannot load, the page is still complete', GPU, async ({ page, browserName }) => {
     test.skip(browserName !== 'chromium', 'WebKit here renders WebGL on the CPU; one more software run adds cost, not coverage')
     await page.route(/\/assets\/scene-[^/]+\.js$/, (route) => route.abort())
     await page.goto('/')
@@ -266,7 +270,7 @@ test.describe('static backdrop', () => {
     await expect(page.locator('.hero__orb')).toHaveCSS('opacity', '1')
   })
 
-  test('a software renderer gets the static backdrop', async ({ page, browserName }) => {
+  test('a software renderer gets the static backdrop', GPU, async ({ page, browserName }) => {
     test.skip(browserName !== 'chromium', 'the renderer string override targets Chromium')
     await page.addInitScript(SOFTWARE_RENDERER)
     await page.goto('/')

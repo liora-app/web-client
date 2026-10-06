@@ -20,4 +20,7 @@ concurrency:
 
 jobs:
   checks:
-    uses: liora-app/devops/.github/workflows/reusable-checks.yml@main
+    uses: liora-app/devops/.github/workflows/reusable-checks.yml@ci/26-e2e-tests-input
+    with:
+      # Playwright without the GPU-only tests (scripts/ci-e2e.sh); the full suite runs locally.
+      e2e-tests: true

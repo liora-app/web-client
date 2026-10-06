@@ -30,6 +30,7 @@ npm run dev          # http://localhost:5173
 | `npm run preview` | Віддає `dist/` на 4173 |
 | `npm run test:e2e:install` | Один раз: Chromium і WebKit для Playwright |
 | `npm run test:e2e` | Збирає, піднімає preview і проганяє Playwright (desktop, mobile, iPhone/WebKit), 3 воркери; WebKit — один |
+| `E2E_BASE_URL=<url> npx playwright test` | Той самий набір проти вже запущеного сайту (контейнер, прод), без збірки й preview |
 
 ## Як влаштовано
 
@@ -48,6 +49,9 @@ src/gl/               WebGL-шар — окремий лінивий чанк з
   shaders/            GLSL
 src/styles/           токени, база, небо й шари (stage.css), шапка, компоненти, глави
 tests/e2e/            Playwright: контент, стоп-лист, шари, клавіатура, axe, сцена, фолбеки
+scripts/ci-e2e.sh     e2e у CI: Chromium, без тестів з тегом @gpu
+Dockerfile, deploy/   образ для хоста: збірка на node:24-alpine → статика на caddy:2, порт 8080
+public/og.jpg         картинка для прев'ю посилань (1200×630, кадр hero)
 ```
 
 - **Шари (знизу вгору):** CSS-небо `.stage` → заголовок hero → прозорий WebGL-канвас `.scene` →
@@ -77,6 +81,10 @@ tests/e2e/            Playwright: контент, стоп-лист, шари, �
   [devops/CONTRIBUTING.md](https://github.com/liora-app/devops/blob/main/CONTRIBUTING.md).
 - Задачі — Issues цього репо + дошка організації «Liora».
 - CI — спільний: [`devops/.github/workflows/reusable-checks.yml`](https://github.com/liora-app/devops/blob/main/.github/workflows/reusable-checks.yml).
-  E2E у CI не запускаються (хвилини Actions) — проганяй `npm run test:e2e` локально перед PR.
-- **Деплой:** merge у `main` → `deploy-dispatch.yml` → деплой у [devops](https://github.com/liora-app/devops) ([ADR-004](https://github.com/liora-app/devops/blob/main/docs/adr/ADR-004-deploy-via-devops-dispatch.md)). Спить, поки `DEPLOY_ENABLED` ≠ `true`;
-  віддачу `dist/` через Caddy ще не підключено (ADR-006).
+  У CI e2e йдуть без GPU: Chromium (desktop і mobile), без тестів з тегом `@gpu` — їм потрібен
+  робочий WebGL2-контекст (`scripts/ci-e2e.sh`). Повний набір — `npm run test:e2e` локально перед PR.
+- **Деплой:** merge у `main` → `deploy-dispatch.yml` → деплой у [devops](https://github.com/liora-app/devops) ([ADR-004](https://github.com/liora-app/devops/blob/main/docs/adr/ADR-004-deploy-via-devops-dispatch.md)).
+  На хості `docker compose up -d --build web-client` збирає `Dockerfile` цього репо; edge-Caddy віддає
+  лендінг на `/`, `/api/*` іде на `server` (ADR-006). Ручний передеплой `main`:
+  `gh workflow run deploy-dispatch.yml -R liora-app/web-client`. Після деплою —
+  `E2E_BASE_URL=https://tryliora.duckdns.org npx playwright test --project=desktop --project=mobile`.

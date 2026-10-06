@@ -5,6 +5,9 @@ import { defineConfig, devices } from '@playwright/test'
 // default headless shell renders WebGL with SwiftShader (which the page treats as "software"
 // and answers with the static backdrop — covered by its own test).
 const PORT = 4173
+// E2E_BASE_URL points the suite at a running site instead (the container, or production after a
+// deploy); then nothing is built or served here.
+const TARGET = process.env.E2E_BASE_URL
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -16,18 +19,20 @@ export default defineConfig({
   retries: 0,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: `http://localhost:${PORT}`,
+    baseURL: TARGET ?? `http://localhost:${PORT}`,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  webServer: {
-    command: 'npm run build && npm run preview',
-    url: `http://localhost:${PORT}`,
-    // Always test a fresh build: a preview left running would serve stale files.
-    // If the port is taken, Playwright fails loudly instead.
-    reuseExistingServer: false,
-    timeout: 120_000,
-  },
+  webServer: TARGET
+    ? undefined
+    : {
+        command: 'npm run build && npm run preview',
+        url: `http://localhost:${PORT}`,
+        // Always test a fresh build: a preview left running would serve stale files.
+        // If the port is taken, Playwright fails loudly instead.
+        reuseExistingServer: false,
+        timeout: 120_000,
+      },
   projects: [
     {
       name: 'desktop',
