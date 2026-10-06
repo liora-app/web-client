@@ -9,6 +9,9 @@ import {
   BufferAttribute,
   BufferGeometry,
   Group,
+  IcosahedronGeometry,
+  InstancedBufferAttribute,
+  InstancedBufferGeometry,
   Mesh,
   NormalBlending,
   type Object3D,
@@ -26,6 +29,7 @@ import { GL_PALETTE, hexToVec3 } from './palette'
 import { PointerTracker } from './pointer'
 import { FrameGovernor, pickTier } from './quality'
 import { ScrollStates, damp } from './scroll'
+import { SOMAS, WAVE_PERIOD, buildNeural } from './neural'
 import { buildShapes } from './shapes'
 import bokehFrag from './shaders/bokeh.frag.glsl?raw'
 import bokehVert from './shaders/bokeh.vert.glsl?raw'
@@ -36,6 +40,8 @@ import glowVert from './shaders/glow.vert.glsl?raw'
 import noise from './shaders/noise.glsl?raw'
 import particlesFrag from './shaders/particles.frag.glsl?raw'
 import particlesVert from './shaders/particles.vert.glsl?raw'
+import somaFrag from './shaders/soma.frag.glsl?raw'
+import somaVert from './shaders/soma.vert.glsl?raw'
 
 export interface SceneCallbacks {
   onFirstFrame(): void
@@ -287,12 +293,15 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
 
   // Particles
   const shapes = buildShapes(tier.particles)
+  // Spike: ?scene=neural swaps the light (state 0) and the threads (state 2) for a neural network.
+  const neural = new URLSearchParams(window.location.search).get('scene') === 'neural' ? buildNeural(shapes) : null
   const geometry = new BufferGeometry()
   geometry.setAttribute('position', new BufferAttribute(shapes.orb, 3))
   geometry.setAttribute('aThread', new BufferAttribute(shapes.thread, 3))
   geometry.setAttribute('aCluster', new BufferAttribute(shapes.cluster, 4))
   geometry.setAttribute('aConstellation', new BufferAttribute(shapes.constellation, 3))
   geometry.setAttribute('aRandom', new BufferAttribute(shapes.random, 4))
+  if (neural) geometry.setAttribute('aNeural', new BufferAttribute(neural.particles, 4))
 
   const particleUniforms = {
     uTime: { value: 0 },
@@ -313,6 +322,7 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
     uCool: { value: hexToVec3(GL_PALETTE.particleCool) },
     uWarm: { value: hexToVec3(GL_PALETTE.particleWarm) },
     uHighlight: { value: hexToVec3(GL_PALETTE.particleHighlight) },
+    uWavePeriod: { value: new Vector2(...WAVE_PERIOD) },
   }
   // Additive + premultiplied: three.js blends (ONE, ONE), the shader keeps rgb <= alpha.
   const particles = new Points(
@@ -321,6 +331,7 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
       uniforms: particleUniforms,
       vertexShader: `${noise}\n${particlesVert}`,
       fragmentShader: particlesFrag,
+      defines: neural ? { NEURAL: 1 } : {},
       transparent: true,
       depthTest: false,
       depthWrite: false,
@@ -331,6 +342,52 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
   particles.frustumCulled = false
   particles.renderOrder = 2
   light.add(particles)
+
+  // Spike: soma bodies as instanced spheres, between the particles and the glass. A child of the
+  // particles, so they turn with them.
+  const P = particleUniforms
+  const somaUniforms = {
+    uTime: P.uTime,
+    uState: P.uState,
+    uBreath: P.uBreath,
+    uWavePeriod: P.uWavePeriod,
+    uAspect: P.uAspect,
+    uBand: P.uBand,
+    uDim: P.uDim,
+    uPointer: P.uPointer,
+    uPointerStrength: P.uPointerStrength,
+    uCool: P.uCool,
+    uWarm: P.uWarm,
+    uHighlight: P.uHighlight,
+    uOpacity: { value: 1 },
+  }
+  let somas: Mesh | null = null
+  if (neural) {
+    const ball = new IcosahedronGeometry(1, 3)
+    const somaGeometry = new InstancedBufferGeometry()
+    somaGeometry.setAttribute('position', ball.getAttribute('position'))
+    somaGeometry.setAttribute('normal', ball.getAttribute('normal'))
+    somaGeometry.setAttribute('aSomaA', new InstancedBufferAttribute(neural.somaA, 4))
+    somaGeometry.setAttribute('aSomaB', new InstancedBufferAttribute(neural.somaB, 4))
+    somaGeometry.setAttribute('aSomaWave', new InstancedBufferAttribute(neural.somaWave, 4))
+    somaGeometry.instanceCount = SOMAS
+    somas = new Mesh(
+      somaGeometry,
+      new ShaderMaterial({
+        uniforms: somaUniforms,
+        vertexShader: somaVert,
+        fragmentShader: somaFrag,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+        blending: AdditiveBlending,
+        premultipliedAlpha: true,
+      }),
+    )
+    somas.frustumCulled = false
+    somas.renderOrder = 3
+    particles.add(somas)
+  }
 
   // Glass shell: a thin rim, no orbit around it — a lamp, not a planet.
   const glassUniforms = {
@@ -593,6 +650,10 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
     particleUniforms.uPointer.value.copy(pointerNow)
     particleUniforms.uPointerStrength.value = pointerStrength * calm
     particleUniforms.uDecide.value = decide
+    if (somas) {
+      somas.visible = state < 2.999 || state > 6.001
+      somaUniforms.uOpacity.value = comp.intensity * fade * calm * (0.15 + 0.85 * intro)
+    }
 
     // The glass opens up as the camera flies into the light and is gone before the next chapter's
     // title reaches it (comp.glass < 0.35); it closes in again for the kept themes and the final.

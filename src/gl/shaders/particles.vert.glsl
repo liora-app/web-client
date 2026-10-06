@@ -27,6 +27,14 @@ attribute vec4 aCluster; // w: 0 = kept thesis, 0.5 = thesis dropped at step 4, 
 attribute vec3 aConstellation;
 attribute vec4 aRandom;
 
+#ifdef NEURAL
+// Spike (?scene=neural, see neural.ts): x, y = state 0 (t, wave offset), z, w = the same for state 2.
+// t: -2 dust, -1 soma halo, 0..1 along an axon, 2..3 along a dendrite.
+attribute vec4 aNeural;
+uniform vec2 uWavePeriod; // axon lengths between two signals (state 0, state 2)
+const float SIGNAL_SPEED = 1.6; // axon lengths per second
+#endif
+
 varying vec3 vColor;
 varying float vAlpha;
 
@@ -63,13 +71,52 @@ vec3 releaseShape(vec3 p, float seed) {
 vec3 shapeFor(float s) {
   if (s < 0.5) return orbShape(position);
   if (s < 1.5) return noiseShape(position);
+#ifdef NEURAL
+  if (s < 2.5) return aThread; // the chain holds still; the signal moves
+#else
   if (s < 2.5) return threadShape(aThread, aRandom.y);
+#endif
   if (s < 3.5) return aCluster.xyz;
   if (s < 4.5) return aConstellation;
   if (s < 5.5) return aCluster.xyz * vec3(0.3, 0.7, 0.7); // the kept theses, gathered into the glass
   if (s < 6.5) return releaseShape(aConstellation, aRandom.x);
   return orbShape(position);
 }
+
+#ifdef NEURAL
+// (t, wave offset) of this particle in state s; t = -3 where s is not a neural state.
+vec2 neuralFor(float s) {
+  if (s < 0.5 || s > 6.5) return aNeural.xy;
+  if (s > 1.5 && s < 2.5) return aNeural.zw;
+  return vec2(-3.0, 0.0);
+}
+
+float periodFor(float s) {
+  return (s > 1.5 && s < 2.5) ? uWavePeriod.y : uWavePeriod.x;
+}
+
+// The signal at this particle, 0..1. The wave leaves each tree level one axon length after the
+// previous one; head = axon lengths since it left this particle's level.
+float signalAt(vec2 n, float period) {
+  if (n.x < -1.5) return 0.0;
+  float head = mod(uTime * SIGNAL_SPEED - n.y, period);
+  if (n.x < -0.5) return 0.45 * exp(-head * 3.0); // soma halo: flashes as the wave arrives
+  if (n.x < 1.5) {
+    float d = head - n.x; // a bright head with a tail
+    return d >= 0.0 ? exp(-d * 5.0) : exp(-d * d * 400.0);
+  }
+  float d = head * 2.5 - (n.x - 2.0); // dendrites light up outward from the soma, fainter
+  return 0.6 * (d >= 0.0 ? exp(-d * 6.0) : exp(-d * d * 400.0));
+}
+
+// The core (state 0) packs the whole network into the glass: same particles, a fraction of the area.
+float neuralAlpha(vec2 n, float s) {
+  float k = (s > 1.5 && s < 2.5) ? 1.0 : 0.22;
+  if (n.x < -0.5) return 0.3 * k;
+  if (n.x < 1.5) return 0.2 * k;
+  return 0.16 * k * (1.0 - 0.6 * (n.x - 2.0)); // thinner toward the dendrite's tip
+}
+#endif
 
 // How visible a particle is in each state (dust = 1 for background specks, line = 1 for
 // particles that draw the constellation's connections). In the light (orb) the outer shell stays
@@ -80,6 +127,10 @@ float orbAlpha(float dust) {
 }
 
 float alphaFor(float s, float dust, float line) {
+#ifdef NEURAL
+  vec2 n = neuralFor(s);
+  if (n.x > -1.5) return neuralAlpha(n, s);
+#endif
   if (s < 0.5) return orbAlpha(dust);
   if (s < 1.5) return 0.42;
   if (s < 2.5) return mix(0.6, 0.22, dust);
@@ -94,7 +145,11 @@ float alphaFor(float s, float dust, float line) {
 // so it is kept small: the light per particle stays the same (see the bokeh divisor in main()).
 float blurFor(float s) {
   if (s > 0.5 && s < 1.5) return 0.5;
+#ifdef NEURAL
+  if (s > 1.5 && s < 2.5) return 0.08;
+#else
   if (s > 1.5 && s < 2.5) return 0.25;
+#endif
   if (s > 5.5 && s < 6.5) return 0.15;
   return 0.0;
 }
@@ -123,6 +178,12 @@ void main() {
   float k = smoothstep(0.0, 1.0, clamp((f - delay) / 0.65, 0.0, 1.0));
 
   vec3 p = mix(shapeFor(s0), shapeFor(s0 + 1.0), k);
+
+#ifdef NEURAL
+  vec2 na = neuralFor(s0);
+  vec2 nb = neuralFor(s0 + 1.0);
+  float signal = mix(signalAt(na, periodFor(s0)), signalAt(nb, periodFor(s0 + 1.0)), k);
+#endif
 
   // Step 4: the two dropped theses drift apart and toward the lens, where the defocus dissolves
   // them into the bokeh. Only around the theses state; the kept three stay where they are.
@@ -154,6 +215,9 @@ void main() {
   float coc = abs(depth - uFocus);
   float bokeh = 1.0 + coc * coc * 0.55 + blur * (0.8 + aRandom.z * 1.6);
   float size = uSize * uSizeScale * sizeRandom * bokeh * uPixelRatio * (6.5 / depth);
+#ifdef NEURAL
+  size *= 1.0 + 0.9 * signal;
+#endif
   gl_PointSize = min(size, min(56.0 * uPixelRatio, uMaxPointSize));
 
   float twinkle = 0.88 + 0.12 * sin(uTime * (0.4 + aRandom.y) + aRandom.x * 40.0);
@@ -173,4 +237,13 @@ void main() {
   base = mix(base, uHighlight, orbness * core * core * 0.6);
   // Clarity (theses, themes) glows warm rather than white.
   vColor = mix(base, mix(uWarm, uHighlight, 0.45), clarity * 0.6);
+
+#ifdef NEURAL
+  float neural = mix(step(-1.5, na.x), step(-1.5, nb.x), k);
+  float body = mix(step(-1.5, na.x) * (1.0 - step(-0.5, na.x)), step(-1.5, nb.x) * (1.0 - step(-0.5, nb.x)), k);
+  vec3 fibre = mix(uCool, uWarm, aRandom.y * 0.35);
+  vColor = mix(vColor, mix(fibre, mix(uWarm, uHighlight, 0.4), body), neural);
+  vColor = mix(vColor, uHighlight, signal);
+  vAlpha *= 1.0 + 4.0 * signal * textMask; // flashes stay calm behind the text, too
+#endif
 }
