@@ -24,6 +24,7 @@ uniform vec3 uWarm;
 uniform vec3 uHighlight;
 uniform float uDecide;    // 0..1: step 4 has been reached, the dropped theses dissolve
 uniform float uFire;      // 0..1: how much signal runs through the network (0 by the crisis contacts)
+uniform float uFlash;     // 0..1: how far a flash may brighten a point (low where the net runs under text)
 uniform vec4 uWavePeriod; // axon lengths between two signals: core, path, theses, diary
 
 attribute vec3 aPath;
@@ -197,7 +198,7 @@ void main() {
   float sizeRandom = mix(0.6, 1.8, aRandom.z * aRandom.z);
   float coc = abs(depth - uFocus);
   float bokeh = 1.0 + coc * coc * 0.55 + blur * (0.8 + aRandom.z * 1.6);
-  float size = uSize * uSizeScale * sizeRandom * bokeh * uPixelRatio * (6.5 / depth) * (1.0 + 0.9 * signal);
+  float size = uSize * uSizeScale * sizeRandom * bokeh * uPixelRatio * (6.5 / depth) * (1.0 + 0.9 * signal * uFlash);
   gl_PointSize = min(size, min(56.0 * uPixelRatio, uMaxPointSize));
 
   float twinkle = 0.88 + 0.12 * sin(uTime * (0.4 + aRandom.y) + aRandom.x * 40.0);
@@ -207,8 +208,8 @@ void main() {
   float inside = smoothstep(-0.12, 0.3, min(ndc.x - uBand.x, uBand.y - ndc.x));
   float textMask = 1.0 - uDim * (1.0 - inside);
 
-  // Flashes stay calm behind the text, too.
-  vAlpha = alpha * twinkle * uIntensity * textMask / (bokeh * bokeh * 0.7 + 0.3) * (1.0 - drop * 0.85) * (1.0 + 4.0 * signal * textMask);
+  // Flashes stay calm behind the text, too: outside the band (textMask) and in one column (uFlash).
+  vAlpha = alpha * twinkle * uIntensity * textMask / (bokeh * bokeh * 0.7 + 0.3) * (1.0 - drop * 0.85) * (1.0 + 4.0 * signal * textMask * uFlash);
 
   float orbness = mix(orbFor(s0), orbFor(s0 + 1.0), k);
   float core = 1.0 - smoothstep(0.25, 0.95, length(position));

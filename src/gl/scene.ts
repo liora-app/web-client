@@ -326,6 +326,7 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
     uPointerStrength: { value: 0 },
     uDecide: { value: 0 },
     uFire: { value: 1 },
+    uFlash: { value: 1 },
     uWavePeriod: { value: new Vector4(...WAVE_PERIOD) },
     uCool: { value: hexToVec3(GL_PALETTE.particleCool) },
     uWarm: { value: hexToVec3(GL_PALETTE.particleWarm) },
@@ -358,6 +359,7 @@ ${particlesVert}`,
     uBreath: particleUniforms.uBreath,
     uDecide: particleUniforms.uDecide,
     uFire: particleUniforms.uFire,
+    uFlash: particleUniforms.uFlash,
     uWavePeriod: particleUniforms.uWavePeriod,
     uAspect: particleUniforms.uAspect,
     uBand: particleUniforms.uBand,
@@ -668,9 +670,15 @@ ${somaVert}`,
     particleUniforms.uPointerStrength.value = pointerStrength * calm
     particleUniforms.uDecide.value = decide
     particleUniforms.uFire.value = comp.fire * calm
+    // One column: the net runs under the reading text in every state but the light (hero, sunrise),
+    // and there is no clear band to keep flashes in, so they stay low there.
+    particleUniforms.uFlash.value = wideLayout ? 1 : 0.3 + 0.7 * comp.glass
     // Release (state 6) has no network: skip the draw call there.
     somas.visible = Math.abs(state - 6) > 0.001
-    somaUniforms.uOpacity.value = comp.intensity * fade * calm * (0.15 + 0.85 * intro)
+    // The bodies cover what is behind them: under the reading text (one column, outside the glass)
+    // they stay faint.
+    const underText = wideLayout ? 1 : 0.45 + 0.55 * comp.glass
+    somaUniforms.uOpacity.value = comp.intensity * fade * calm * (0.15 + 0.85 * intro) * underText
 
     // The glass opens up as the camera flies into the light and is gone before the next chapter's
     // title reaches it (comp.glass < 0.35); it closes in again for the kept themes and the final.

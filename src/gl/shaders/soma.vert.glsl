@@ -6,6 +6,7 @@ uniform float uState;
 uniform float uBreath;
 uniform float uDecide;
 uniform float uFire;
+uniform float uFlash; // see particles.vert.glsl
 uniform vec4 uWavePeriod;
 uniform float uAspect;
 uniform vec2 uBand;
@@ -82,7 +83,7 @@ void main() {
   if (a.w == 0.0) a.xyz = b.xyz;
   if (b.w == 0.0) b.xyz = a.xyz;
   vec4 soma = mix(a, b, k);
-  vFire = mix(a.w > 0.0 ? fireFor(s0) : 0.0, b.w > 0.0 ? fireFor(s0 + 1.0) : 0.0, k) * uFire;
+  vFire = mix(a.w > 0.0 ? fireFor(s0) : 0.0, b.w > 0.0 ? fireFor(s0 + 1.0) : 0.0, k) * uFire * uFlash;
 
   // Step 4: the dropped theses shrink away with their particles.
   soma.w *= 1.0 - aSomaMeta.y * uDecide * (1.0 - min(1.0, abs(uState - 3.0)));
