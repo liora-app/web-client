@@ -1,0 +1,5 @@
+/* Self-hosted variable fonts (OFL-1.1) — no requests to third-party font CDNs.
+   unicode-range lets the browser fetch only the subsets the page uses (Cyrillic + Latin).
+   Martian Mono "standard" carries both axes: weight 100–800 and width (font-stretch) 75–112.5%. */
+@import '@fontsource-variable/onest/wght.css';
+@import '@fontsource-variable/martian-mono/standard.css';

@@ -1,0 +1,277 @@
+/* Type and small building blocks. No cards, no glass panels: structure comes from type,
+   hairlines and space. */
+
+/* ---------- Labels ---------- */
+
+.tag,
+.caption,
+.row__note,
+.mark,
+.said__who,
+.theses__title,
+.log__day,
+.log__tags,
+.weekly__stat dt,
+.flow,
+.final__status,
+.scroll-cue {
+  font-family: var(--font-mono);
+  font-size: var(--step-label);
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.9rem;
+  color: var(--color-text-soft);
+}
+
+/* "[ 01 ] —— Як це працює" */
+.tag__index {
+  color: var(--color-light);
+}
+
+.tag__index::after {
+  content: '';
+  display: inline-block;
+  width: 2.25rem;
+  height: 1px;
+  margin-left: 0.9rem;
+  background: var(--color-line-strong);
+  vertical-align: 0.3em;
+}
+
+.caption {
+  color: var(--color-text-muted);
+}
+
+/* ---------- Display type ---------- */
+
+.display,
+.display-2 {
+  font-family: var(--font-mono);
+  font-weight: 300;
+  font-stretch: 87.5%;
+  text-transform: uppercase;
+  line-height: var(--leading-display);
+  text-wrap: balance;
+  overflow-wrap: break-word;
+}
+
+.display {
+  font-size: var(--display-1);
+  letter-spacing: -0.035em;
+}
+
+.display__line {
+  display: block;
+}
+
+.display-2 {
+  max-width: 18ch;
+  font-size: var(--display-2);
+  letter-spacing: -0.03em;
+}
+
+.lead {
+  max-width: 40rem;
+  font-size: var(--step-1);
+  line-height: 1.6;
+  color: var(--color-text-soft);
+}
+
+/* No lone last word. Hanging one-letter words (в, з, і, а…) are tied with &nbsp; in index.html. */
+.lead,
+.chapter p {
+  text-wrap: pretty;
+}
+
+/* ---------- Links with arrows (no buttons: there is nothing to sign up for) ---------- */
+
+.arrows {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.arrows a,
+.arrow-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--color-text);
+}
+
+.arrows a::before {
+  content: '->';
+  content: '->' / '';
+  color: var(--color-light);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.arrows a:hover::before {
+  transform: translateX(0.3rem);
+}
+
+.arrows a:hover,
+.arrow-link:hover {
+  color: var(--color-light-strong);
+}
+
+/* ---------- Rows: the editorial replacement for card grids ---------- */
+
+.rows {
+  border-bottom: 1px solid var(--color-line);
+}
+
+.row {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.75rem 0;
+  border-top: 1px solid var(--color-line);
+}
+
+.row__index {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--color-light);
+}
+
+.row__title {
+  font-family: var(--font-mono);
+  font-size: var(--step-2);
+  font-weight: 350;
+  font-stretch: 87.5%;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.row__arrow {
+  margin-right: 0.6em;
+  color: var(--color-light);
+}
+
+.row__body {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 44rem;
+  color: var(--color-text-soft);
+}
+
+.row__note {
+  color: var(--color-teal);
+}
+
+@media (min-width: 48em) {
+  .row {
+    grid-template-columns: 3.5rem minmax(0, 0.9fr) minmax(0, 1.1fr);
+    column-gap: 2rem;
+    align-items: baseline;
+    padding: 2.1rem 0;
+  }
+
+  .row:not(:has(.row__index)) {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  }
+}
+
+/* ---------- Small marks ---------- */
+
+/* A state, not a control: a mono label, the chosen one with a lit dot (like the current nav item).
+   Pill shapes on this page are reserved for things that can be pressed. */
+.mark {
+  color: var(--color-text-soft);
+}
+
+.mark--on {
+  color: var(--color-light);
+}
+
+.mark--on::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 0.6em;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+  vertical-align: 0.2em;
+}
+
+/* ---------- Reveal (content is visible by default; the start state needs JS and motion) ---------- */
+
+/* No clip-path here: IntersectionObserver counts the target's own clip, so a fully clipped
+   heading would never be reported as visible. */
+html.js-reveal[data-motion='on'] [data-reveal] {
+  transition:
+    opacity var(--dur-slow) var(--ease-out),
+    transform var(--dur-slow) var(--ease-out);
+}
+
+html.js-reveal[data-motion='on'] [data-reveal]:not(.is-visible) {
+  opacity: 0;
+  transform: translate3d(0, 1.75rem, 0);
+}
+
+html.js-reveal[data-motion='on'] :is(.display, .display-2)[data-reveal]:not(.is-visible) {
+  transform: translate3d(0, 0.45em, 0);
+}
+
+/* Keyboard focus never lands in a hidden or still fading block (src/ui/reveal.ts shows it at once). */
+html.js-reveal[data-motion='on'] [data-reveal]:focus-within {
+  transition: none;
+}
+
+/* Windows High Contrast and similar. Backgrounds are forced to Canvas, so marks drawn with a
+   background get a system colour (system colours are not overridden) or a border instead. */
+@media (forced-colors: active) {
+  .nav-pill::after {
+    display: none;
+  }
+
+  .nav-pill,
+  .help-link,
+  .motion-toggle {
+    border: 1px solid CanvasText;
+  }
+
+  .brand__mark {
+    background: none;
+    box-shadow: none;
+    border: 2px solid LinkText;
+  }
+
+  .motion-toggle__text {
+    display: inline;
+  }
+
+  .motion-toggle__bars span,
+  .hud__rule {
+    background: ButtonText;
+  }
+
+  .nav-pill a[aria-current] {
+    text-decoration: underline;
+    text-underline-offset: 0.4em;
+  }
+
+  .nav-pill a[aria-current]::before,
+  .mark--on::before {
+    display: none;
+  }
+
+  .mark--on {
+    text-decoration: underline;
+  }
+}
