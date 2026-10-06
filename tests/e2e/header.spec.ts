@@ -14,20 +14,32 @@ const COUNT_AUDIO = `(() => {
 
 const audioContexts = (page: Page): Promise<number> => page.evaluate(() => (window as unknown as { __audioContexts: number }).__audioContexts)
 
-// The menu replaces the pill below 85em; on the desktop project (1440 px) look at a laptop width.
+// The menu replaces the section links below 64em; on the desktop project look at a tablet width.
 async function withMenu(page: Page, isMobile: boolean): Promise<void> {
-  if (!isMobile) await page.setViewportSize({ width: 1180, height: 800 })
+  if (!isMobile) await page.setViewportSize({ width: 900, height: 800 })
   await page.goto('/')
 }
 
 test.describe('header', () => {
-  test('wide screens show the sections and «Звук» in the header, no menu', async ({ page }, testInfo) => {
+  test('wide screens show the sections in the header, no menu', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop', 'the 1440 px layout')
     await page.goto('/')
-    await expect(page.locator('.nav-pill')).toBeVisible()
-    await expect(page.locator('.site-header [data-sound-toggle]')).toBeVisible()
+    await expect(page.locator('.site-nav')).toBeVisible()
     await expect(page.locator('[data-menu-open]')).toBeHidden()
-    await expect(page.locator('.help-link__number')).toHaveText(/112/)
+  })
+
+  test('motion and sound share one control, each button named and explained on hover', async ({ page, browserName }) => {
+    test.skip(browserName !== 'chromium', 'Web Audio (and with it «Звук») is checked in Chromium')
+    await page.goto('/')
+    const media = page.getByRole('group', { name: 'Анімація і звук' })
+    await expect(media).toBeVisible()
+    await expect(media.getByRole('button')).toHaveCount(2)
+    const sound = media.locator('[data-sound-toggle]')
+    await expect(sound).toHaveAccessibleName('Звук')
+    await sound.hover()
+    await expect
+      .poll(() => sound.evaluate((button) => getComputedStyle(button, '::after').content))
+      .toBe('"Увімкнути звук"')
   })
 
   test('the menu lists every chapter, closes with Esc and gives focus back', async ({ page, isMobile }) => {
@@ -50,10 +62,6 @@ test.describe('header', () => {
       /Що далі/,
       /Якщо важко/,
     ])
-    // «Звук» shows only where the browser has Web Audio (Playwright's WebKit on Windows does not).
-    const audio = await page.evaluate(() => typeof window.AudioContext === 'function')
-    if (audio) await expect(menu.locator('[data-sound-toggle]')).toBeVisible()
-    else await expect(menu.locator('[data-sound-toggle]')).toBeHidden()
 
     await page.keyboard.press('Escape')
     await expect(menu).toBeHidden()
@@ -86,7 +94,7 @@ test.describe('header', () => {
     await page.setViewportSize({ width: 320, height: 640 })
     await page.goto('/')
     await page.evaluate(() => document.fonts.ready)
-    for (const selector of ['.brand', '.help-link', '.motion-toggle', '[data-menu-open]']) {
+    for (const selector of ['.brand', '.help-link', '.motion-toggle', '.sound-toggle', '[data-menu-open]']) {
       const box = await page.locator(selector).first().boundingBox()
       expect(box, selector).not.toBeNull()
       expect((box?.x ?? 0) + (box?.width ?? 0), selector).toBeLessThanOrEqual(320)
@@ -109,18 +117,9 @@ test.describe('header', () => {
 test.describe('sound', () => {
   test.skip(({ browserName }) => browserName !== 'chromium', 'Web Audio is checked in Chromium')
 
-  // Desktop: the button in the header; phones: the one in the menu.
-  async function pressSound(page: Page, isMobile: boolean): Promise<void> {
-    if (isMobile) {
-      await page.locator('[data-menu-open]').click()
-      await page.locator('[data-menu] [data-sound-toggle]').click()
-      await page.keyboard.press('Escape')
-    } else {
-      await page.locator('.site-header [data-sound-toggle]').click()
-    }
-  }
+  const pressSound = (page: Page): Promise<void> => page.locator('[data-sound-toggle]').click()
 
-  test('sound is off until pressed: no audio before the click, nothing remembered after a reload', async ({ page, isMobile }) => {
+  test('sound is off until pressed: no audio before the click, nothing remembered after a reload', async ({ page }) => {
     await page.addInitScript(COUNT_AUDIO)
     await page.goto('/')
     const html = page.locator('html')
@@ -130,21 +129,21 @@ test.describe('sound', () => {
     expect(await audioContexts(page)).toBe(0)
     await expect(html).toHaveAttribute('data-sound', 'off')
 
-    await pressSound(page, isMobile)
+    await pressSound(page)
     await expect(html).toHaveAttribute('data-sound', 'on')
     expect(await audioContexts(page)).toBe(1)
-    for (const button of await page.locator('[data-sound-toggle]').all()) await expect(button).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('[data-sound-toggle]')).toHaveAttribute('aria-pressed', 'true')
 
     await page.reload()
     await expect(html).toHaveAttribute('data-sound', 'off')
-    await expect(page.locator('[data-sound-toggle]').first()).toHaveAttribute('aria-pressed', 'false')
+    await expect(page.locator('[data-sound-toggle]')).toHaveAttribute('aria-pressed', 'false')
     expect(await audioContexts(page)).toBe(0)
   })
 
-  test('sound goes quiet by the crisis contacts and on pause, then comes back', async ({ page, isMobile }) => {
+  test('sound goes quiet by the crisis contacts and on pause, then comes back', async ({ page }) => {
     await page.goto('/')
     const html = page.locator('html')
-    await pressSound(page, isMobile)
+    await pressSound(page)
     await expect(html).toHaveAttribute('data-sound', 'on')
 
     await centre(page, '#safety')

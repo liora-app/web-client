@@ -43,7 +43,7 @@ export function initMenu(): void {
   })
 
   // Widening the window past the menu's breakpoint leaves no button to come back to: close it.
-  const wide = window.matchMedia('(min-width: 85em)')
+  const wide = window.matchMedia('(min-width: 64em)')
   wide.addEventListener('change', () => {
     if (wide.matches && dialog.open) dialog.close()
   })

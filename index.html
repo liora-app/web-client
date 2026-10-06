@@ -46,28 +46,27 @@
         <span class="brand__name">Liora</span>
       </a>
 
-      <nav class="nav-pill" aria-label="Розділи сторінки">
+      <nav class="site-nav" aria-label="Розділи сторінки">
         <a href="#how" data-nav-link>Як це працює</a>
-        <span class="nav-pill__rule" aria-hidden="true"></span>
         <a href="#privacy" data-nav-link>Приватність</a>
-        <span class="nav-pill__rule" aria-hidden="true"></span>
         <a href="#faq" data-nav-link>Запитання</a>
       </nav>
 
       <div class="site-header__actions">
-        <a class="help-link" href="#safety" data-nav-link>Якщо важко<span class="help-link__number" aria-hidden="true">&nbsp;· 112</span><span class="visually-hidden">: контакти допомоги, 112 і 103</span></a>
-        <button class="motion-toggle" type="button" data-motion-toggle aria-pressed="false" aria-label="Пауза анімації" hidden>
-          <span class="motion-toggle__bars" aria-hidden="true"><span></span><span></span><span></span></span>
-          <span class="motion-toggle__text" aria-hidden="true">Пауза</span>
-        </button>
-        <!-- Shown by src/ui/sound.ts; off on every visit until pressed. -->
-        <button class="sound-toggle" type="button" data-sound-toggle aria-pressed="false" hidden>
-          <span class="sound-toggle__wave" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
-          <span class="sound-toggle__text">Звук</span>
-        </button>
-        <button class="menu-toggle" type="button" data-menu-open aria-haspopup="dialog" aria-controls="site-menu" aria-expanded="false" hidden>
+        <a class="help-link" href="#safety" data-nav-link>Якщо важко<span class="visually-hidden">: контакти допомоги, 112 і 103</span></a>
+        <!-- One control for what moves and what sounds. «Пауза» is required (WCAG 2.2.2); «Звук» is off on
+             every visit until pressed. Both buttons stay hidden without JS (motion.ts, sound.ts). -->
+        <div class="media" role="group" aria-label="Анімація і звук">
+          <button class="media__button motion-toggle" type="button" data-motion-toggle aria-pressed="false" aria-label="Пауза анімації" hidden>
+            <svg class="media__icon motion-toggle__pause" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 3.5v9M11 3.5v9" /></svg>
+            <svg class="media__icon motion-toggle__play" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5.5 3.5l7 4.5-7 4.5z" /></svg>
+          </button>
+          <button class="media__button sound-toggle" type="button" data-sound-toggle aria-pressed="false" aria-label="Звук" hidden>
+            <span class="sound-toggle__wave" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+          </button>
+        </div>
+        <button class="menu-toggle" type="button" data-menu-open aria-haspopup="dialog" aria-controls="site-menu" aria-expanded="false" aria-label="Меню" hidden>
           <span class="menu-toggle__lines" aria-hidden="true"><span></span><span></span></span>
-          <span class="menu-toggle__text">Меню</span>
         </button>
       </div>
     </header>
@@ -90,10 +89,6 @@
       </nav>
       <div class="site-menu__actions">
         <a class="help-link site-menu__help" href="#safety" data-menu-link>Якщо важко: 112, 103</a>
-        <button class="sound-toggle site-menu__sound" type="button" data-sound-toggle aria-pressed="false" hidden>
-          <span class="sound-toggle__wave" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
-          <span class="sound-toggle__text">Звук</span>
-        </button>
       </div>
     </dialog>
 

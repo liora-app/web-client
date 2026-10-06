@@ -236,14 +236,14 @@ html.js-reveal[data-motion='on'] [data-reveal]:focus-within {
 /* Windows High Contrast and similar. Backgrounds are forced to Canvas, so marks drawn with a
    background get a system colour (system colours are not overridden) or a border instead. */
 @media (forced-colors: active) {
-  .nav-pill::after {
-    display: none;
+  .help-link,
+  .media,
+  .menu-toggle {
+    border: 1px solid CanvasText;
   }
 
-  .nav-pill,
-  .help-link,
-  .motion-toggle {
-    border: 1px solid CanvasText;
+  .media__button[aria-pressed='true'] {
+    outline: 2px solid Highlight;
   }
 
   .brand__mark {
@@ -252,21 +252,18 @@ html.js-reveal[data-motion='on'] [data-reveal]:focus-within {
     border: 2px solid LinkText;
   }
 
-  .motion-toggle__text {
-    display: inline;
-  }
-
-  .motion-toggle__bars span,
+  .sound-toggle__wave span,
+  .menu-toggle__lines span,
   .hud__rule {
     background: ButtonText;
   }
 
-  .nav-pill a[aria-current] {
+  .site-nav a[aria-current] {
     text-decoration: underline;
     text-underline-offset: 0.4em;
   }
 
-  .nav-pill a[aria-current]::before,
+  .site-nav a[aria-current]::after,
   .mark--on::before {
     display: none;
   }

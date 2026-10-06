@@ -422,9 +422,11 @@ test.describe('layers', () => {
     await expect(haze).toHaveCSS('animation-name', 'none')
   })
 
-  test('the pause button says what it is on every screen', async ({ page }) => {
+  test('the pause button is visible and named on every screen', async ({ page }) => {
     await page.goto('/')
-    await expect(page.locator('.motion-toggle__text')).toBeVisible()
+    const toggle = page.locator('[data-motion-toggle]')
+    await expect(toggle).toBeVisible()
+    await expect(toggle).toHaveAccessibleName('Пауза анімації')
   })
 
   test('the example session says who is speaking', async ({ page }) => {

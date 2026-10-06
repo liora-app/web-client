@@ -158,8 +158,9 @@ test.describe('WebGL scene', () => {
     await expect(toggle).toHaveAttribute('aria-pressed', 'true')
     await expect(html).toHaveAttribute('data-gl', 'off')
     await expect(html).toHaveAttribute('data-gl-reason', 'user')
-    // Paused looks paused: a lit outline, and smooth scrolling stops too.
-    await expect(toggle).toHaveCSS('border-top-color', 'rgb(238, 242, 238)')
+    // Paused looks paused: the button is lit and offers to play; smooth scrolling stops too.
+    await expect(toggle).toHaveCSS('background-color', 'rgba(238, 242, 238, 0.14)')
+    await expect(toggle.locator('.motion-toggle__play')).toBeVisible()
     await expect(html).toHaveCSS('scroll-behavior', 'auto')
     const frames = (await sceneStats(page)).frames
     await page.waitForTimeout(600)
@@ -285,8 +286,10 @@ test.describe('static backdrop', () => {
     await expect(page.locator('.stage')).toBeHidden()
     await expect(page.locator('.hero__orb')).toBeHidden()
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
-    // The pause button keeps a visible label: its bars are drawn with a background.
-    await expect(page.locator('.motion-toggle__text')).toBeVisible()
+    // The pause button keeps a visible icon: an SVG drawn in currentColor, which forced colours map
+    // to the system button text (backgrounds would be forced to Canvas and vanish).
+    await expect(page.locator('[data-motion-toggle] svg:visible')).toHaveCount(1)
+    await expect(page.locator('[data-motion-toggle]')).toHaveAccessibleName('Пауза анімації')
     expect((await page.locator('.brand').boundingBox())?.width ?? 0).toBeGreaterThan(10)
   })
 
