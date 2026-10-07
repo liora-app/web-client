@@ -75,7 +75,7 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
     talk,
     jump: el('jump'),
     jumpText: el('jump-text'),
-    focusAfterJump: () => (composer.element.hidden ? headingOf(root) : root.querySelector<HTMLElement>('textarea')),
+    focusAfterJump: (fromKeys) => (fromKeys && !composer.element.hidden ? root.querySelector<HTMLElement>('textarea') : headingOf(root)),
   })
   const transcript = new Transcript(talk, {
     onPulse,

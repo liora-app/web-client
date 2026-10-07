@@ -41,8 +41,9 @@ export type AnchorParts = Readonly<{
   talk: HTMLElement
   jump: HTMLElement
   jumpText: HTMLElement
-  /** Where focus goes when the pill it was on disappears (I6: never on body). */
-  focusAfterJump: () => HTMLElement | null
+  /** Where focus goes when the pill it was on disappears (I6: never on body); fromKeys: the pill
+   *  was pressed from the keyboard, not tapped. */
+  focusAfterJump: (fromKeys: boolean) => HTMLElement | null
 }>
 
 const ROOM = 'said--room'
@@ -125,12 +126,21 @@ export function createScrollAnchor(parts: AnchorParts): ScrollAnchor {
     },
     update,
     jumpToEnd() {
+      // The pill hides under the focus it had (a tap focuses it too, on Android Chrome). From the
+      // keyboard focus goes on to the field; from a tap to the screen's h1, since focusing the
+      // field inside a tap would pop the on-screen keyboard.
       const hadFocus = document.activeElement === jump
+      let fromKeys = false
+      try {
+        fromKeys = hadFocus && jump.matches(':focus-visible')
+      } catch {
+        fromKeys = false
+      }
       const last = talk.lastElementChild as HTMLElement | null
       const body = last?.querySelector<HTMLElement>('.said__body') ?? last
       body?.scrollIntoView({ block: 'end', behavior: 'auto' })
       check()
-      if (hadFocus && jump.hidden) parts.focusAfterJump()?.focus({ preventScroll: true })
+      if (hadFocus && jump.hidden) parts.focusAfterJump(fromKeys)?.focus({ preventScroll: true })
     },
     reset() {
       room = null
