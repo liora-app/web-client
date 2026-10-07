@@ -1,0 +1,895 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+    <title>Розмова з AI — Liora</title>
+    <meta name="robots" content="noindex" />
+    <meta name="description" content="Розмова з AI, а не з людиною. Не терапія й не медична допомога." />
+    <meta name="theme-color" content="#040708" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body class="chat-page">
+    <a class="skip-link" href="#main">Перейти до вмісту</a>
+
+    <!-- Layers, back to front: night sky (CSS) · the light in its slot (WebGL or CSS) · vignette · text · header.
+         The canvas lives only in the presence slot, never under a paragraph (ADR-006, spec §3.1). -->
+    <div class="stage" aria-hidden="true">
+      <div class="stage__haze stage__haze--teal"></div>
+      <div class="stage__haze stage__haze--violet"></div>
+      <div class="stage__haze stage__haze--amber"></div>
+      <div class="stage__grain"></div>
+    </div>
+    <div class="vignette" aria-hidden="true"></div>
+
+    <header class="site-header chat-header" data-header>
+      <a class="brand" href="/" data-act="leave-home">
+        <span class="brand__mark" aria-hidden="true"></span>
+        <span class="brand__name">Liora</span>
+      </a>
+
+      <div class="site-header__actions">
+        <!-- Opens the help dialog over the page: a link to /#safety would wipe the conversation. -->
+        <button class="help-link" type="button" data-act="help" aria-haspopup="dialog" aria-controls="help-dialog">Якщо важко<span class="visually-hidden">: контакти допомоги, 112 і 103</span></button>
+        <!-- The landing's control for what moves and what sounds (src/ui/motion.ts, src/ui/sound.ts). -->
+        <div class="media" role="group" aria-label="Анімація і звук">
+          <button class="media__button motion-toggle" type="button" data-motion-toggle aria-pressed="false" aria-label="Пауза анімації" hidden>
+            <svg class="media__icon motion-toggle__pause" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 3.5v9M11 3.5v9" /></svg>
+            <svg class="media__icon motion-toggle__play" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5.5 3.5l7 4.5-7 4.5z" /></svg>
+          </button>
+          <button class="media__button sound-toggle" type="button" data-sound-toggle aria-pressed="false" aria-label="Звук" hidden>
+            <span class="sound-toggle__wave" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+          </button>
+        </div>
+        <!-- Shown only with a session. Same size and place as the landing's «Меню». -->
+        <button class="account-toggle" type="button" data-act="account" aria-haspopup="dialog" aria-controls="account-dialog" aria-label="Акаунт" hidden>
+          <svg class="account-toggle__icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="5.5" r="2.75" /><path d="M2.75 14c.6-2.9 2.7-4.5 5.25-4.5s4.65 1.6 5.25 4.5" /></svg>
+          <span class="account-toggle__word" aria-hidden="true">Акаунт</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="main" class="chat" tabindex="-1" aria-busy="true">
+      <div class="chat__frame">
+        <!-- The light: the AI's place on the page (and later the character's). Decorative; the state is
+             spoken by the live region. -->
+        <aside class="chat__scene" aria-hidden="true">
+          <div class="presence" data-presence="idle">
+            <div class="presence__slot" data-presence-slot>
+              <div class="orb"></div>
+              <canvas class="presence__canvas" data-gl-canvas></canvas>
+            </div>
+            <p class="presence__ai">AI · не людина</p>
+            <p class="presence__state" data-presence-label>Зʼєднуємося</p>
+          </div>
+        </aside>
+
+        <div class="chat__text">
+          <noscript>
+            <p class="noscript">Для розмови з AI потрібен JavaScript. Якщо вам зараз дуже важко — телефонуйте <a href="tel:112">112</a> або <a href="tel:103">103</a>.</p>
+          </noscript>
+
+          <!-- ============ booting ============ -->
+          <section class="screen" data-screen="booting" hidden>
+            <p class="visually-hidden" role="status">Відкриваємо розмову…</p>
+          </section>
+
+          <!-- ============ signed-out ============ -->
+          <section class="screen" data-screen="signed-out" aria-labelledby="signin-title" hidden>
+            <div class="banner" data-el="signin-banner" role="status" tabindex="-1" hidden>
+              <p class="banner__label" data-el="signin-banner-label">Вхід не відбувся</p>
+              <p class="banner__text" data-el="signin-banner-text"></p>
+            </div>
+            <p class="tag">Розмова з AI</p>
+            <h1 class="display-2 screen__title" id="signin-title" tabindex="-1">Розмова з AI, а не з людиною</h1>
+            <p class="lead">Liora — для саморефлексії: AI ставить запитання, а наприкінці пропонує 3–5 коротких тез. Зберегти їх у щоденник чи видалити — вирішуєте ви.</p>
+            <p class="note">Не терапія й не медична допомога.</p>
+            <div class="rows rows--stack">
+              <div class="row">
+                <h2 class="row__title">Поки що — за запрошенням</h2>
+                <div class="row__body">
+                  <p>Liora зараз у закритому тестуванні. Якщо вашої адреси немає в списку тестувальників, після входу ви побачите про це повідомлення, а акаунт не створиться.</p>
+                </div>
+              </div>
+            </div>
+            <p class="screen__actions">
+              <a class="button button--primary" href="/api/v1/auth/google/start?next=/chat/">
+                <svg class="button__icon" viewBox="0 0 18 18" aria-hidden="true" focusable="false"><path d="M15.6 9.2c0-.5 0-1-.1-1.5H9v2.8h3.7a3.3 3.3 0 0 1-1.4 2.1v1.8h2.3c1.3-1.2 2-3 2-5.2Z" /><path d="M9 16c1.9 0 3.5-.6 4.6-1.7l-2.3-1.8c-.6.4-1.4.7-2.3.7-1.8 0-3.3-1.2-3.9-2.8H2.8v1.8A7 7 0 0 0 9 16Z" /><path d="M5.1 10.4a4.2 4.2 0 0 1 0-2.8V5.8H2.8a7 7 0 0 0 0 6.4l2.3-1.8Z" /><path d="M9 4.8c1 0 2 .4 2.7 1.1l2-2A7 7 0 0 0 2.8 5.8l2.3 1.8C5.7 6 7.2 4.8 9 4.8Z" /></svg>
+                Увійти через Google
+              </a>
+            </p>
+            <h2 class="row__title list-title">Що буде далі</h2>
+            <ol class="next" role="list">
+              <li><span class="next__index" aria-hidden="true">01</span><p>Google спитає, яким акаунтом увійти. Від нього ми отримаємо ідентифікатор акаунта й email — без імені, фото, листів, Диска й календаря.</p></li>
+              <li><span class="next__index" aria-hidden="true">02</span><p>Перед першим повідомленням — окремий екран згоди: хто обробляє текст розмови (назва постачальника AI і країна) і що зберігається.</p></li>
+              <li><span class="next__index" aria-hidden="true">03</span><p>Під час входу браузер отримає тимчасовий файл cookie входу (до 20 хвилин), а після входу — файл cookie сесії, щоб ви залишалися в акаунті. Обидва недоступні скриптам сторінки. Реклами й аналітики тут немає.</p></li>
+            </ol>
+            <ul class="arrows" role="list">
+              <li><a href="/">На головну</a></li>
+            </ul>
+            <p class="helpline">Якщо вам зараз дуже важко, не чекайте входу: <a href="tel:112">112</a> або <a href="tel:103">103</a> — цілодобово й безкоштовно.</p>
+          </section>
+
+          <!-- ============ not-invited ============ -->
+          <section class="screen" data-screen="not-invited" hidden>
+            <div class="banner" data-el="ni-banner" role="status" tabindex="-1" hidden>
+              <p class="banner__text" data-el="ni-banner-text"></p>
+            </div>
+            <p class="tag">Доступ за запрошенням</p>
+            <div data-el="ni-guest">
+              <h1 class="display-2 screen__title" tabindex="-1">Поки що вхід — за запрошеннями</h1>
+              <div class="prose">
+                <p>Цієї адреси Google немає в списку тестувальників, або Google не підтвердив її. Ви нічого не зробили не так. Ми нічого не зберегли — ні адреси, ні акаунта.</p>
+                <p>Коли доступ відкриється ширше, про це буде написано на головній сторінці.</p>
+              </div>
+              <p class="screen__actions">
+                <a class="button button--secondary" href="/api/v1/auth/google/start?next=/chat/">Увійти іншим акаунтом</a>
+              </p>
+              <ul class="arrows" role="list">
+                <li><a href="/">На головну</a></li>
+              </ul>
+            </div>
+            <div data-el="ni-member" hidden>
+              <h1 class="display-2 screen__title" tabindex="-1">Розмови з AI для вашого акаунта зараз закриті</h1>
+              <div class="prose">
+                <p>Ви увійшли як <span class="email" data-el="ni-email"></span>. Цієї адреси зараз немає в списку тестувальників, тож розмови з AI і збереження в щоденник недоступні. Те, що вже збережено, на місці: щоденник можна завантажити або видалити разом з акаунтом.</p>
+              </div>
+              <div class="kept" data-el="ni-kept" hidden>
+                <p>Останню дію не виконано. Текст розмови поки що на цій сторінці; якщо закрити її, він зникне.</p>
+                <p class="screen__actions">
+                  <button class="button button--secondary" type="button" data-act="copy" data-el="ni-copy">Скопіювати текст розмови</button>
+                </p>
+                <details class="stale" data-el="ni-details">
+                  <summary>Показати текст розмови</summary>
+                  <ol class="talk talk--stale" aria-label="Розмова" data-el="ni-talk" data-no-stoplist></ol>
+                </details>
+              </div>
+              <p class="screen__actions">
+                <a class="button button--primary" href="/api/v1/export?format=md" download>Завантажити щоденник (.md)</a>
+              </p>
+              <ul class="arrows arrows--row" role="list">
+                <li><a href="/api/v1/export?format=json" download>Файл .json</a></li>
+                <li><button type="button" data-act="account" aria-haspopup="dialog">Акаунт</button></li>
+                <li><button type="button" data-act="logout">Вийти</button></li>
+              </ul>
+            </div>
+            <div class="helpblock">
+              <h2 class="row__title">Якщо ви прийшли, бо зараз важко</h2>
+              <p>Поговорити з людьми можна просто зараз:</p>
+              <ul class="helpblock__list" role="list">
+                <li><a class="helpblock__number" href="tel:112" aria-label="Зателефонувати 112">112</a></li>
+                <li><a class="helpblock__number" href="tel:103" aria-label="Зателефонувати 103">103</a></li>
+                <li>
+                  <a class="helpblock__link" href="https://howareu.com/hot-lines" target="_blank" rel="noopener noreferrer">Гарячі лінії «Ти як?» <span aria-hidden="true">↗</span><span class="visually-hidden">(відкриється в новій вкладці)</span></a>
+                </li>
+              </ul>
+            </div>
+          </section>
+
+          <!-- ============ consent ============ -->
+          <section class="screen" data-screen="consent" aria-labelledby="consent-title" hidden>
+            <div class="banner" data-el="consent-auth" role="status" tabindex="-1" hidden>
+              <p class="banner__text" data-el="consent-auth-text"></p>
+            </div>
+            <div class="banner" data-el="consent-changed" role="status" tabindex="-1" hidden>
+              <p class="banner__text">Умови щойно оновилися. Перегляньте, будь ласка, текст ще раз і підтвердьте.</p>
+            </div>
+            <div class="banner" data-el="consent-resume" role="status" tabindex="-1" hidden>
+              <p class="banner__text">Щоб продовжити, потрібна ваша згода. Розмова на місці — після згоди те, що ви почали, продовжиться само.</p>
+            </div>
+            <p class="tag">Перед розмовою</p>
+            <h1 class="display-2 screen__title" id="consent-title" tabindex="-1">Що відбувається з тим, що ви напишете</h1>
+            <p class="lead">Окремого документа з політикою немає: усе, що про це варто знати, — на цьому екрані. Це займе хвилину.</p>
+
+            <div class="rows rows--stack">
+              <div class="row">
+                <h2 class="row__title">Ви говорите з AI</h2>
+                <div class="row__body">
+                  <p>Відповіді пише штучний інтелект (AI). Людини на тому боці немає. AI може помилятися, неточно зрозуміти вас або сказати щось не так.</p>
+                </div>
+              </div>
+              <div class="row">
+                <h2 class="row__title">Це не терапія</h2>
+                <div class="row__body">
+                  <p>Liora — для саморефлексії. Це не психологічна, не медична й не екстрена допомога: вона не ставить діагнозів і не лікує. Якщо вам зараз дуже важко — <a href="tel:112">112</a> або <a href="tel:103">103</a>, цілодобово й безкоштовно, або <a href="https://howareu.com/hot-lines" target="_blank" rel="noopener noreferrer">гарячі лінії на сторінці «Ти як?»<span class="visually-hidden"> (відкриється в новій вкладці)</span></a>.</p>
+                </div>
+              </div>
+              <div class="row">
+                <h2 class="row__title">Хто обробляє текст розмови</h2>
+                <div class="row__body">
+                  <p>Відповіді й тези створює не наш сервер, а постачальник AI — <span data-el="provider"></span>, <span data-el="country"></span>. Щоб AI міг відповідати, йому щоразу передається текст усієї розмови. Для тез текст передається ще раз — разом із назвами тегів, які найчастіше трапляються у вашому щоденнику, щоб нові теги збігалися зі старими. У сценарії «Повернення до теми» постачальник отримує також назви, тези й теги записів, які ви оберете. Як довго постачальник зберігає ці дані, визначають його умови, а не Liora.</p>
+                  <p>Наш сервер автоматично перевіряє текст на фрази, які можуть свідчити про кризу. У базу даних і журнали він текст розмови не записує.</p>
+                </div>
+              </div>
+              <div class="row">
+                <h2 class="row__title">Що зберігає Liora</h2>
+                <div class="row__body">
+                  <ul class="dash" role="list">
+                    <li>Тези, які ви самі вирішите зберегти: назва, тези, теги.</li>
+                    <li>Ваш email та ідентифікатор Google-акаунта, дату реєстрації й останнього входу.</li>
+                    <li>Входи в акаунт: з якого застосунку, коли створено й коли востаннє використано. Ключ входу зберігаємо у вигляді, з якого його не відновити.</li>
+                    <li>Ваші згоди: яка саме, версія умов, коли дано й коли відкликано.</li>
+                    <li>Технічні журнали сервера без тексту розмов: який запит надійшов і коли, чим завершився, скільки тривав і скільки тексту обробив AI (у токенах). Замість вашого акаунта в них псевдонім. Журнали з часом перезаписуються.</li>
+                    <li>Після видалення акаунта — його номер і дата видалення, щоб видалення не скасувалося при відновленні даних із резервної копії.</li>
+                    <li>У вашому браузері — файл cookie сесії (скриптам сторінки він недоступний) і ваш вибір паузи анімації та фону.</li>
+                  </ul>
+                  <p class="row__sum">Повного тексту розмови на сервері Liora немає. Він живе на цій сторінці, поки вона відкрита.</p>
+                </div>
+              </div>
+              <div class="row">
+                <h2 class="row__title">Як видалити</h2>
+                <div class="row__body">
+                  <p>Акаунт разом з усім щоденником — у меню «Акаунт», однією кнопкою, без листів до нас. Там само можна завантажити щоденник у файл і відкликати будь-яку згоду.</p>
+                </div>
+              </div>
+            </div>
+
+            <p class="consent__missing" data-el="consent-no-provider" role="alert" hidden>Не вдалося завантажити дані про постачальника AI, а без них погодитися неможливо.</p>
+            <fieldset class="checks" data-el="consent-checks">
+              <legend class="checks__legend">Ваша згода — окремо на кожен пункт</legend>
+              <label class="check">
+                <input type="checkbox" data-kind="data_processing" aria-describedby="consent-alert" />
+                <span class="check__text">Я погоджуюся, щоб Liora обробляла мої дані, як описано вище, і зберігала тези, які я вирішу зберегти.<span class="check__granted" data-granted="data_processing" hidden></span></span>
+              </label>
+              <label class="check">
+                <input type="checkbox" data-kind="llm_transfer" aria-describedby="consent-alert" />
+                <span class="check__text">Я погоджуюся, щоб текст моїх розмов передавався постачальнику AI — <span data-el="provider"></span>, <span data-el="country"></span> — для відповідей і тез.<span class="check__granted" data-granted="llm_transfer" hidden></span></span>
+              </label>
+              <label class="check">
+                <input type="checkbox" data-kind="age_18" aria-describedby="consent-alert" />
+                <span class="check__text">Мені виповнилося 18 років.<span class="check__granted" data-granted="age_18" hidden></span></span>
+              </label>
+              <p class="field-error" id="consent-alert" data-el="consent-alert" role="alert"></p>
+            </fieldset>
+            <p class="screen__actions" data-el="consent-actions">
+              <button class="button button--primary" type="button" data-act="consent-agree" data-el="consent-agree">Погоджуюся — почати</button>
+              <button class="button button--secondary" type="button" data-act="consent-reload" data-el="consent-reload" hidden>Спробувати ще раз</button>
+            </p>
+            <p class="field-error" data-el="consent-error" role="alert"></p>
+            <ul class="arrows" role="list">
+              <li><button type="button" data-act="consent-later" aria-expanded="false" aria-controls="consent-later">Не зараз</button></li>
+            </ul>
+            <div class="later" id="consent-later" data-el="consent-later" hidden>
+              <p>Без цих згод розмова з AI неможлива. Під час входу ми вже створили акаунт: зберегли ваш email та ідентифікатор Google. Якщо не хочете продовжувати, акаунт можна одразу видалити.</p>
+              <p class="screen__actions">
+                <button class="button button--danger" type="button" data-act="delete-account">Видалити акаунт</button>
+                <button class="button button--secondary" type="button" data-act="logout">Вийти</button>
+              </p>
+              <p class="field-error" data-el="consent-op-error" role="alert"></p>
+              <ul class="arrows" role="list">
+                <li><a href="/" data-act="leave-home">На головну</a></li>
+              </ul>
+            </div>
+            <p class="small">Версія умов від <span data-el="consent-version"></span></p>
+          </section>
+
+          <!-- ============ chat: a new conversation, then the conversation ============ -->
+          <section class="screen screen--chat" data-screen="chat" aria-labelledby="chat-title" hidden>
+            <h1 class="visually-hidden" id="chat-title" tabindex="-1">Розмова з AI</h1>
+
+            <div class="session" data-el="session" hidden>
+              <span class="orb orb--mini" aria-hidden="true"></span>
+              <div class="session__who">
+                <p class="session__label">AI · <span data-el="session-title"></span><span data-el="session-nosave" hidden> · Не зберігати</span></p>
+                <p class="session__sub">Не людина · не терапія</p>
+              </div>
+              <button class="button button--secondary button--small session__end" type="button" data-act="end" aria-haspopup="dialog" data-el="session-end" hidden>
+                <span class="wide-only">Завершити розмову</span><span class="narrow-only">Завершити</span>
+              </button>
+            </div>
+
+            <div class="compose-head" data-el="compose-head">
+              <div class="banner" data-el="chat-auth" role="status" tabindex="-1" hidden>
+                <p class="banner__text" data-el="chat-auth-text"></p>
+              </div>
+              <p class="tag">Нова розмова</p>
+              <p class="after-crisis" data-el="after-crisis" hidden>Якщо важко — <a href="tel:112">112</a> або <a href="tel:103">103</a>. Контакти завжди є вгорі: «Якщо важко».</p>
+              <fieldset class="scenarios" data-el="scenarios">
+                <legend class="scenarios__legend">З чого почнемо?</legend>
+                <div class="scenarios__list" data-el="scenario-list"></div>
+              </fieldset>
+              <p class="scenarios__failed" data-el="scenarios-failed" hidden>
+                Інші сценарії зараз не завантажилися.
+                <span class="arrows arrows--inline"><button type="button" data-act="scenarios-retry">Спробувати ще раз</button></span>
+              </p>
+              <div class="scenario-about">
+                <p class="scenario-about__text" data-el="scenario-text"></p>
+                <p class="flow" data-el="scenario-flow" hidden>Тригер → реакція → інший погляд</p>
+                <p class="scenario-about__chosen" data-el="revisit-chosen" hidden>Ви повертаєтеся до: <span data-el="revisit-names"></span></p>
+                <ul class="arrows" role="list" data-el="revisit-actions" hidden>
+                  <li><button type="button" data-act="revisit-open" aria-haspopup="dialog" data-el="revisit-open">Обрати записи</button></li>
+                  <li><button type="button" data-act="diary-retry" data-el="diary-retry" hidden>Спробувати ще раз</button></li>
+                  <li><button type="button" data-act="start-free" data-el="revisit-free" hidden>Почати вільну розмову</button></li>
+                </ul>
+              </div>
+            </div>
+
+            <ol class="talk" aria-label="Розмова" data-el="talk" data-no-stoplist></ol>
+
+            <div class="nosave" data-el="nosave">
+              <button class="switch" type="button" role="switch" aria-checked="false" data-act="no-save" aria-describedby="nosave-hint">
+                <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+                <span class="switch__label">Не зберігати цю розмову</span>
+                <span class="switch__state" aria-hidden="true" data-el="nosave-state">Вимкнено</span>
+              </button>
+              <p class="nosave__hint" id="nosave-hint">Тези наприкінці можна буде переглянути, але не зберегти. Повного тексту розмови сервер Liora не зберігає в жодному разі.</p>
+            </div>
+
+            <p class="chat-line" data-el="chat-line" role="status" hidden></p>
+
+            <div class="block" data-el="chat-block" hidden>
+              <p class="block__text" data-el="chat-block-text"></p>
+              <p class="screen__actions">
+                <button class="button button--primary" type="button" data-act="summarize" data-el="block-summarize">Підсумувати</button>
+                <button class="button button--secondary" type="button" data-act="end-no-theses" aria-haspopup="dialog" data-el="block-end">Завершити без тез</button>
+              </p>
+              <ul class="arrows" role="list" data-el="block-free" hidden>
+                <li><button type="button" data-act="start-free">Почати вільну розмову</button></li>
+              </ul>
+            </div>
+
+            <div class="composer" data-el="composer">
+              <button class="jump" type="button" data-act="jump-end" aria-label="Прокрутити до кінця розмови" data-el="jump" hidden>↓ <span data-el="jump-text">Далі відповідь</span></button>
+              <label class="visually-hidden" for="composer-input">Ваше повідомлення для AI</label>
+              <div class="composer__field">
+                <textarea class="composer__input" id="composer-input" rows="1" autocomplete="off" placeholder="Пишіть так, як думаєте…" aria-describedby="composer-note"></textarea>
+                <button class="composer__send" type="button" aria-label="Надіслати" aria-disabled="true" data-el="composer-send">
+                  <svg class="composer__arrow" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 15.5v-11M5.5 9 10 4.5 14.5 9" /></svg>
+                  <svg class="composer__stop" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="6" y="6" width="8" height="8" rx="1" /></svg>
+                </button>
+              </div>
+              <p class="composer__status" data-el="composer-status" role="status"></p>
+              <div class="composer__meta">
+                <p class="composer__ai">AI, не людина · може помилятися · не терапія</p>
+                <p class="composer__keys" id="composer-keys">Enter — надіслати · Shift+Enter — новий рядок</p>
+                <p class="composer__count" data-el="composer-count" aria-hidden="true"></p>
+              </div>
+              <p class="composer__note" id="composer-note">
+                <span class="wide-only">Liora не зберігає цю розмову: якщо закрити чи оновити сторінку, текст зникне. Текст обробляє <span data-el="provider"></span>, <span data-el="country"></span>.</span>
+                <span class="narrow-only">Liora не зберігає розмову: закриєте сторінку — текст зникне.</span>
+              </p>
+            </div>
+          </section>
+
+          <!-- ============ session-expired ============ -->
+          <section class="screen" data-screen="session-expired" aria-labelledby="expired-title" hidden>
+            <h1 class="visually-hidden" id="expired-title" tabindex="-1">Вхід завершився</h1>
+            <ol class="talk talk--stale" aria-label="Розмова" data-el="expired-talk" data-no-stoplist></ol>
+            <div class="block">
+              <p class="block__label">Вхід завершився</p>
+              <p class="block__text">Вхід в акаунт завершився — наприклад, якщо ви вийшли в іншій вкладці. Щоб продовжити, треба увійти знову. Вхід перезавантажить сторінку, і ця розмова зникне: Liora її не зберігає.</p>
+              <p class="screen__actions">
+                <button class="button button--primary" type="button" data-act="relogin" aria-haspopup="dialog">Увійти знову</button>
+                <button class="button button--secondary" type="button" data-act="copy" data-el="expired-copy">Скопіювати текст розмови</button>
+              </p>
+            </div>
+          </section>
+
+          <!-- ============ crisis (spec §6): the numbers come first ============ -->
+          <section class="screen screen--crisis" data-screen="crisis" aria-labelledby="crisis-title" hidden>
+            <p class="tag tag--light">Розмову зупинено</p>
+            <h1 class="display-2 crisis__title" id="crisis-title" tabindex="-1">Якщо вам зараз дуже важко</h1>
+            <p class="crisis__lead" data-el="crisis-lead" data-no-stoplist>Схоже, зараз вам дуже важко. Ви не мусите проходити через це наодинці. Будь ласка, зверніться до людей, які можуть допомогти просто зараз.</p>
+            <ul class="help" role="list">
+              <li class="help__item">
+                <a class="help__number" href="tel:112" aria-label="Зателефонувати 112">112</a>
+                <p><strong>Екстрені служби.</strong> Цілодобово, безкоштовно. Працює в Україні та в усіх країнах ЄС.</p>
+              </li>
+              <li class="help__item">
+                <a class="help__number" href="tel:103" aria-label="Зателефонувати 103">103</a>
+                <p><strong>Швидка медична допомога.</strong> Цілодобово, безкоштовно.</p>
+              </li>
+            </ul>
+            <div class="lines" data-el="crisis-lines-block" hidden>
+              <h2 class="row__title">Лінії підтримки</h2>
+              <ul class="lines__list" role="list" data-el="crisis-lines" data-no-stoplist></ul>
+            </div>
+            <div class="abroad">
+              <p data-el="crisis-abroad" data-no-stoplist>За кордоном: у країнах ЄС працює 112. Номери ліній підтримки в інших країнах — на сторінці «Ти як?».</p>
+              <a class="help__link" href="https://howareu.com/hot-lines" target="_blank" rel="noopener noreferrer">
+                Гарячі лінії «Ти як?»
+                <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M7 5h8v8M15 5 5.5 14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" fill="none" /></svg>
+                <span class="visually-hidden">(відкриється в новій вкладці)</span>
+              </a>
+            </div>
+            <div class="prose crisis__notes">
+              <p class="crisis__check">Розмову зупинено автоматично: у ній трапилися слова, які можуть свідчити про кризу. Ця перевірка може помилятися. Але якщо вам зараз справді важко — будь ласка, не залишайтеся з цим наодинці.</p>
+              <p>AI не людина: він не бачить вас і не може викликати допомогу. Якщо комусь загрожує небезпека — телефонуйте 112.</p>
+              <p>Продовжити цю розмову не вийде, і тези для неї не створюватимуться. Liora цю розмову не зберігає.</p>
+            </div>
+            <details class="stale" data-el="crisis-details">
+              <summary>Показати текст розмови</summary>
+              <ol class="talk talk--stale" aria-label="Розмова" data-el="crisis-talk" data-no-stoplist></ol>
+            </details>
+            <p class="small">Якщо вам зараз небезпечно, спершу зателефонуйте 112.</p>
+            <ul class="arrows arrows--row" role="list">
+              <li><button type="button" data-act="new-after-crisis" aria-haspopup="dialog">Почати нову розмову</button></li>
+              <li><a href="/">На головну</a></li>
+            </ul>
+          </section>
+
+          <!-- ============ summarizing ============ -->
+          <section class="screen" data-screen="summarizing" aria-labelledby="summarizing-title" hidden>
+            <p class="tag">Тези</p>
+            <h1 class="display-2 screen__title" id="summarizing-title" tabindex="-1">AI складає тези</h1>
+            <div class="prose">
+              <p>Зазвичай це до пів хвилини. Для цього текст розмови ще раз передається постачальнику AI. Розмова на місці: якщо скасуєте, повернетеся до неї.</p>
+              <p data-el="sum-long" hidden>Іноді це триває до двох хвилин.</p>
+            </div>
+            <ol class="skeleton" role="list" aria-hidden="true">
+              <li>01 —</li>
+              <li>02 —</li>
+              <li>03 —</li>
+            </ol>
+            <p class="status-line" data-el="sum-status" role="status"></p>
+            <p class="small" data-el="sum-request-id" hidden></p>
+            <p class="screen__actions" data-el="sum-retry-actions" hidden>
+              <button class="button button--primary" type="button" data-act="summarize-retry" data-el="sum-retry">Скласти ще раз</button>
+              <button class="button button--secondary" type="button" data-act="end-no-theses" aria-haspopup="dialog" data-el="sum-end-button" hidden>Завершити без тез</button>
+            </p>
+            <ul class="arrows" role="list">
+              <li data-el="sum-cancel"><button type="button" data-act="summarize-cancel">Скасувати й повернутися до розмови</button></li>
+              <li data-el="sum-back" hidden><button type="button" data-act="summarize-cancel">Повернутися до розмови</button></li>
+              <li data-el="sum-end" hidden><button type="button" data-act="end-no-theses" aria-haspopup="dialog">Завершити без тез</button></li>
+            </ul>
+          </section>
+
+          <!-- ============ review (spec §7.2): edit in place ============ -->
+          <section class="screen" data-screen="review" aria-labelledby="review-title" hidden>
+            <p class="tag">Тези · чернетка від AI</p>
+            <h1 class="display-2 screen__title" id="review-title" tabindex="-1">Перегляньте тези</h1>
+            <p class="lead">Ці тези написав AI за вашою розмовою. Він може помилитися або сказати не вашими словами. Виправте чи приберіть усе, що не про вас, — у щоденник потрапить лише те, що ви залишите й збережете.</p>
+
+            <div class="field field--title">
+              <label class="field__label" for="review-title-input">Назва</label>
+              <input class="field__input field__input--title" id="review-title-input" type="text" autocomplete="off" data-el="review-title" aria-describedby="review-title-error" />
+              <p class="field__count" data-el="review-title-count" aria-hidden="true"></p>
+              <p class="field-error" id="review-title-error" data-el="review-title-error"></p>
+            </div>
+
+            <fieldset class="theses">
+              <legend class="field__label">Тези</legend>
+              <ol class="theses__list" role="list" data-el="review-bullets"></ol>
+              <p class="field-error" data-el="review-bullets-error"></p>
+              <ul class="arrows" role="list" data-el="review-add-wrap">
+                <li><button type="button" data-act="bullet-add">+ Додати тезу</button></li>
+              </ul>
+            </fieldset>
+
+            <fieldset class="tags">
+              <legend class="field__label">Теги</legend>
+              <ul class="tags__list" role="list" data-el="review-tags"></ul>
+              <p class="tags__none" data-el="review-tags-none" hidden>Тегів немає</p>
+              <div class="tags__add">
+                <label class="visually-hidden" for="review-tag-input">Новий тег</label>
+                <input class="field__input field__input--tag" id="review-tag-input" type="text" autocomplete="off" placeholder="наприклад, робота" aria-describedby="review-tag-hint review-tag-error" data-el="review-tag-input" />
+                <button class="button button--secondary" type="button" data-act="tag-add">Додати</button>
+              </div>
+              <p class="small" id="review-tag-hint">До 10 тегів, кожен до 40 символів.</p>
+              <p class="field-error" id="review-tag-error" data-el="review-tag-error" role="status"></p>
+            </fieldset>
+
+            <p class="review__nosave" data-el="review-nosave" hidden>Увімкнено «не зберігати»: ці тези зникнуть, щойно ви закриєте сторінку.</p>
+            <div class="review__actions">
+              <button class="button button--primary" type="button" data-act="review-save" data-el="review-save">Зберегти в щоденник</button>
+              <button class="button button--primary" type="button" data-act="review-done" data-el="review-done" hidden>Готово</button>
+              <button class="button button--secondary" type="button" data-act="copy-theses" data-el="review-copy" hidden>Скопіювати тези</button>
+              <button class="button button--secondary" type="button" data-act="review-discard" aria-haspopup="dialog" data-el="review-discard">Видалити тези</button>
+            </div>
+            <p class="field-error" data-el="review-error" role="alert"></p>
+            <ul class="arrows" role="list">
+              <li><button type="button" data-act="review-regenerate" aria-haspopup="dialog">Скласти заново</button></li>
+              <li><button type="button" data-act="review-back">Повернутися до розмови</button></li>
+            </ul>
+            <p class="small small--muted">Повного тексту розмови Liora не зберігає — ні коли ви зберігаєте тези, ні коли видаляєте.</p>
+          </section>
+
+          <!-- ============ saved ============ -->
+          <section class="screen" data-screen="saved" aria-labelledby="saved-title" hidden>
+            <p class="tag mark mark--on">Збережено в щоденник</p>
+            <h1 class="display-2 screen__title" id="saved-title" tabindex="-1">Тези у вашому щоденнику</h1>
+            <article class="record">
+              <p class="record__date" data-el="saved-date"></p>
+              <h2 class="record__title" data-el="saved-title"></h2>
+              <ol class="record__bullets" role="list" data-el="saved-bullets"></ol>
+              <p class="record__tags" data-el="saved-tags"></p>
+            </article>
+            <div class="prose">
+              <p>Розмову завершено. Повного тексту розмови на сервері Liora немає, а з цієї сторінки його вже прибрано.</p>
+              <p>Сторінка щоденника на вебі зʼявиться пізніше. Поки що всі записи можна завантажити файлом:</p>
+            </div>
+            <ul class="arrows" role="list">
+              <li><a href="/api/v1/export?format=md" download>Завантажити щоденник (.md)</a></li>
+            </ul>
+            <p class="quiet">Добре, що ви знайшли на це час.</p>
+            <p class="screen__actions">
+              <button class="button button--primary" type="button" data-act="new-chat">Почати нову розмову</button>
+            </p>
+            <ul class="arrows" role="list">
+              <li><a href="/">На головну</a></li>
+            </ul>
+          </section>
+
+          <!-- ============ ended ============ -->
+          <section class="screen" data-screen="ended" aria-labelledby="ended-title" hidden>
+            <p class="tag">Розмову завершено</p>
+            <h1 class="display-2 screen__title" id="ended-title" tabindex="-1">У щоденник нічого не потрапило</h1>
+            <div class="prose">
+              <p>У Liora немає ні тексту цієї розмови, ні тез, ні запису в щоденнику. Текст розмови прибрано з цієї сторінки.</p>
+            </div>
+            <p class="quiet">Добре, що ви знайшли на це час. Якщо після розмови стало важче — <a href="tel:112">112</a>, <a href="tel:103">103</a> або <a href="https://howareu.com/hot-lines" target="_blank" rel="noopener noreferrer">гарячі лінії «Ти як?»<span class="visually-hidden"> (відкриється в новій вкладці)</span></a>.</p>
+            <p class="screen__actions">
+              <button class="button button--primary" type="button" data-act="new-chat">Почати нову розмову</button>
+            </p>
+            <ul class="arrows" role="list">
+              <li><a href="/">На головну</a></li>
+            </ul>
+          </section>
+
+          <!-- ============ account-deleted ============ -->
+          <section class="screen" data-screen="account-deleted" aria-labelledby="deleted-title" hidden>
+            <p class="tag">Акаунт видалено</p>
+            <h1 class="display-2 screen__title" id="deleted-title" tabindex="-1">Акаунт видалено</h1>
+            <div class="prose">
+              <p data-el="deleted-confirmed">Ми видалили ваш щоденник, згоди, входи на всіх пристроях, email та ідентифікатор Google. Файл cookie сесії прибрано з цього браузера.</p>
+              <p data-el="deleted-presumed" hidden>Схоже, акаунт уже видалено: сесії на сервері більше немає. Якщо увійдете знову, це буде новий, порожній акаунт.</p>
+              <p>Те, що під час розмов отримав постачальник AI, зберігається за його умовами.</p>
+              <p data-el="deleted-again">Якщо захочете повернутися, увійдіть знову — це буде новий, порожній акаунт.</p>
+            </div>
+            <ul class="arrows" role="list">
+              <li><a href="/">На головну</a></li>
+            </ul>
+            <p class="helpline">Якщо вам зараз дуже важко, не чекайте входу: <a href="tel:112">112</a> або <a href="tel:103">103</a> — цілодобово й безкоштовно.</p>
+          </section>
+
+          <!-- ============ fatal ============ -->
+          <section class="screen" data-screen="fatal" aria-labelledby="fatal-title" hidden>
+            <p class="tag">Немає зʼєднання</p>
+            <h1 class="display-2 screen__title" id="fatal-title" tabindex="-1">Не вдалося зʼєднатися з Liora</h1>
+            <div class="prose">
+              <p data-el="fatal-online">Сервер не відповідає. Перевірте інтернет або спробуйте за хвилину.</p>
+              <p data-el="fatal-offline" hidden>Схоже, немає інтернету. Коли зʼєднання повернеться, спробуйте ще раз.</p>
+              <p>Розмова ще не почалася — нічого не втрачено.</p>
+            </div>
+            <p class="small" data-el="fatal-request-id" hidden></p>
+            <p class="screen__actions">
+              <button class="button button--primary" type="button" data-act="retry-boot">Спробувати ще раз</button>
+            </p>
+            <ul class="arrows" role="list">
+              <li><a href="/">На головну</a></li>
+            </ul>
+            <p class="helpline">Якщо вам зараз дуже важко — <a href="tel:112">112</a> або <a href="tel:103">103</a>. Ці номери працюють і без інтернету.</p>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <!-- One polite live region for the whole page (spec §5.7): at most two updates a turn. -->
+    <div class="visually-hidden" role="status" aria-live="polite" data-announcer></div>
+
+    <!-- ============ Dialogs: native <dialog> + showModal(), no <form> ============ -->
+
+    <dialog class="sheet sheet--help" id="help-dialog" aria-labelledby="help-dialog-title" data-dialog="help">
+      <div class="sheet__head">
+        <p class="sheet__kicker">Якщо важко</p>
+        <button class="sheet__close" type="button" data-act="close">Закрити</button>
+      </div>
+      <h2 class="sheet__title" id="help-dialog-title">Якщо вам зараз дуже важко</h2>
+      <p>Зверніться до людей, які можуть допомогти просто зараз. В Україні 112 і 103 працюють цілодобово й безкоштовно.</p>
+      <ul class="help help--dialog" role="list">
+        <li class="help__item">
+          <a class="help__number" href="tel:112" aria-label="Зателефонувати 112">112</a>
+          <p><strong>Екстрені служби.</strong> Цілодобово, безкоштовно. Працює в Україні та в усіх країнах ЄС.</p>
+        </li>
+        <li class="help__item">
+          <a class="help__number" href="tel:103" aria-label="Зателефонувати 103">103</a>
+          <p><strong>Швидка медична допомога.</strong> Цілодобово, безкоштовно.</p>
+        </li>
+      </ul>
+      <a class="help__link" href="https://howareu.com/hot-lines" target="_blank" rel="noopener noreferrer">
+        Гарячі лінії «Ти як?»
+        <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M7 5h8v8M15 5 5.5 14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" fill="none" /></svg>
+        <span class="visually-hidden">(відкриється в новій вкладці)</span>
+      </a>
+      <div class="lines" data-el="help-lines-block" hidden>
+        <h3 class="row__title">Лінії підтримки</h3>
+        <ul class="lines__list" role="list" data-el="help-lines" data-no-stoplist></ul>
+      </div>
+      <p class="sheet__kept" data-el="help-kept" hidden>Ваша розмова на сторінці нікуди не зникла — закрийте це вікно, щоб повернутися до неї.</p>
+    </dialog>
+
+    <dialog class="sheet sheet--side" id="account-dialog" aria-labelledby="account-dialog-title" data-dialog="account">
+      <div class="sheet__head">
+        <h2 class="sheet__kicker" id="account-dialog-title">Акаунт</h2>
+        <button class="sheet__close" type="button" data-act="close">Закрити</button>
+      </div>
+      <div class="sheet__rows">
+        <div class="sheet__row">
+          <h3 class="sheet__label">Ви увійшли як</h3>
+          <p class="email" data-el="account-email"></p>
+        </div>
+        <div class="sheet__row">
+          <h3 class="sheet__label">Щоденник</h3>
+          <p>Завантажте всі збережені тези файлом.</p>
+          <ul class="arrows arrows--row" role="list">
+            <li><a href="/api/v1/export?format=md" download>Файл .md</a></li>
+            <li><a href="/api/v1/export?format=json" download>Файл .json</a></li>
+          </ul>
+          <p class="small">Файл збережеться на цей пристрій.</p>
+        </div>
+        <div class="sheet__row">
+          <h3 class="sheet__label">Згоди</h3>
+          <ul class="grants" role="list">
+            <li class="grants__item">
+              <p>Обробка даних — <span data-grant-date="data_processing"></span></p>
+              <span class="arrows arrows--inline"><button type="button" data-act="revoke" data-kind="data_processing" aria-haspopup="dialog">Відкликати</button></span>
+            </li>
+            <li class="grants__item">
+              <p>Передача тексту <span data-el="provider"></span> — <span data-grant-date="llm_transfer"></span></p>
+              <span class="arrows arrows--inline"><button type="button" data-act="revoke" data-kind="llm_transfer" aria-haspopup="dialog">Відкликати</button></span>
+            </li>
+            <li class="grants__item">
+              <p>Мені виповнилося 18 років — <span data-grant-date="age_18"></span></p>
+              <span class="arrows arrows--inline"><button type="button" data-act="revoke" data-kind="age_18" aria-haspopup="dialog">Відкликати</button></span>
+            </li>
+          </ul>
+        </div>
+        <div class="sheet__row">
+          <button class="button button--secondary" type="button" data-act="logout">Вийти</button>
+          <p class="field-error" data-el="account-op-error" role="alert"></p>
+        </div>
+        <div class="sheet__row sheet__row--danger">
+          <span class="arrows arrows--inline arrows--danger"><button type="button" data-act="delete-account" aria-haspopup="dialog">Видалити акаунт…</button></span>
+        </div>
+      </div>
+      <p class="sheet__note">Ви розмовляєте з AI, а не з людиною. Не терапія й не медична допомога.</p>
+    </dialog>
+
+    <dialog class="sheet sheet--pick" id="pick-dialog" aria-labelledby="pick-dialog-title" data-dialog="revisit-pick">
+      <div class="sheet__head">
+        <p class="sheet__kicker">Повернення до теми</p>
+        <button class="sheet__close" type="button" data-act="close">Закрити</button>
+      </div>
+      <div class="banner" data-el="pick-gone" hidden>
+        <p class="banner__text">Одного з обраних записів уже немає в щоденнику. Оберіть, будь ласка, ще раз.</p>
+      </div>
+      <h2 class="sheet__title" id="pick-dialog-title">До яких записів повернутися?</h2>
+      <p>Оберіть від 1 до 5. Їхні назви, тези й теги AI отримає разом із розмовою — а отже, і постачальник AI, як сказано в згоді.</p>
+      <p class="status-line" data-el="pick-status" role="status"></p>
+      <ul class="pick__list" role="list" data-el="pick-list" data-no-stoplist></ul>
+      <ul class="arrows" role="list" data-el="pick-more" hidden>
+        <li><button type="button" data-act="revisit-more">Показати ще</button></li>
+      </ul>
+      <p class="pick__count"><span data-el="pick-count">Обрано 0 з 5</span> <span data-el="pick-max" hidden>Можна обрати до 5.</span></p>
+      <p class="field-error" data-el="pick-error" role="alert"></p>
+      <p class="screen__actions">
+        <button class="button button--primary" type="button" data-act="revisit-confirm" data-el="pick-confirm">Продовжити (0)</button>
+      </p>
+      <ul class="arrows" role="list">
+        <li><button type="button" data-act="close">Скасувати</button></li>
+      </ul>
+    </dialog>
+
+    <!-- One confirm dialog; its content comes from the template of its kind (data-confirm). -->
+    <dialog class="confirm" id="confirm-dialog" aria-labelledby="confirm-title" data-dialog="confirm">
+      <div class="confirm__body" data-el="confirm-body"></div>
+    </dialog>
+
+    <!-- ============ Templates (cloned, then filled through textContent only) ============ -->
+
+    <template data-tpl="said">
+      <li class="said">
+        <span class="said__who"></span>
+        <div class="said__body">
+          <div class="said__text"></div>
+          <p class="said__wait" aria-hidden="true" hidden></p>
+          <p class="said__cut" hidden>Відповідь обрізано за довжиною.</p>
+          <div class="said__status" hidden>
+            <p class="said__flag"></p>
+            <p class="said__why"></p>
+            <p class="said__id" hidden></p>
+            <ul class="arrows arrows--row said__actions" role="list">
+              <li data-slot="resend"><button type="button" data-act="resend">Надіслати ще раз</button></li>
+              <li data-slot="edit"><button type="button" data-act="edit">Змінити</button></li>
+              <li data-slot="pick" hidden><button type="button" data-act="revisit-open" aria-haspopup="dialog">Обрати записи</button></li>
+              <li data-slot="busy-cancel" hidden><button type="button" data-act="stop">Скасувати</button></li>
+              <li data-slot="copy" hidden><button type="button" data-act="copy">Скопіювати текст розмови</button></li>
+              <li data-slot="reload" hidden><button type="button" data-act="reload">Оновити сторінку</button></li>
+            </ul>
+          </div>
+        </div>
+      </li>
+    </template>
+
+    <template data-tpl="scenario">
+      <label class="pill">
+        <input class="pill__input" type="radio" name="scenario" />
+        <span class="pill__text"></span>
+      </label>
+    </template>
+
+    <template data-tpl="line">
+      <li class="line">
+        <p class="line__name"></p>
+        <a class="line__phone"></a>
+        <p class="line__hours"></p>
+      </li>
+    </template>
+
+    <template data-tpl="bullet">
+      <li class="thesis">
+        <span class="thesis__index" aria-hidden="true"></span>
+        <div class="thesis__field">
+          <label class="visually-hidden"></label>
+          <textarea class="field__input thesis__input" rows="2"></textarea>
+          <p class="field__count" aria-hidden="true"></p>
+          <p class="field-error"></p>
+        </div>
+        <button class="thesis__remove" type="button" data-act="bullet-remove"><span aria-hidden="true">×</span></button>
+        <p class="thesis__hint" hidden>Має лишитися хоча б одна теза.</p>
+        <div class="thesis__removed" hidden>
+          <p>Тезу прибрано.</p>
+          <span class="arrows arrows--inline"><button type="button" data-act="bullet-restore">Повернути</button></span>
+        </div>
+      </li>
+    </template>
+
+    <template data-tpl="tag">
+      <li class="tagpill">
+        <span class="tagpill__name"></span>
+        <button class="tagpill__remove" type="button" data-act="tag-remove"><span aria-hidden="true">×</span></button>
+      </li>
+    </template>
+
+    <template data-tpl="pick">
+      <li class="pick">
+        <label class="pick__label">
+          <input class="pick__input" type="checkbox" />
+          <span class="pick__text">
+            <span class="pick__title"></span>
+            <span class="pick__meta"></span>
+            <span class="pick__first"></span>
+          </span>
+        </label>
+      </li>
+    </template>
+
+    <!-- Confirm dialogs (spec §3.7.8, §3.8, §3.12, §6.6, §7.2, §7.4, §8.4–8.6). Buttons say what happens. -->
+    <template data-confirm="end">
+      <h2 class="confirm__title" id="confirm-title">Завершити розмову?</h2>
+      <p>AI запропонує 3–5 коротких тез. Ви переглянете їх, виправите, якщо треба, і самі вирішите: зберегти в щоденник чи видалити.</p>
+      <p data-if="short">Розмова ще коротка, тож тези можуть вийти загальними.</p>
+      <p data-if="nosave">Увімкнено «не зберігати»: тези можна переглянути, але не зберегти.</p>
+      <p class="small">Для тез текст розмови ще раз передається постачальнику AI — разом із назвами ваших найчастіших тегів.</p>
+      <div class="confirm__actions">
+        <button class="button button--primary" type="button" data-act="accept" data-focus>Підсумувати</button>
+        <button class="button button--secondary" type="button" data-act="switch-end-no-theses">Завершити без тез</button>
+      </div>
+      <ul class="arrows" role="list"><li><button type="button" data-act="close">Повернутися до розмови</button></li></ul>
+    </template>
+
+    <template data-confirm="end-no-theses">
+      <h2 class="confirm__title" id="confirm-title">Завершити без тез?</h2>
+      <p>Текст розмови зникне з цієї сторінки. Ні тексту, ні тез у Liora не залишиться — лише технічні записи без тексту, про які сказано на екрані згоди. Скасувати це не можна.</p>
+      <div class="confirm__actions">
+        <button class="button button--danger" type="button" data-act="accept">Завершити</button>
+        <button class="button button--secondary" type="button" data-act="back" data-focus>Назад</button>
+      </div>
+    </template>
+
+    <template data-confirm="discard">
+      <h2 class="confirm__title" id="confirm-title">Видалити тези?</h2>
+      <p>Liora їх не зберігала, тож повернути їх не вийде. Текст розмови теж зникне з цієї сторінки.</p>
+      <div class="confirm__actions">
+        <button class="button button--danger" type="button" data-act="accept">Видалити</button>
+        <button class="button button--secondary" type="button" data-act="close" data-focus>Залишити</button>
+      </div>
+    </template>
+
+    <template data-confirm="regenerate">
+      <h2 class="confirm__title" id="confirm-title">Скласти тези заново?</h2>
+      <p>Ваші правки зникнуть, а текст розмови ще раз піде постачальнику AI.</p>
+      <div class="confirm__actions">
+        <button class="button button--primary" type="button" data-act="accept">Скласти заново</button>
+        <button class="button button--secondary" type="button" data-act="close" data-focus>Скасувати</button>
+      </div>
+    </template>
+
+    <template data-confirm="leave">
+      <h2 class="confirm__title" id="confirm-title">Піти з розмови?</h2>
+      <p>Liora не зберігає текст цієї розмови. Якщо підете, на цій сторінці його вже не буде. Хочете залишити тези — спершу підсумуйте розмову.</p>
+      <div class="confirm__actions">
+        <button class="button button--secondary" type="button" data-act="close" data-focus>Залишитися</button>
+        <button class="button button--primary" type="button" data-act="accept-summarize" data-if="can-summarize">Підсумувати</button>
+        <button class="button button--danger" type="button" data-act="accept">Піти</button>
+      </div>
+    </template>
+
+    <template data-confirm="relogin">
+      <h2 class="confirm__title" id="confirm-title">Увійти знову?</h2>
+      <p>Текст цієї розмови зникне зі сторінки.</p>
+      <div class="confirm__actions">
+        <button class="button button--primary" type="button" data-act="accept">Увійти</button>
+        <button class="button button--secondary" type="button" data-act="close" data-focus>Залишитися</button>
+      </div>
+    </template>
+
+    <template data-confirm="logout">
+      <h2 class="confirm__title" id="confirm-title">Вийти з акаунта?</h2>
+      <p>Поточна розмова закриється, і її текст зникне зі сторінки: Liora його не зберігає.</p>
+      <p class="field-error" data-op-error role="alert"></p>
+      <div class="confirm__actions">
+        <button class="button button--danger" type="button" data-act="accept">Вийти</button>
+        <button class="button button--secondary" type="button" data-act="close" data-focus>Скасувати</button>
+      </div>
+    </template>
+
+    <template data-confirm="new-after-crisis">
+      <h2 class="confirm__title" id="confirm-title">Почати нову розмову?</h2>
+      <p>Текст цієї розмови зникне зі сторінки.</p>
+      <div class="confirm__actions">
+        <button class="button button--primary" type="button" data-act="accept">Почати нову</button>
+        <button class="button button--secondary" type="button" data-act="close" data-focus>Скасувати</button>
+      </div>
+    </template>
+
+    <template data-confirm="delete-account">
+      <h2 class="confirm__title" id="confirm-title">Видалити акаунт назавжди?</h2>
+      <p>Одразу видалимо: усі записи щоденника — назви, тези, теги; ваші згоди; входи на всіх пристроях; ваш email та ідентифікатор Google.</p>
+      <p>Що лишиться: службовий запис — номер акаунта й дата видалення, щоб видалення не скасувалося при відновленні даних із резервної копії. Технічні журнали сервера без тексту розмов, з псевдонімом замість акаунта; вони з часом перезаписуються.</p>
+      <p>Те, що під час розмов отримав постачальник AI (<span data-el="provider"></span>), зберігається за його умовами — Liora видалити це не може.</p>
+      <p>Відновити акаунт не вийде. Якщо захочете повернутися, можна увійти знову — це буде новий, порожній акаунт.</p>
+      <p>Хочете зберегти щоденник? Спершу завантажте його:</p>
+      <ul class="arrows arrows--row" role="list">
+        <li><a href="/api/v1/export?format=md" download>Файл .md</a></li>
+        <li><a href="/api/v1/export?format=json" download>Файл .json</a></li>
+      </ul>
+      <p data-if="talk">Поточна розмова теж зникне.</p>
+      <p class="field-error" data-op-error role="alert"></p>
+      <div class="confirm__actions">
+        <button class="button button--danger" type="button" data-act="accept">Так, видалити все</button>
+        <button class="button button--secondary" type="button" data-act="close" data-focus>Скасувати</button>
+      </div>
+    </template>
+
+    <template data-confirm="revoke-data_processing">
+      <h2 class="confirm__title" id="confirm-title">Відкликати згоду на обробку даних?</h2>
+      <p>Відкликання цієї згоди одразу видалить увесь ваш щоденник — назви, тези й теги, без можливості відновити. Акаунт залишиться, а розмови з AI стануть недоступні, доки ви знову не погодитеся.</p>
+      <ul class="arrows arrows--row" role="list">
+        <li><a href="/api/v1/export?format=md" download>Файл .md</a></li>
+        <li><a href="/api/v1/export?format=json" download>Файл .json</a></li>
+      </ul>
+      <p data-if="talk">Поточна розмова закриється.</p>
+      <p class="field-error" data-op-error role="alert"></p>
+      <div class="confirm__actions">
+        <button class="button button--danger" type="button" data-act="accept">Відкликати й видалити щоденник</button>
+        <button class="button button--secondary" type="button" data-act="close" data-focus>Скасувати</button>
+      </div>
+    </template>
+
+    <template data-confirm="revoke-llm_transfer">
+      <h2 class="confirm__title" id="confirm-title">Відкликати згоду на передачу тексту <span data-el="provider"></span>?</h2>
+      <p>Без неї AI не зможе відповідати: розмови стануть недоступні, доки ви знову не погодитеся. Щоденник залишиться.</p>
+      <p data-if="talk">Поточна розмова закриється.</p>
+      <p class="field-error" data-op-error role="alert"></p>
+      <div class="confirm__actions">
+        <button class="button button--danger" type="button" data-act="accept">Відкликати</button>
+        <button class="button button--secondary" type="button" data-act="close" data-focus>Скасувати</button>
+      </div>
+    </template>
+
+    <template data-confirm="revoke-age_18">
+      <h2 class="confirm__title" id="confirm-title">Відкликати підтвердження віку?</h2>
+      <p>Без нього розмови й збереження тез недоступні. Щоденник залишиться.</p>
+      <p data-if="talk">Поточна розмова закриється.</p>
+      <p class="field-error" data-op-error role="alert"></p>
+      <div class="confirm__actions">
+        <button class="button button--danger" type="button" data-act="accept">Відкликати</button>
+        <button class="button button--secondary" type="button" data-act="close" data-focus>Скасувати</button>
+      </div>
+    </template>
+
+    <script type="module" src="/src/chat/ui/main.ts"></script>
+  </body>
+</html>

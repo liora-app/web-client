@@ -345,9 +345,16 @@ test.describe('static backdrop', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto('/')
     await page.waitForLoadState('networkidle')
-    // With motion off the scene never loads: only the small entry script is fetched.
-    expect(early.length).toBe(1)
-    const size = await page.evaluate(async (url) => (await (await fetch(url)).arrayBuffer()).byteLength, early[0])
-    expect(size).toBeLessThan(40_000)
+    // With motion off the scene never loads: only the small entry script is fetched, plus the module
+    // it shares with /chat/ (motion, sound, the GL boot) since the build has two pages (ADR-007).
+    expect(early.length).toBeGreaterThanOrEqual(1)
+    expect(early.length).toBeLessThanOrEqual(2)
+    expect(early.filter((url) => /\/assets\/(scene|presence)-/.test(url))).toEqual([])
+    const sizes = await page.evaluate(
+      async (urls) => Promise.all(urls.map(async (url) => (await (await fetch(url)).arrayBuffer()).byteLength)),
+      early,
+    )
+    // three.js alone is far over this: the scene's chunks were not fetched.
+    expect(sizes.reduce((a, b) => a + b, 0)).toBeLessThan(40_000)
   })
 })
