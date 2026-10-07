@@ -98,7 +98,10 @@ src/gl/               WebGL-шар — окремий лінивий чанк з
 src/styles/           токени, база, небо й шари (stage.css; кольори неба — --sky-* на :root), шапка,
                       компоненти, глави
 tests/e2e/            Playwright: контент, стоп-лист, шари, клавіатура, axe, сцена, фолбеки;
-                      chat-core.spec.ts — ядро чату без браузера
+                      chat-core.spec.ts — ядро чату без браузера; chat.spec.ts — /chat/ проти моків
+                      API (page.route, синтетичний SSE, fetch-shim для стріму по чанках, page.clock);
+                      chat-fixtures.ts — обвʼязка: моки, аудит CSP/консолі/сховищ, спільний стоп-лист;
+                      chat.stack.spec.ts — @stack проти локального compose-стеку
 scripts/ci-e2e.sh     e2e у CI: Chromium, без тестів з тегами @gpu і @stack
 Dockerfile, deploy/   образ для хоста: збірка на node:24-alpine → статика на caddy:2, порт 8080;
                       deploy/Caddyfile ставить CSP і Permissions-Policy на все, no-store на /chat/

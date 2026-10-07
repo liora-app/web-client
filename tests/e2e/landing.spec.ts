@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
+import { FORBIDDEN, clinicalOffenders } from './chat-fixtures'
 import { SECTION_IDS, centre, cutOffAtEdges, watchConsole } from './helpers'
 
 test.describe('content and structure', () => {
@@ -75,36 +76,10 @@ test.describe('content and structure', () => {
       .join('\n')
       .toLowerCase()
 
-    // Never acceptable, in any context. \w is ASCII-only in JS: Cyrillic endings need \S*.
-    const forbidden = [
-      /№\s?1/,
-      /перш\S* у світі/,
-      /military/,
-      /навчанн\S* (ші|ai|моделей)/,
-      /ніхто,? навіть ми/,
-      /наскрізн\S* шифруван/,
-      /7333/,
-      /zero retention/,
-      /нульов\S* (зберіган|утриман)/,
-      /анонімн/,
-      // Promises about the AI provider ("постачальник не логує", "навіть постачальник не бачить").
-      /(постачальник|провайдер)[^.\n]{0,60}не (логу|зберіга|бач)/,
-      /(ні|навіть)\s+(постачальник|провайдер)/,
-    ]
-    for (const pattern of forbidden) expect(text, `forbidden phrase ${pattern}`).not.toMatch(pattern)
-
-    // A sieve, not a proof: clinical words may only appear negated in the same sentence ("не терапія",
-    // "не призначена для діагностики") or inside a question the page then answers ("Liora — це психолог?").
-    const clinical = /терапі|терапевт|психолог|психіатр|лікув|лікує|діагно[зс]|депрес|тривог|тривожн/g
-    const offenders: string[] = []
-    for (const match of text.matchAll(clinical)) {
-      const at = match.index ?? 0
-      const clause = text.slice(Math.max(0, at - 160), at).split(/[.!?\n]/).pop() ?? ''
-      const sentenceEnd = text.slice(at).search(/[.!?\n]/)
-      const isQuestion = sentenceEnd >= 0 && text[at + sentenceEnd] === '?'
-      if (!/(^|[\s(«])(не|ні)\s/.test(clause) && !isQuestion) offenders.push(text.slice(Math.max(0, at - 40), at + 30))
-    }
-    expect(offenders).toEqual([])
+    // One list for the landing and the chat (chat-fixtures.ts, spec §11.6).
+    for (const pattern of FORBIDDEN) expect(text, `forbidden phrase ${pattern}`).not.toMatch(pattern)
+    // Clinical words only negated or inside a question the page then answers.
+    expect(clinicalOffenders(text)).toEqual([])
     // Age goes to the FAQ and the consent wording, never to a hero badge. Web-first: it waits out the decode.
     await expect(page.locator('#hero')).not.toContainText(/\b18\b|18\s*\+/)
   })
