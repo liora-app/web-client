@@ -6,7 +6,7 @@ import './styles/layout.css'
 import './styles/components.css'
 import './styles/sections.css'
 
-import { bootGL } from './gl/boot'
+import { bootGL } from './gl/core/boot'
 import { initDecode } from './ui/decode'
 import { initHeroLight } from './ui/hero-light'
 import { initMenu } from './ui/menu'
@@ -26,4 +26,5 @@ initSteps()
 initDecode()
 
 const canvas = document.querySelector<HTMLCanvasElement>('[data-gl-canvas]')
-if (canvas) bootGL(canvas)
+// The scene is its own lazy chunk (with three.js), requested only after the page has painted.
+if (canvas) bootGL(canvas, { load: () => import('./gl/scene') })

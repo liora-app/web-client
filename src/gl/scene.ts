@@ -23,12 +23,13 @@ import {
   SphereGeometry,
   Vector2,
   Vector4,
-  WebGLRenderer,
 } from 'three'
 import { WIDE_LAYOUT, heroLight, onHeroLightChange, type HeroLight } from '../ui/hero-light'
-import { GL_PALETTE, hexToVec3 } from './palette'
+import type { SceneCallbacks, SceneHandle, SceneOptions } from './core/boot'
+import { GL_PALETTE, hexToVec3 } from './core/palette'
+import { FrameGovernor, pickTier } from './core/quality'
+import { createRenderer } from './core/renderer'
 import { PointerTracker } from './pointer'
-import { FrameGovernor, pickTier } from './quality'
 import { ScrollStates, damp } from './scroll'
 import { SOMAS, WAVE_PERIOD } from './neural'
 import { buildShapes } from './shapes'
@@ -43,19 +44,6 @@ import particlesFrag from './shaders/particles.frag.glsl?raw'
 import particlesVert from './shaders/particles.vert.glsl?raw'
 import somaFrag from './shaders/soma.frag.glsl?raw'
 import somaVert from './shaders/soma.vert.glsl?raw'
-
-export interface SceneCallbacks {
-  onFirstFrame(): void
-  onContextLost(): void
-  onContextRestored(): void
-  onTooSlow(): void
-}
-
-export interface SceneHandle {
-  pause(): void
-  resume(): void
-  destroy(): void
-}
 
 export interface SceneStats {
   tier: string
@@ -246,22 +234,12 @@ function buildBokeh(count: number, seed = 7341): BufferGeometry {
   return geometry
 }
 
-export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCallbacks): Promise<SceneHandle> {
-  const tier = pickTier()
-  // Throws when WebGL2 cannot be created; boot.ts turns that into the static backdrop.
-  const renderer = new WebGLRenderer({
-    canvas,
-    antialias: false,
-    alpha: true,
-    premultipliedAlpha: true,
-    depth: false,
-    stencil: false,
-    // A calm background layer has no business waking a discrete GPU; WebKit also throttles
-    // 'high-performance' contexts hard on iPhones.
-    powerPreference: 'low-power',
-    failIfMajorPerformanceCaveat: true,
-  })
-  renderer.setClearColor(0x000000, 0)
+// The landing's scene module (core/boot.ts SceneModule). It fills the full-screen .scene canvas,
+// so options.sizeTo is not used here.
+export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCallbacks, options: SceneOptions = {}): Promise<SceneHandle> {
+  const tier = pickTier({ force: options.tier })
+  // Throws when WebGL2 cannot be created; core/boot.ts turns that into the static backdrop.
+  const renderer = createRenderer(canvas, { msaa: tier.msaa })
 
   const scene = new Scene()
   const camera = new PerspectiveCamera(FOV, 1, 0.1, 60)
@@ -465,7 +443,7 @@ ${somaVert}`,
   const reference = compositions(REFERENCE_ASPECT, true)
   let wideLayout = WIDE_LAYOUT.matches
   let layouts = compositions(1, wideLayout)
-  let dprCap = tier.dprCap // lowered by the governor; zoom and DPR changes respect it
+  let dprCap = options.dprCap ?? tier.dprCap // lowered by the governor; zoom and DPR changes respect it
   let pixelRatio = Math.min(window.devicePixelRatio || 1, dprCap)
   let ratioDirty = true // the pixel ratio changed (or the context came back): re-allocate the buffer
   let drawCount = shapes.count
@@ -499,8 +477,17 @@ ${somaVert}`,
   // under the bar, and the sunrise is lifted by that much. Measured on events, eased per frame.
   const probe = document.createElement('div')
   probe.setAttribute('aria-hidden', 'true')
-  // 100vh first: without dvh support the probe equals the canvas and the lift is 0.
-  probe.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:100vh;height:100dvh;visibility:hidden;pointer-events:none'
+  const probeStyle = probe.style
+  probeStyle.setProperty('position', 'fixed')
+  probeStyle.setProperty('top', '0')
+  probeStyle.setProperty('left', '0')
+  probeStyle.setProperty('width', '1px')
+  // 100vh first: without dvh support the second value is ignored, the probe equals the canvas and
+  // the lift is 0.
+  probeStyle.setProperty('height', '100vh')
+  probeStyle.setProperty('height', '100dvh')
+  probeStyle.setProperty('visibility', 'hidden')
+  probeStyle.setProperty('pointer-events', 'none')
   document.body.append(probe)
   let hiddenPx = 0
   let lift = 0

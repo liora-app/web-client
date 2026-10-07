@@ -13,9 +13,9 @@ export default defineConfig({
   testDir: 'tests/e2e',
   fullyParallel: true,
   // Each worker is a real browser rendering WebGL (WebKit on Windows does it in software):
-  // the default of half the cores froze a 16-thread desktop. Three is plenty for this suite,
-  // and the WebKit project runs one page at a time (see its entry below).
-  workers: process.env.CI ? 2 : 3,
+  // the default of half the cores froze a 16-thread desktop, and so did three. Locally the suite
+  // runs one browser at a time; CI runners are not the owner's PC and keep two.
+  workers: process.env.CI ? 2 : 1,
   retries: 0,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
@@ -44,7 +44,7 @@ export default defineConfig({
     },
     {
       name: 'iphone-webkit',
-      // WebKit on Windows rasterises WebGL on the CPU (src/gl/quality.ts): one page at a time.
+      // WebKit on Windows rasterises WebGL on the CPU (src/gl/core/quality.ts): one page at a time.
       workers: 1,
       use: { ...devices['iPhone 15'] },
     },

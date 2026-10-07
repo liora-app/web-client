@@ -1,4 +1,4 @@
-/* Design tokens. WebGL colours mirror these in src/gl/palette.ts.
+/* Design tokens. WebGL colours mirror these in src/gl/core/palette.ts.
    Night, not "AI purple": near-black with a teal haze; colour comes only from light.
    Contrast (WCAG 2.2) is measured on the lightest sky that sits under text (#0d2226 radial and the
    haze, L ≈ 0.014–0.02), not only on --color-bg #040708: dim #84918d stays ≥ 4.5:1 there (5.0:1 on
