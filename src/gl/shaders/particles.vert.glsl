@@ -1,6 +1,8 @@
-// Particle story: 0 light · 1 noise · 2 threads · 3 theses · 4 constellation · 5 keep (the themes held
-// in glass) · 6 release (quiet dust to read over) · 7 sunrise.
-// `position` holds the orb slot; the other shapes come in as attributes (see shapes.ts).
+// Particle story, told by networks of neurons (see neural.ts): 0 the AI core in glass · 1 scattered
+// neurons (noise) · 2 a chain the signal runs along · 3 theses (small networks; two are let go at
+// step 4) · 4 the diary graph · 5 keep (the kept theses held in glass) · 6 release (quiet dust to
+// read over, no signal) · 7 sunrise (the core again).
+// `position` holds the core slot; the other shapes come in as attributes (see shapes.ts).
 // three.js injects projectionMatrix, modelViewMatrix and the GLSL3 conversion.
 
 uniform float uTime;
@@ -21,14 +23,23 @@ uniform vec3 uCool;
 uniform vec3 uWarm;
 uniform vec3 uHighlight;
 uniform float uDecide;    // 0..1: step 4 has been reached, the dropped theses dissolve
+uniform float uFire;      // 0..1: how much signal runs through the network (0 by the crisis contacts)
+uniform float uFlash;     // 0..1: how far a flash may brighten a point (low where the net runs under text)
+uniform vec4 uWavePeriod; // axon lengths between two signals: core, path, theses, diary
 
-attribute vec3 aThread;
+attribute vec3 aPath;
 attribute vec4 aCluster; // w: 0 = kept thesis, 0.5 = thesis dropped at step 4, 1 = loose speck
 attribute vec3 aConstellation;
 attribute vec4 aRandom;
+// (t, wave offset) in the core and the path; in the theses and the diary. t: -3 dust, -2 warm glow,
+// -1 soma halo, 0..1 along an axon (parent → child), 2..3 along a dendrite (soma → tip).
+attribute vec4 aNeural;
+attribute vec4 aNeural2;
 
 varying vec3 vColor;
 varying float vAlpha;
+
+const float SIGNAL_SPEED = 1.6; // axon lengths per second
 
 mat2 rotate2d(float a) {
   float c = cos(a);
@@ -49,12 +60,7 @@ vec3 noiseShape(vec3 p) {
   return p * 2.1 + n * 1.5;
 }
 
-vec3 threadShape(vec3 p, float seed) {
-  float wave = sin(p.x * 1.2 + uTime * 0.3 + seed * 6.2831) * 0.07;
-  return p + vec3(0.0, wave, 0.0);
-}
-
-// The constellation loosens into a field of dust that stays in frame.
+// The diary graph loosens into a field of dust that stays in frame.
 vec3 releaseShape(vec3 p, float seed) {
   vec3 dir = normalize(p + vec3(0.0001));
   return p * 1.15 + dir * 0.5 + vec3(0.0, 0.3 + seed * 0.5, 0.0);
@@ -63,59 +69,95 @@ vec3 releaseShape(vec3 p, float seed) {
 vec3 shapeFor(float s) {
   if (s < 0.5) return orbShape(position);
   if (s < 1.5) return noiseShape(position);
-  if (s < 2.5) return threadShape(aThread, aRandom.y);
+  if (s < 2.5) return aPath;
   if (s < 3.5) return aCluster.xyz;
   if (s < 4.5) return aConstellation;
   if (s < 5.5) return aCluster.xyz * vec3(0.3, 0.7, 0.7); // the kept theses, gathered into the glass
   if (s < 6.5) return releaseShape(aConstellation, aRandom.x);
-  return orbShape(position);
+  return orbShape(position * 1.2); // sunrise: spread inside the glass, so its top rises above the fold
 }
 
-// How visible a particle is in each state (dust = 1 for background specks, line = 1 for
-// particles that draw the constellation's connections). In the light (orb) the outer shell stays
-// faint — the glass carries the silhouette — and the warm core carries the light.
-float orbAlpha(float dust) {
-  float shell = smoothstep(0.84, 0.9, length(position));
-  return mix(mix(0.62, 0.18, shell), 0.24, dust);
+// This particle in the network of state s: (t, wave offset, wave period); t = -4 where s has none.
+vec3 neuralFor(float s) {
+  if (s < 1.5 || s > 6.5) return vec3(aNeural.xy, uWavePeriod.x);
+  if (s < 2.5) return vec3(aNeural.zw, uWavePeriod.y);
+  if (s < 3.5) return vec3(aNeural2.xy, uWavePeriod.z);
+  if (s < 4.5) return vec3(aNeural2.zw, uWavePeriod.w);
+  if (s < 5.5) return vec3(aNeural2.xy, uWavePeriod.z);
+  return vec3(-4.0, 0.0, 1.0);
 }
 
-float alphaFor(float s, float dust, float line) {
-  if (s < 0.5) return orbAlpha(dust);
+// The signal at this particle, 0..1. The wave leaves each tree level one axon length after the
+// previous one; head = axon lengths since it left this particle's level.
+float signalAt(vec3 n) {
+  if (n.x < -1.5) return 0.0;
+  float head = mod(uTime * SIGNAL_SPEED - n.y, n.z);
+  if (n.x < -0.5) return 0.45 * exp(-head * 3.0); // soma halo: flashes as the wave arrives
+  if (n.x < 1.5) {
+    float d = head - n.x; // a bright head with a tail
+    return d >= 0.0 ? exp(-d * 5.0) : exp(-d * d * 400.0);
+  }
+  float d = head * 2.5 - (n.x - 2.0); // dendrites light up outward from the soma, fainter
+  return 0.6 * (d >= 0.0 ? exp(-d * 6.0) : exp(-d * d * 400.0));
+}
+
+// How visible a network particle is, for the same number of particles over a different area:
+// the core packs the whole net into the glass, the noise spreads it over the screen.
+float netScale(float s) {
+  if (s < 0.5 || s > 6.5) return 0.3;
+  if (s < 1.5) return 1.6;
+  if (s < 2.5) return 1.0;
+  if (s < 3.5) return 0.55;
+  if (s < 4.5) return 0.85;
+  return 0.75;
+}
+
+// How visible a particle is in each state (dust = 1 for background specks). In the light the
+// network carries the shape — the glass carries the silhouette — and the warm glow the light.
+float alphaFor(float s, float dust) {
+  vec3 n = neuralFor(s);
+  if (n.x > -2.5 && n.x < -1.5) return s > 0.5 && s < 1.5 ? 0.42 : 0.22; // warm glow
+  if (n.x > -1.5) {
+    float a = n.x < -0.5 ? 0.3 : n.x < 1.5 ? 0.2 : 0.16 * (1.0 - 0.6 * (n.x - 2.0)); // halo, axon, dendrite
+    // Keep: only the kept theses come into the glass.
+    float dropped = step(0.25, aCluster.w) * (1.0 - step(0.75, aCluster.w));
+    if (s > 4.5 && s < 5.5) a *= 1.0 - 0.9 * dropped;
+    return a * netScale(s);
+  }
+  // Dust and loose specks.
+  if (s < 0.5 || s > 6.5) return 0.24;
   if (s < 1.5) return 0.42;
-  if (s < 2.5) return mix(0.6, 0.22, dust);
-  if (s < 3.5) return mix(0.3, 0.06, max(dust, step(0.75, aCluster.w)));
-  if (s < 4.5) return mix(mix(0.42, 0.11, line), 0.1, dust);
-  if (s < 5.5) return mix(0.14, 0.02, max(dust, step(0.25, aCluster.w)));
-  if (s < 6.5) return mix(0.12, 0.05, dust);
-  return orbAlpha(dust);
+  if (s < 2.5) return 0.22;
+  if (s < 3.5) return 0.06;
+  if (s < 4.5) return 0.1;
+  if (s < 5.5) return 0.02;
+  return mix(0.12, 0.05, dust);
 }
 
 // Defocus per state: the noise is out of focus, clarity is sharp. Blur grows the point (fill-rate),
 // so it is kept small: the light per particle stays the same (see the bokeh divisor in main()).
 float blurFor(float s) {
   if (s > 0.5 && s < 1.5) return 0.5;
-  if (s > 1.5 && s < 2.5) return 0.25;
+  if (s > 1.5 && s < 2.5) return 0.08;
   if (s > 5.5 && s < 6.5) return 0.15;
   return 0.0;
 }
 
-// How strongly main particles take the highlight colour (clarity states glow warmer).
-float clarityFor(float s, float line) {
-  if (s > 2.5 && s < 3.5) return 1.0;
-  if (s > 3.5 && s < 4.5) return 1.0 - line;
-  if (s > 4.5 && s < 5.5) return 1.0;
-  if (s > 1.5 && s < 2.5) return 0.35;
-  return 0.0;
-}
-
-// Orb states: warm core, cool rim.
+// Light states (warm core, cool rim).
 float orbFor(float s) {
   return (s < 0.5 || s > 6.5) ? 1.0 : 0.0;
 }
 
+// Colour of a network particle, premultiplied by how much it replaces the base colour (a): the halo
+// is warm, the fibres cool with a little warmth; dust and the glow keep the base colour.
+vec4 toneFor(vec3 n) {
+  if (n.x < -1.5) return vec4(0.0);
+  if (n.x < -0.5) return vec4(mix(uWarm, uHighlight, 0.4), 1.0);
+  return vec4(mix(uCool, uWarm, aRandom.y * 0.35), 1.0);
+}
+
 void main() {
   float dust = step(0.75, aRandom.w);
-  float line = (1.0 - dust) * step(0.25, aRandom.w);
   float s0 = floor(uState);
   float f = uState - s0;
   // Stagger: each particle starts its move a little later than the previous ones.
@@ -123,6 +165,9 @@ void main() {
   float k = smoothstep(0.0, 1.0, clamp((f - delay) / 0.65, 0.0, 1.0));
 
   vec3 p = mix(shapeFor(s0), shapeFor(s0 + 1.0), k);
+  vec3 na = neuralFor(s0);
+  vec3 nb = neuralFor(s0 + 1.0);
+  float signal = mix(signalAt(na), signalAt(nb), k) * uFire;
 
   // Step 4: the two dropped theses drift apart and toward the lens, where the defocus dissolves
   // them into the bokeh. Only around the theses state; the kept three stay where they are.
@@ -153,24 +198,24 @@ void main() {
   float sizeRandom = mix(0.6, 1.8, aRandom.z * aRandom.z);
   float coc = abs(depth - uFocus);
   float bokeh = 1.0 + coc * coc * 0.55 + blur * (0.8 + aRandom.z * 1.6);
-  float size = uSize * uSizeScale * sizeRandom * bokeh * uPixelRatio * (6.5 / depth);
+  float size = uSize * uSizeScale * sizeRandom * bokeh * uPixelRatio * (6.5 / depth) * (1.0 + 0.9 * signal * uFlash);
   gl_PointSize = min(size, min(56.0 * uPixelRatio, uMaxPointSize));
 
   float twinkle = 0.88 + 0.12 * sin(uTime * (0.4 + aRandom.y) + aRandom.x * 40.0);
-  float alpha = mix(alphaFor(s0, dust, line), alphaFor(s0 + 1.0, dust, line), k);
+  float alpha = mix(alphaFor(s0, dust), alphaFor(s0 + 1.0, dust), k);
 
   // Calm the particles that sit behind text (wide layout): full strength inside uBand, softened outside.
   float inside = smoothstep(-0.12, 0.3, min(ndc.x - uBand.x, uBand.y - ndc.x));
   float textMask = 1.0 - uDim * (1.0 - inside);
 
-  vAlpha = alpha * twinkle * uIntensity * textMask / (bokeh * bokeh * 0.7 + 0.3) * (1.0 - drop * 0.85);
+  // Flashes stay calm behind the text, too: outside the band (textMask) and in one column (uFlash).
+  vAlpha = alpha * twinkle * uIntensity * textMask / (bokeh * bokeh * 0.7 + 0.3) * (1.0 - drop * 0.85) * (1.0 + 4.0 * signal * textMask * uFlash);
 
-  float clarity = mix(clarityFor(s0, line), clarityFor(s0 + 1.0, line), k) * (1.0 - dust);
   float orbness = mix(orbFor(s0), orbFor(s0 + 1.0), k);
   float core = 1.0 - smoothstep(0.25, 0.95, length(position));
   vec3 base = mix(uCool, uWarm, smoothstep(0.25, 0.85, aRandom.y));
   base = mix(base, uWarm, orbness * core * 0.85);
   base = mix(base, uHighlight, orbness * core * core * 0.6);
-  // Clarity (theses, themes) glows warm rather than white.
-  vColor = mix(base, mix(uWarm, uHighlight, 0.45), clarity * 0.6);
+  vec4 tone = mix(toneFor(na), toneFor(nb), k);
+  vColor = mix(base * (1.0 - tone.a) + tone.rgb, uHighlight, signal);
 }

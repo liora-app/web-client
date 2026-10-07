@@ -1,5 +1,5 @@
 // Quality tiers and a frame-time governor. The scene starts from a conservative guess and
-// only steps down: first resolution, then particle count, and finally gives up (static backdrop).
+// only steps down: resolution, the bokeh, particle count, and finally gives up (static backdrop).
 
 export type TierName = 'high' | 'medium' | 'low'
 
@@ -18,6 +18,10 @@ const TIERS: Record<TierName, Tier> = {
 }
 
 export function pickTier(): Tier {
+  // ?tier=low|medium|high: a manual override for slow machines and for checking a tier by hand.
+  const forced = new URLSearchParams(window.location.search).get('tier')
+  if (forced === 'low' || forced === 'medium' || forced === 'high') return TIERS[forced]
+
   const nav = navigator as Navigator & { deviceMemory?: number }
   const cores = nav.hardwareConcurrency || 4
   const memory = nav.deviceMemory ?? 8
@@ -29,14 +33,17 @@ export function pickTier(): Tier {
   return TIERS.high
 }
 
-export type GovernorAction = 'lower-dpr' | 'fewer-particles' | 'give-up' | null
+export type GovernorAction = 'lower-dpr' | 'fewer-bokeh' | 'fewer-particles' | 'give-up' | null
+
+// What each step down does, in order: the cheapest to notice first.
+const LADDER: GovernorAction[] = ['lower-dpr', 'fewer-bokeh', 'fewer-particles', 'lower-dpr', 'fewer-particles']
 
 // Watches the median of 60 active frame times. Budget 40 ms: a browser that caps animation at
 // 30 fps (iOS Low Power Mode, Chrome Energy Saver) delivers ~33 ms frames with a few missed vsyncs;
 // a median over 40 ms on 60 Hz means more than half the frames took three vsyncs (≤ 20 fps).
 const BUDGET_MS = 40
 const HOPELESS_MS = 70
-const MAX_STEPS = 4
+const MAX_STEPS = LADDER.length
 // A single frame this long is a hitch (GC pause, shader compile, busy main thread) and is ignored;
 // a run of them means the device cannot draw the scene at all (≥3 s below 4 fps).
 const HITCH_MS = 250
@@ -85,6 +92,6 @@ export class FrameGovernor {
     this.cooldown = 120
     this.steps++
     if (this.steps > MAX_STEPS || (this.steps > 2 && median > HOPELESS_MS)) return 'give-up'
-    return this.steps % 2 === 1 ? 'lower-dpr' : 'fewer-particles'
+    return LADDER[this.steps - 1]
   }
 }

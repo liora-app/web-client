@@ -1,7 +1,7 @@
 // The WebGL layer: a transparent full-screen canvas between the hero's display type and the
-// text (see src/styles/stage.css). The night sky behind it is CSS. Here live the light —
-// particles in a thin glass shell with a halo — and out-of-focus bokeh that drifts toward the
-// camera as you scroll. No post-processing passes.
+// text (see src/styles/stage.css). The night sky behind it is CSS. Here live the light — a network
+// of neurons (instanced soma spheres, particles for the fibres) in a thin glass shell with a halo —
+// and out-of-focus bokeh that drifts toward the camera as you scroll. No post-processing passes.
 // Future 3D models (GLTF via three/addons) belong where the light sits: the hero and the final.
 
 import {
@@ -9,6 +9,9 @@ import {
   BufferAttribute,
   BufferGeometry,
   Group,
+  IcosahedronGeometry,
+  InstancedBufferAttribute,
+  InstancedBufferGeometry,
   Mesh,
   NormalBlending,
   type Object3D,
@@ -19,6 +22,7 @@ import {
   ShaderMaterial,
   SphereGeometry,
   Vector2,
+  Vector4,
   WebGLRenderer,
 } from 'three'
 import { WIDE_LAYOUT, heroLight, onHeroLightChange, type HeroLight } from '../ui/hero-light'
@@ -26,6 +30,7 @@ import { GL_PALETTE, hexToVec3 } from './palette'
 import { PointerTracker } from './pointer'
 import { FrameGovernor, pickTier } from './quality'
 import { ScrollStates, damp } from './scroll'
+import { SOMAS, WAVE_PERIOD } from './neural'
 import { buildShapes } from './shapes'
 import bokehFrag from './shaders/bokeh.frag.glsl?raw'
 import bokehVert from './shaders/bokeh.vert.glsl?raw'
@@ -36,6 +41,8 @@ import glowVert from './shaders/glow.vert.glsl?raw'
 import noise from './shaders/noise.glsl?raw'
 import particlesFrag from './shaders/particles.frag.glsl?raw'
 import particlesVert from './shaders/particles.vert.glsl?raw'
+import somaFrag from './shaders/soma.frag.glsl?raw'
+import somaVert from './shaders/soma.vert.glsl?raw'
 
 export interface SceneCallbacks {
   onFirstFrame(): void
@@ -58,6 +65,10 @@ export interface SceneStats {
   frames: number
   fps: number
   quiet: number
+  /** Signal strength in the network (0 by the crisis contacts). */
+  fire: number
+  /** Draw calls in the last frame. */
+  draws: number
   /** 'wide' from 64em (two text columns), 'column' below: the same breakpoint as the CSS. */
   layout: 'wide' | 'column'
 }
@@ -82,11 +93,12 @@ interface Composition {
   glow: number
   glass: number // presence of the glass shell (hero, the kept themes, final)
   bokeh: number
+  fire: number // how much signal runs through the network (0 by the crisis contacts)
 }
 
 const CAMERA_DISTANCE = 6.5
 const FOV = 40
-// 0 light · 1 noise · 2 threads · 3 theses · 4 constellation · 5 keep · 6 release · 7 sunrise
+// 0 light · 1 noise · 2 chain · 3 theses · 4 diary graph · 5 keep · 6 release · 7 sunrise
 const STATES = 8
 const HALF_HEIGHT = CAMERA_DISTANCE * Math.tan(((FOV / 2) * Math.PI) / 180)
 const GLASS_RADIUS = 1.14
@@ -145,25 +157,25 @@ function compositions(aspect: number, wideLayout: boolean, hero: HeroLight | nul
   return [
     // 0 · The light. Quieter on wide layouts: the disc there is smaller than the one the density
     // reference was tuned with, and the same particles would otherwise burn brighter.
-    { x: heroX, y: heroY, scale: heroScale, turn: 0, intensity: column ? 1 : 0.83, dim: 0, ...all, glow: 0.34, glass: 1, bokeh: 0.85 },
-    // 1 · Noise: a compact, restless knot in the lane between the columns.
-    { x: 0, y: 0, scale: column ? 0.62 : 0.45, turn, intensity: (column ? 0.32 : 0.45) * quiet, dim: 0.8, ...middle, glow: column ? 0.06 : 0.1, glass: 0, bokeh: 1 },
-    // 2 · Threads: a conversation finding its line.
-    { x: 0, y: portrait ? 0 : -0.35, scale: wide, turn, intensity: 0.85 * quiet, dim: 0.86, ...middle, glow: 0.05, glass: 0, bokeh: 0.8 },
+    { x: heroX, y: heroY, scale: heroScale, turn: 0, intensity: column ? 1 : 0.83, dim: 0, ...all, glow: 0.34, glass: 1, bokeh: 0.85, fire: 1 },
+    // 1 · Noise: the network scattered into a restless knot in the lane between the columns.
+    { x: 0, y: 0, scale: column ? 0.62 : 0.45, turn, intensity: (column ? 0.32 : 0.45) * quiet, dim: 0.8, ...middle, glow: column ? 0.06 : 0.1, glass: 0, bokeh: 1, fire: 0.4 },
+    // 2 · A chain of neurons the signal runs along: a conversation finding its line.
+    { x: 0, y: portrait ? 0 : -0.35, scale: wide, turn, intensity: 0.85 * quiet, dim: 0.86, ...middle, glow: 0.05, glass: 0, bokeh: 0.8, fire: 1 },
     // 3 · Theses stand up in a column: in the lane between the steps and the example on wide layouts,
     // near the edge in one column, where the text runs full width. The column is always upright, so
     // its size follows the geometry.
-    { x: column ? halfWidth * 0.72 : 0, y: 0, scale: portrait ? wide * 0.8 : Math.min(0.62, (halfHeight * 0.8) / 2.4), turn: Math.PI / 2, intensity: column ? 0.4 : 0.95, dim: 0.4, ...middle, glow: 0.1, glass: 0, bokeh: 0.6 },
-    // 4 · The constellation of themes owns the right half on wide layouts (lying down even on a
+    { x: column ? halfWidth * 0.72 : 0, y: 0, scale: portrait ? wide * 0.8 : Math.min(0.62, (halfHeight * 0.8) / 2.4), turn: Math.PI / 2, intensity: column ? 0.4 : 0.95, dim: 0.4, ...middle, glow: 0.1, glass: 0, bokeh: 0.6, fire: 0.8 },
+    // 4 · The diary graph of themes owns the right half on wide layouts (lying down even on a
     // portrait tablet); the diary text is on the left. In one column it runs under the text, so it is
     // only a trace there (as is the keep below: no clear band on a full-width column).
-    { x: column ? halfWidth * 0.3 : halfWidth * 0.47, y: column ? 0 : 0.1, scale: column ? wide * 0.88 : Math.min(wide * 0.62, (halfWidth * 0.44) / 3.1), turn: column ? turn : 0, intensity: column ? 0.2 : 0.9, dim: 0.85, bandMin: 0.02, bandMax: 3, glow: 0.07, glass: 0, bokeh: 0.7 },
+    { x: column ? halfWidth * 0.3 : halfWidth * 0.47, y: column ? 0 : 0.1, scale: column ? wide * 0.88 : Math.min(wide * 0.62, (halfWidth * 0.44) / 3.1), turn: column ? turn : 0, intensity: column ? 0.2 : 0.9, dim: 0.85, bandMin: 0.02, bandMax: 3, glow: 0.07, glass: 0, bokeh: 0.7, fire: 1 },
     // 5 · Keep: the kept theses gathered into glass, beside the privacy title (right half).
-    { x: column ? halfWidth * 0.78 : halfWidth * 0.5, y: column ? 0 : 0.05, scale: column ? wide * 0.8 : 0.62, turn: column ? Math.PI / 2 : 0, intensity: column ? 0.2 : 0.6, dim: 0.85, bandMin: 0.2, bandMax: 3, glow: column ? 0.03 : 0.2, glass: column ? 0 : 0.9, bokeh: 0.5 },
+    { x: column ? halfWidth * 0.78 : halfWidth * 0.5, y: column ? 0 : 0.05, scale: column ? wide * 0.8 : 0.62, turn: column ? Math.PI / 2 : 0, intensity: column ? 0.2 : 0.6, dim: 0.85, bandMin: 0.2, bandMax: 3, glow: column ? 0.03 : 0.2, glass: column ? 0 : 0.9, bokeh: 0.5, fire: 0.6 },
     // 6 · Release: quiet dust to read over (principles, help, questions).
-    { x: 0, y: 0, scale: wide, turn, intensity: 0.6, dim: 0.75, ...middle, glow: 0.03, glass: 0, bokeh: 0.4 },
+    { x: 0, y: 0, scale: wide, turn, intensity: 0.6, dim: 0.75, ...middle, glow: 0.03, glass: 0, bokeh: 0.4, fire: 0 },
     // 7 · Sunrise.
-    { x: 0, y: sunY, scale: sunScale, turn: 0, intensity: 1, dim: 0, ...all, glow: 0.42, glass: 1, bokeh: 0.7 },
+    { x: 0, y: sunY, scale: sunScale, turn: 0, intensity: 1, dim: 0, ...all, glow: 0.42, glass: 1, bokeh: 0.7, fire: 0.8 },
   ]
 }
 
@@ -179,6 +191,7 @@ const emptyComposition = (): Composition => ({
   glow: 0,
   glass: 0,
   bokeh: 0,
+  fire: 0,
 })
 
 const BLENDED_KEYS = Object.keys(emptyComposition()) as (keyof Composition)[]
@@ -285,14 +298,16 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
   glow.renderOrder = 0
   light.add(glow)
 
-  // Particles
+  // Particles: the networks of neurons (shapes.ts, neural.ts) and the dust around them.
   const shapes = buildShapes(tier.particles)
   const geometry = new BufferGeometry()
-  geometry.setAttribute('position', new BufferAttribute(shapes.orb, 3))
-  geometry.setAttribute('aThread', new BufferAttribute(shapes.thread, 3))
+  geometry.setAttribute('position', new BufferAttribute(shapes.core, 3))
+  geometry.setAttribute('aPath', new BufferAttribute(shapes.path, 3))
   geometry.setAttribute('aCluster', new BufferAttribute(shapes.cluster, 4))
   geometry.setAttribute('aConstellation', new BufferAttribute(shapes.constellation, 3))
   geometry.setAttribute('aRandom', new BufferAttribute(shapes.random, 4))
+  geometry.setAttribute('aNeural', new BufferAttribute(shapes.neural, 4))
+  geometry.setAttribute('aNeural2', new BufferAttribute(shapes.neural2, 4))
 
   const particleUniforms = {
     uTime: { value: 0 },
@@ -310,6 +325,9 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
     uPointer: { value: new Vector2(0, 0) },
     uPointerStrength: { value: 0 },
     uDecide: { value: 0 },
+    uFire: { value: 1 },
+    uFlash: { value: 1 },
+    uWavePeriod: { value: new Vector4(...WAVE_PERIOD) },
     uCool: { value: hexToVec3(GL_PALETTE.particleCool) },
     uWarm: { value: hexToVec3(GL_PALETTE.particleWarm) },
     uHighlight: { value: hexToVec3(GL_PALETTE.particleHighlight) },
@@ -319,7 +337,8 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
     geometry,
     new ShaderMaterial({
       uniforms: particleUniforms,
-      vertexShader: `${noise}\n${particlesVert}`,
+      vertexShader: `${noise}
+${particlesVert}`,
       fragmentShader: particlesFrag,
       transparent: true,
       depthTest: false,
@@ -331,6 +350,58 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
   particles.frustumCulled = false
   particles.renderOrder = 2
   light.add(particles)
+
+  // Soma bodies: one instanced sphere per neuron, drawn over the particles and under the glass. A
+  // child of the particles, so they turn with them; the uniforms they share are the same objects.
+  const somaUniforms = {
+    uTime: particleUniforms.uTime,
+    uState: particleUniforms.uState,
+    uBreath: particleUniforms.uBreath,
+    uDecide: particleUniforms.uDecide,
+    uFire: particleUniforms.uFire,
+    uFlash: particleUniforms.uFlash,
+    uWavePeriod: particleUniforms.uWavePeriod,
+    uAspect: particleUniforms.uAspect,
+    uBand: particleUniforms.uBand,
+    uDim: particleUniforms.uDim,
+    uPointer: particleUniforms.uPointer,
+    uPointerStrength: particleUniforms.uPointerStrength,
+    uCool: particleUniforms.uCool,
+    uWarm: particleUniforms.uWarm,
+    uHighlight: particleUniforms.uHighlight,
+    uOpacity: { value: 1 },
+  }
+  const ball = new IcosahedronGeometry(1, 3)
+  const somaGeometry = new InstancedBufferGeometry()
+  somaGeometry.setAttribute('position', ball.getAttribute('position'))
+  somaGeometry.setAttribute('normal', ball.getAttribute('normal'))
+  ball.dispose()
+  somaGeometry.setAttribute('aSomaCore', new InstancedBufferAttribute(shapes.somas.core, 4))
+  somaGeometry.setAttribute('aSomaPath', new InstancedBufferAttribute(shapes.somas.path, 4))
+  somaGeometry.setAttribute('aSomaCluster', new InstancedBufferAttribute(shapes.somas.cluster, 4))
+  somaGeometry.setAttribute('aSomaDiary', new InstancedBufferAttribute(shapes.somas.constellation, 4))
+  somaGeometry.setAttribute('aSomaWave', new InstancedBufferAttribute(shapes.somas.wave, 4))
+  somaGeometry.setAttribute('aSomaMeta', new InstancedBufferAttribute(shapes.somas.meta, 4))
+  somaGeometry.instanceCount = SOMAS
+  // Normal blending: the bodies cover what lies behind them. There is no depth buffer, so two
+  // overlapping bodies draw in instance order; they rarely overlap and look alike when they do.
+  const somas = new Mesh(
+    somaGeometry,
+    new ShaderMaterial({
+      uniforms: somaUniforms,
+      vertexShader: `${noise}
+${somaVert}`,
+      fragmentShader: somaFrag,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      blending: NormalBlending,
+      premultipliedAlpha: true,
+    }),
+  )
+  somas.frustumCulled = false
+  somas.renderOrder = 3
+  particles.add(somas)
 
   // Glass shell: a thin rim, no orbit around it — a lamp, not a planet.
   const glassUniforms = {
@@ -398,6 +469,7 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
   let pixelRatio = Math.min(window.devicePixelRatio || 1, dprCap)
   let ratioDirty = true // the pixel ratio changed (or the context came back): re-allocate the buffer
   let drawCount = shapes.count
+  let bokehCount = tier.bokeh
   let state = scroll.target()
   let lastTarget = state
   let quiet = scroll.quiet()
@@ -410,6 +482,7 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
   let fpsWindowStart = 0
   let fpsFrames = 0
   let fps = 0
+  let draws = 0
   let running = false
   let wantRunning = true
   let firstFrameSent = false
@@ -500,6 +573,9 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
       pixelRatio = Math.max(1, pixelRatio - 0.25)
       dprCap = pixelRatio
       ratioDirty = true
+    } else if (action === 'fewer-bokeh') {
+      bokehCount = Math.floor(bokehCount / 2)
+      bokeh.geometry.setDrawRange(0, bokehCount)
     } else if (action === 'fewer-particles' || (action === 'lower-dpr' && pixelRatio <= 1)) {
       drawCount = Math.max(4000, Math.floor(drawCount * 0.65))
       geometry.setDrawRange(0, drawCount)
@@ -593,6 +669,16 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
     particleUniforms.uPointer.value.copy(pointerNow)
     particleUniforms.uPointerStrength.value = pointerStrength * calm
     particleUniforms.uDecide.value = decide
+    particleUniforms.uFire.value = comp.fire * calm
+    // One column: the net runs under the reading text in every state but the light (hero, sunrise),
+    // and there is no clear band to keep flashes in, so they stay low there.
+    particleUniforms.uFlash.value = wideLayout ? 1 : 0.3 + 0.7 * comp.glass
+    // Release (state 6) has no network: skip the draw call there.
+    somas.visible = Math.abs(state - 6) > 0.001
+    // The bodies cover what is behind them: under the reading text (one column, outside the glass)
+    // they stay faint.
+    const underText = wideLayout ? 1 : 0.45 + 0.55 * comp.glass
+    somaUniforms.uOpacity.value = comp.intensity * fade * calm * (0.15 + 0.85 * intro) * underText
 
     // The glass opens up as the camera flies into the light and is gone before the next chapter's
     // title reaches it (comp.glass < 0.35); it closes in again for the kept themes and the final.
@@ -615,6 +701,7 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
     const renderStart = performance.now()
     renderer.render(scene, camera)
     const renderMs = performance.now() - renderStart
+    draws = renderer.info.render.calls
     frames++
 
     fpsFrames++
@@ -674,7 +761,18 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
   canvas.addEventListener('webglcontextrestored', onRestored)
 
   window.__lioraScene = {
-    stats: () => ({ tier: tier.name, particles: drawCount, pixelRatio, state, frames, fps, quiet, layout: wideLayout ? 'wide' : 'column' }),
+    stats: () => ({
+      tier: tier.name,
+      particles: drawCount,
+      pixelRatio,
+      state,
+      frames,
+      fps,
+      quiet,
+      fire: particleUniforms.uFire.value,
+      draws,
+      layout: wideLayout ? 'wide' : 'column',
+    }),
     // Renders one frame and reads a 9×9 grid of pixels in the same task (the drawing buffer is
     // still intact before compositing). Returns the luminance of the light (premultiplied, the
     // canvas is transparent), 0..255.
