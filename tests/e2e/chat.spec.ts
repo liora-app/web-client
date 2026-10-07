@@ -6,7 +6,7 @@
 
 import type { BrowserContext, Locator, Page, TestInfo } from '@playwright/test'
 import { uiError } from '../../src/chat/core/errors'
-import { FALLBACK_ABROAD, FALLBACK_MESSAGE, PAUSED_LINE_NOTE } from '../../src/chat/core/helplines'
+import { FALLBACK_ABROAD, FALLBACK_MESSAGE, PAUSED_LINE_NOTE, PAUSED_LINE_NOTE_SHORT } from '../../src/chat/core/helplines'
 import type { AuthCode } from '../../src/chat/core/state'
 import {
   BUSY_NOW,
@@ -96,6 +96,9 @@ const CRISIS_TEXT = 'Синтетична фраза, на яку сервер �
 /** Words that must never reach the page once the turn ended in anything but `done` (I3). */
 const PARTIAL = ['токен-альфа ', 'токен-бета ', 'токен-гамма ', 'токен-дельта ']
 const RECORDS = [1, 2, 3, 4, 5, 6].map((i) => record(i))
+/** An answer with the paused number split between two tokens, and the answer as the page shows it. */
+const NUMBERED_REPLY = ['Можна подзвонити на ', PAUSED.slice(0, 2), PAUSED.slice(2), ' — або 112.']
+const NUMBERED_SHOWN = `Можна подзвонити на ${PAUSED_LINE_NOTE} — або 112.`
 const CSP =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 /** details[].message of a mocked 422 (never shown either). */
@@ -589,11 +592,15 @@ test.describe('crisis', () => {
 
   test('#13 ★ 409 crisis_stop on the theses: the crisis screen, no paused number', async ({ page, api }, testInfo) => {
     api.on('POST /chat/summarize', fail(409, 'crisis_stop', { helplines: RAW_HELPLINES }))
+    // The answer before it carries the number: the read-only copy under <details> masks it too.
+    api.on('POST /chat/turn', { sse: reply(NUMBERED_REPLY) })
     await openChat(page)
     await exchange(page, USER)
     await page.locator('[data-el="session-end"]').click()
     await confirmDialog(page).getByRole('button', { name: 'Підсумувати' }).click()
     await expectCrisis(page, USER, testInfo)
+    await expect(page.locator('[data-el="crisis-talk"]')).toContainText(NUMBERED_SHOWN)
+    expect((await markup(page)).includes(PAUSED)).toBe(false)
   })
 
   test('#13b text typed before the theses does not come back after a 409 crisis_stop and «Почати нову»', async ({ page, api }) => {
@@ -632,15 +639,17 @@ test.describe('crisis', () => {
 
 test.describe('errors', () => {
   test('#8 ★ 401 in the middle: session-expired with the conversation, no field; «Увійти знову» goes to Google', async ({ page, api }) => {
-    api.on('POST /chat/turn', { sse: reply() }, fail(401, 'unauthenticated'))
+    // The answer carries the paused number: the read-only copy masks it as the conversation did.
+    api.on('POST /chat/turn', { sse: reply(NUMBERED_REPLY) }, fail(401, 'unauthenticated'))
     await openChat(page)
     await exchange(page, USER)
     await send(page, 'Друге синтетичне повідомлення.')
     await onScreen(page, 'session-expired')
     const stale = page.locator('[data-el="expired-talk"]')
     await expect(stale).toContainText(USER)
-    await expect(stale).toContainText(REPLY_TEXT)
+    await expect(stale).toContainText(NUMBERED_SHOWN)
     await expect(stale).toContainText('Друге синтетичне повідомлення.')
+    expect((await markup(page)).includes(PAUSED)).toBe(false)
     await expect(page.locator('textarea')).toHaveCount(0)
     await expect(page.locator('#expired-title')).toBeFocused()
     // The account menu needs a live session (§8.1).
@@ -1252,6 +1261,33 @@ test.describe('revisit', () => {
     for (const r of RECORDS) expect(after.includes(r.title), r.title).toBe(false)
   })
 
+  test('#30d the paused number in a diary record and in an opening message: masked in the history, the picker and the chosen names', async ({ page, api }) => {
+    const numbered = record(1, {
+      title: `Дзвінок на ${PAUSED}`,
+      bullets: [`Номер ${PAUSED} не відповів.`, 'Друга синтетична теза.'],
+      tags: [{ id: '00000000-0000-4000-9000-000000000178', name: `лінія ${PAUSED}`, source: 'ai' }],
+    })
+    api.on('GET /summaries', { json: diary([numbered, record(2)]) })
+    api.on('GET /scenarios', {
+      json: SCENARIOS.map((s) => (s.id === 'revisit' ? { ...s, opening_message: `Про лінію ${PAUSED}: що змінилося відтоді?` } : s)),
+    })
+    await openChat(page)
+    await scenarioList(page).getByRole('radio', { name: 'Повернення до теми' }).check()
+    await expect(firstMessage(page)).toHaveText(`Про лінію ${PAUSED_LINE_NOTE}: що змінилося відтоді?`)
+    await page.locator('[data-el="revisit-open"]').click()
+    const dialog = pickDialog(page)
+    await expect(dialog.locator('.pick__input')).toHaveCount(2)
+    const first = dialog.locator('li.pick').first()
+    await expect(first.locator('.pick__title')).toHaveText(`Дзвінок на ${PAUSED_LINE_NOTE}`)
+    await expect(first.locator('.pick__first')).toHaveText(`Номер ${PAUSED_LINE_NOTE} не відповів.`)
+    await expect(first.locator('.pick__meta')).toContainText(`#лінія ${PAUSED_LINE_NOTE}`)
+    expect((await markup(page)).includes(PAUSED)).toBe(false)
+    await first.locator('.pick__input').check()
+    await dialog.getByRole('button', { name: 'Продовжити (1)' }).click()
+    await expect(dialog).toBeHidden()
+    await expect(page.locator('[data-el="revisit-names"]')).toHaveText(`Дзвінок на ${PAUSED_LINE_NOTE}`)
+  })
+
   test('#30 404 on a record: the picker opens again with the banner; a new choice sends the turn again', async ({ page, api }) => {
     api.on('POST /chat/turn', fail(404, 'not_found'), { sse: reply() })
     await openChat(page)
@@ -1363,6 +1399,32 @@ test.describe('theses', () => {
     await expect(announcer(page)).toHaveText(/^(Збережено в щоденник)?$/)
     await axe(page, 'saved')
     await storageAudit(page, USER, consoleLines)
+  })
+
+  test('#31b the paused number in the theses: the draft and the POST carry the short note; a stored record that still has it is masked on «Збережено»', async ({ page, api }) => {
+    const title = `Дзвінок на ${PAUSED}`
+    const thesis = `Номер ${PAUSED} не відповів.`
+    api.on('POST /chat/summarize', { json: { ...DRAFT, title, bullets: [thesis, ...DRAFT.bullets.slice(1)] } })
+    // The server answers with a record that still spells the number (written before the mask).
+    api.on('POST /summaries', (call) => {
+      const stored = storedFrom(call.body)
+      const tag = { id: '00000000-0000-4000-9000-000000000179', name: `лінія ${PAUSED}`, source: 'ai' }
+      return { status: 201, json: { ...stored, title, bullets: [thesis, ...stored.bullets.slice(1)], tags: [...stored.tags, tag] } }
+    })
+    await openChat(page)
+    await exchange(page, USER)
+    await toReview(page)
+    await expect(page.locator('[data-el="review-title"]')).toHaveValue(`Дзвінок на ${PAUSED_LINE_NOTE_SHORT}`)
+    await expect(page.locator('#thesis-b0')).toHaveValue(`Номер ${PAUSED_LINE_NOTE_SHORT} не відповів.`)
+    await page.getByRole('button', { name: 'Зберегти в щоденник' }).click()
+    await onScreen(page, 'saved')
+    const [body] = api.bodies('POST /summaries') as { title: string; bullets: string[] }[]
+    expect(body!.title).toBe(`Дзвінок на ${PAUSED_LINE_NOTE_SHORT}`)
+    expect(body!.bullets[0]).toBe(`Номер ${PAUSED_LINE_NOTE_SHORT} не відповів.`)
+    await expect(page.locator('[data-el="saved-title"]')).toHaveText(`Дзвінок на ${PAUSED_LINE_NOTE}`)
+    await expect(page.locator('[data-el="saved-bullets"] li').first()).toContainText(`Номер ${PAUSED_LINE_NOTE} не відповів.`)
+    await expect(page.locator('[data-el="saved-tags"]')).toContainText(`#лінія ${PAUSED_LINE_NOTE}`)
+    expect((await markup(page)).includes(PAUSED)).toBe(false)
   })
 
   test('#15 ★ 422 on the theses: the error on thesis 3 and the focus there', async ({ page, api }) => {
