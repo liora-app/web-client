@@ -22,6 +22,17 @@ export const MAX_BULLET = 500
 export const BULLET_COUNTER_FROM = 450
 export const MAX_TAGS = 10
 export const MAX_TAG = 40
+/** GET /summaries `q`: the server takes up to 200 characters and no NUL (422 otherwise). */
+export const MAX_QUERY = 200
+
+const APOSTROPHES = /[ʼ’‘`´ʹ]/g
+
+/** The server's `normalize` (server/app/text.py): one apostrophe form, lower case, ё → е,
+ *  collapsed whitespace. Two tags with the same normal form are one tag on the server: it keeps
+ *  the first and answers with the name already stored. */
+export function normalize(text: string): string {
+  return text.replace(APOSTROPHES, "'").toLowerCase().replace(/ё/g, 'е').trim().split(/\s+/).join(' ')
+}
 
 export function codePoints(text: string): number {
   let n = 0
@@ -141,8 +152,8 @@ export function validateDraft(draft: Draft, scenario: ScenarioId): DraftCheck {
     if (name === '') issues.push({ field: t.id, reason: 'tag-empty' })
     else if (name.includes('\u0000')) issues.push({ field: t.id, reason: 'tag-nul' })
     else if (codePoints(name) > MAX_TAG) issues.push({ field: t.id, reason: 'tag-long' })
-    else if (seen.has(name.toLocaleLowerCase('uk'))) issues.push({ field: t.id, reason: 'tag-dup' })
-    seen.add(name.toLocaleLowerCase('uk'))
+    else if (seen.has(normalize(name))) issues.push({ field: t.id, reason: 'tag-dup' })
+    seen.add(normalize(name))
     tags.push({ name, source: t.source })
     tagIndex.push(t.id)
   }
@@ -158,8 +169,8 @@ export function newTagIssue(name: string, tags: readonly DraftTag[]): DraftIssue
   if (trimmed === '') return 'tag-empty'
   if (trimmed.includes('\u0000')) return 'tag-nul'
   if (codePoints(trimmed) > MAX_TAG) return 'tag-long'
-  const key = trimmed.toLocaleLowerCase('uk')
-  if (tags.some((t) => t.name.trim().toLocaleLowerCase('uk') === key)) return 'tag-dup'
+  const key = normalize(trimmed)
+  if (tags.some((t) => normalize(t.name) === key)) return 'tag-dup'
   if (tags.length >= MAX_TAGS) return 'tags-many'
   return null
 }

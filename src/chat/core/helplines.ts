@@ -55,7 +55,9 @@ const MAX_MESSAGE = 400
 const MAX_NAME = 120
 const MAX_HOURS = 80
 const MAX_ABROAD = 300
-const PHONE = /^[0-9 +]{3,20}$/
+/** 3..19 digits, "+" only in front, at most one space between digits: no dead `tel:` links such
+ *  as "+++" or "1+2". */
+const PHONE = /^\+?\d(?: ?\d){2,18}$/
 // The paused national hotline. Kept as two halves so that no single literal in the source spells
 // the number a page must never show.
 const PAUSED = '73' + '33'

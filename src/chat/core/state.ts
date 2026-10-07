@@ -13,11 +13,13 @@ import { DEFAULT_BUSY_RETRY_MS, outcomeUnknown, toUiError, uiError, type ApiErro
 import { FALLBACK, type SafeHelplines } from './helplines'
 import {
   MAX_CONTENT,
+  MAX_QUERY,
   MAX_REVISIT_IDS,
   canSend,
   checkMessage,
   clampCodePoints,
   draftFromOut,
+  normalize,
   validateDraft,
   type Draft,
   type DraftBody,
@@ -127,6 +129,11 @@ export type State =
       error: UiError | null
       /** A fresh GET /consents is on its way; the boxes wait for it. */
       loading: boolean
+      /** ctx.consents is a valid source for the boxes, the version and the POST body: boot or
+       *  DELETE /consents data in `first`, a fresh GET in `update` and `resume` (§3.5). False until
+       *  that GET answers, and again after a 409: «Погоджуюся» then asks for it instead of POSTing
+       *  stale data. */
+      fresh: boolean
       submitting: boolean
       /** Bumped when the boxes must be reset from ctx.consents (fresh data, 409). */
       epoch: number
@@ -142,11 +149,28 @@ export type State =
     }>
   | Readonly<{ s: 'session-expired'; stale: Session; pending: Pending | null; draft: Draft | null }>
   | Readonly<{ s: 'crisis'; helplines: SafeHelplines; stale: readonly Msg[] }>
-  | Readonly<{ s: 'summarizing'; session: Session; id: number; busy: 0 | 1 | 2; until: number | null; error: UiError | null }>
+  | Readonly<{
+      s: 'summarizing'
+      session: Session
+      /** The unsent message of the conversation: it comes back with «Повернутися до розмови». */
+      pending: Pending | null
+      id: number
+      /** Automatic llm_busy retries so far. While `error` is null and `busy` > 0, the retry is
+       *  scheduled for `until` (or already running): that is the countdown, not an error, and
+       *  nothing else may start (I2). */
+      busy: 0 | 1 | 2
+      /** With `error` rate_limited: the manual retry waits until then. */
+      until: number | null
+      /** Final: only a manual retry, «Повернутися до розмови» or «Завершити без тез». */
+      error: UiError | null
+    }>
   | Readonly<{
       s: 'review'
       session: Session
+      pending: Pending | null
       draft: Draft
+      /** `unknown`: the last POST may have landed. The draft is read-only until the retry has
+       *  looked at the newest record (§7.3), so the check compares with the body that went out. */
       saving: 'idle' | 'saving' | 'unknown'
       error: UiError | null
       issues: readonly DraftIssue[]
@@ -311,7 +335,7 @@ export type Action =
   | Readonly<{ type: 'summarize/ok'; id: number; draft: SummaryDraftOut }>
   | Readonly<{ type: 'summarize/fail'; id: number; error: ApiError; now: number }>
   | Readonly<{ type: 'summarize/cancel' }>
-  | Readonly<{ type: 'summarize/retry' }>
+  | Readonly<{ type: 'summarize/retry'; now: number }>
   | Readonly<{ type: 'review/update'; draft: Draft }>
   | Readonly<{ type: 'review/save' }>
   | Readonly<{ type: 'review/done' }>
@@ -387,7 +411,7 @@ export function leaveGuard(state: State): boolean {
     case 'chat':
       return hasUserMessage(state.session, state.pending)
     case 'summarizing':
-      return hasUserMessage(state.session, null)
+      return hasUserMessage(state.session, state.pending)
     case 'review':
       return true
     case 'consent':
@@ -404,6 +428,7 @@ export function leaveGuard(state: State): boolean {
 /** I2: a turn or a summarize is in flight (or waiting for its automatic retry). */
 export function llmInFlight(state: State): boolean {
   if (state.s === 'chat') return state.turn.p === 'waiting' || state.turn.p === 'streaming' || state.turn.p === 'busy-wait'
+  // `error` is set only once no automatic retry is left: the llm_busy countdown keeps it null.
   if (state.s === 'summarizing') return state.error === null
   return false
 }
@@ -431,8 +456,10 @@ export function matchesSaved(body: SummaryCreate, item: SummaryOut, dateHeader: 
   if (item.scenario !== body.scenario || item.title.trim() !== body.title.trim()) return false
   const bullets = item.bullets.map((b) => b.trim())
   if (bullets.length !== body.bullets.length || bullets.some((b, i) => b !== body.bullets[i]?.trim())) return false
-  const mine = new Set(body.tags.map((t) => t.name.trim()))
-  const theirs = new Set(item.tags.map((t) => t.name.trim()))
+  // Tag names as the server de-duplicates them: a tag that already exists comes back under its
+  // stored name («робота» for «Робота», «пам'ять» for «памʼять»).
+  const mine = new Set(body.tags.map((t) => normalize(t.name)))
+  const theirs = new Set(item.tags.map((t) => normalize(t.name)))
   if (mine.size !== theirs.size || [...mine].some((n) => !theirs.has(n))) return false
   if (dateHeader !== null) {
     const serverNow = Date.parse(dateHeader)
@@ -480,10 +507,17 @@ function consent(mode: ConsentMode, init: Partial<Omit<ConsentScreen, 's' | 'mod
     resume: null,
     error: null,
     loading: false,
+    fresh: false,
     submitting: false,
     epoch: 0,
     ...init,
   }
+}
+
+/** Back to the conversation from the theses, the unsent message with it (§7.1 «Розмова на
+ *  місці»). After a 413 the block comes back too: the same message would get the same 413. */
+function backToChat(session: Session, pending: Pending | null): ChatState {
+  return chat(session, { pending, notice: pending?.error?.code === 'payload_too_large' ? { kind: 'too-large' } : null })
 }
 
 const loaded = <T>(value: T): Loadable<T> => ({ status: 'ok', value })
@@ -537,10 +571,10 @@ function beginTurn(
   ]
 }
 
-function beginSummarize(model: Model, session: Session): Step {
+function beginSummarize(model: Model, session: Session, pending: Pending | null): Step {
   const id = model.ctx.seq + 1
   return [
-    { ...model, ctx: { ...model.ctx, seq: id }, state: { s: 'summarizing', session, id, busy: 0, until: null, error: null } },
+    { ...model, ctx: { ...model.ctx, seq: id }, state: { s: 'summarizing', session, pending, id, busy: 0, until: null, error: null } },
     [{ type: 'summarize', id, body: summarizeBody(session.scenario, session.messages), delayMs: 0, timeoutMs: SUMMARIZE_TIMEOUT }],
   ]
 }
@@ -628,9 +662,17 @@ function sessionOf(state: State): Session | null {
 }
 
 function pendingOf(state: State): Pending | null {
-  return state.s === 'chat' || state.s === 'consent' || state.s === 'session-expired' || state.s === 'not-invited'
-    ? state.pending
-    : null
+  switch (state.s) {
+    case 'chat':
+    case 'consent':
+    case 'summarizing':
+    case 'review':
+    case 'session-expired':
+    case 'not-invited':
+      return state.pending
+    default:
+      return null
+  }
 }
 
 function draftOf(state: State): Draft | null {
@@ -652,11 +694,12 @@ function afterConsent(model: Model): Step {
         return beginTurn(model, chat(session), resume.request, text, resume.revisitIds)
       }
       case 'summarize':
-        return beginSummarize(model, session)
+        return beginSummarize(model, session, state.pending)
       case 'save':
         return beginSave(model, {
           s: 'review',
           session,
+          pending: state.pending,
           draft: resume.draft,
           saving: 'idle',
           error: null,
@@ -761,19 +804,21 @@ function onTurnOutcome(model: Model, state: ChatState, outcome: TurnOutcome, now
 }
 
 function onSummarizeFail(model: Model, state: SummarizingState, error: ApiError, now: number): Step {
-  const { session } = state
+  const { session, pending } = state
   if (error.code === 'crisis_stop') return enterCrisis(model, error.helplines ?? FALLBACK, session.messages)
-  if (error.status === 401) return unauthenticated(model, session, null, null)
-  if (error.code === 'not_invited') return notInvited(model, session, null, null)
-  if (error.code === 'consent_required') return enterResume(model, session, null, { kind: 'summarize' }, error.policyVersion)
+  if (error.status === 401) return unauthenticated(model, session, pending, null)
+  if (error.code === 'not_invited') return notInvited(model, session, pending, null)
+  if (error.code === 'consent_required') return enterResume(model, session, pending, { kind: 'summarize' }, error.policyVersion)
   if (error.code === 'llm_busy' && state.busy < MAX_BUSY_RETRIES) {
     const ms = error.retryAfterMs ?? DEFAULT_BUSY_RETRY_MS
     const id = model.ctx.seq + 1
+    // The countdown is not an error: with `error` null the request still counts as in flight
+    // (I2), and «Скласти ще раз» cannot start a second one beside the scheduled retry.
     return [
       {
         ...model,
         ctx: { ...model.ctx, seq: id },
-        state: { ...state, id, busy: (state.busy + 1) as 1 | 2, until: now + ms, error: toUiError(error) },
+        state: { ...state, id, busy: (state.busy + 1) as 1 | 2, until: now + ms, error: null },
       },
       [{ type: 'summarize', id, body: summarizeBody(session.scenario, session.messages), delayMs: ms, timeoutMs: SUMMARIZE_TIMEOUT }],
     ]
@@ -788,15 +833,16 @@ function onSummarizeFail(model: Model, state: SummarizingState, error: ApiError,
 const FIELD = /^(?:(title)|bullets\.(\d+)|tags\.(\d+)(?:\.name)?)$/
 
 function onSaveFail(model: Model, state: ReviewState, error: ApiError): Step {
-  const { session, draft } = state
-  // Network, our timeout, or a gateway without a body: the record may exist. The next attempt
-  // first looks at the newest record (save-check), so a retry never makes a duplicate (§7.3).
+  const { session, pending, draft } = state
+  // Network, our timeout, a gateway without a body, or a 201 we could not read: the record may
+  // exist. The next attempt first looks at the newest record (save-check), so a retry never
+  // makes a duplicate (§7.3).
   if (outcomeUnknown(error)) {
     return withState(model, { ...state, saving: 'unknown', error: uiError('save_unknown', { requestId: error.requestId }) })
   }
-  if (error.status === 401) return unauthenticated(model, session, null, draft)
-  if (error.code === 'not_invited') return notInvited(model, session, null, draft)
-  if (error.code === 'consent_required') return enterResume(model, session, null, { kind: 'save', draft }, error.policyVersion)
+  if (error.status === 401) return unauthenticated(model, session, pending, draft)
+  if (error.code === 'not_invited') return notInvited(model, session, pending, draft)
+  if (error.code === 'consent_required') return enterResume(model, session, pending, { kind: 'save', draft }, error.policyVersion)
   if (error.code === 'validation_error' && state.sent !== null) {
     const issues: DraftIssue[] = []
     let unmapped = error.fields.length === 0
@@ -870,14 +916,14 @@ function onConfirmAccept(model: Model, choice: 'summarize' | undefined): Step {
   const popped: Model = { ...model, overlay: model.overlay.slice(0, -1) }
   switch (top.kind) {
     case 'end':
-      return state.s === 'chat' && confirmAllowed(model, 'end', undefined) ? beginSummarize(model, state.session) : [model, NONE]
+      return state.s === 'chat' && confirmAllowed(model, 'end', undefined) ? beginSummarize(model, state.session, state.pending) : [model, NONE]
     case 'end-no-theses':
       if (state.s === 'summarizing') return ended(model, [{ type: 'abort', target: 'summarize' }])
       return state.s === 'chat' ? ended(model, [{ type: 'abort', target: 'turn' }]) : [model, NONE]
     case 'discard':
       return state.s === 'review' ? ended(model) : [model, NONE]
     case 'regenerate':
-      return state.s === 'review' && state.saving !== 'saving' ? beginSummarize(model, state.session) : [model, NONE]
+      return state.s === 'review' && state.saving !== 'saving' ? beginSummarize(model, state.session, state.pending) : [model, NONE]
     case 'leave':
       if (choice === 'summarize') {
         const ok =
@@ -885,7 +931,7 @@ function onConfirmAccept(model: Model, choice: 'summarize' | undefined): Step {
           (state.turn.p === 'idle' || state.turn.p === 'cooldown') &&
           hasReply(state.session) &&
           !state.session.noSave
-        return ok && state.s === 'chat' ? beginSummarize(model, state.session) : [model, NONE]
+        return ok && state.s === 'chat' ? beginSummarize(model, state.session, state.pending) : [model, NONE]
       }
       return [popped, [top.leaveTo === 'reload' ? { type: 'reload' } : { type: 'navigate', href: '/' }]]
     case 'relogin':
@@ -963,7 +1009,7 @@ function step(model: Model, action: Action): Step {
       const next: Model = { ...model, ctx: { ...ctx, consents: action.consents } }
       if (action.purpose === 'boot') {
         if (state.s !== 'booting') return [next, NONE]
-        if (action.consents.missing.length > 0) return withState(next, consent('first'))
+        if (action.consents.missing.length > 0) return withState(next, consent('first', { fresh: true }))
         return startWhenReady({ ...next, ctx: { ...next.ctx, wantChat: true } })
       }
       if (state.s !== 'consent') return [next, NONE]
@@ -971,7 +1017,7 @@ function step(model: Model, action: Action): Step {
       // answer (§3.5).
       const known = ctx.consents?.current_policy_version ?? null
       const policyChanged = state.policyChanged || (known !== null && known !== action.consents.current_policy_version)
-      const fresh: Model = { ...next, state: { ...state, loading: false, epoch: state.epoch + 1, policyChanged, error: null } }
+      const fresh: Model = { ...next, state: { ...state, loading: false, fresh: true, epoch: state.epoch + 1, policyChanged, error: null } }
       // Agreed in another tab meanwhile: no POST (kinds must be 1..3), repeat the action now.
       if (action.consents.missing.length === 0) return afterConsent(fresh)
       return [fresh, NONE]
@@ -1015,6 +1061,10 @@ function step(model: Model, action: Action): Step {
     // ── consent ──
     case 'consent/agree': {
       if (state.s !== 'consent' || state.loading || state.submitting) return [model, NONE]
+      // The fresh GET failed (or a 409 made the data old): ctx.consents still holds the boot
+      // answer — missing = [] or an outdated version. Ask again instead of acting on it (§2.4,
+      // §3.5); the boxes reset when the answer comes.
+      if (!state.fresh) return withState(model, { ...state, loading: true, error: null }, [{ type: 'consents', purpose: 'fresh' }])
       const consents = ctx.consents
       // No named provider, no consent to hand it the conversation (§3.5).
       if (consents === null || consents.llm_provider === null) return withState(model, { ...state, error: uiError('provider_missing') })
@@ -1040,7 +1090,7 @@ function step(model: Model, action: Action): Step {
         // New terms: a fresh GET, boxes cleared, the banner. `resume` and its mode stay, so the
         // action still repeats after the new consent; `first` becomes `update`.
         const mode: ConsentMode = state.mode === 'first' ? 'update' : state.mode
-        return withState(model, { ...state, mode, submitting: false, loading: true, policyChanged: true, error: null }, [
+        return withState(model, { ...state, mode, submitting: false, loading: true, fresh: false, policyChanged: true, error: null }, [
           { type: 'consents', purpose: 'fresh' },
         ])
       }
@@ -1104,7 +1154,9 @@ function step(model: Model, action: Action): Step {
     }
     case 'chat/summarize':
       if (state.s !== 'chat' || (state.turn.p !== 'idle' && state.turn.p !== 'cooldown')) return [model, NONE]
-      return beginSummarize(model, state.session)
+      // An unsent message goes along, untouched: the theses are of `messages` only, and it is
+      // back in place if the person returns to the conversation.
+      return beginSummarize(model, state.session, state.pending)
     case 'chat/new':
       if (state.s !== 'saved' && state.s !== 'ended') return [model, NONE]
       return startChat(model)
@@ -1162,7 +1214,8 @@ function step(model: Model, action: Action): Step {
     case 'revisit/search': {
       const top = topPick(model)
       if (top === null) return [model, NONE]
-      const q = action.q.trim()
+      // What the server takes (≤ 200, no NUL), or the search would be a 422 «не вдалося завантажити».
+      const q = clampCodePoints(action.q.replace(/\u0000/g, '').trim(), MAX_QUERY).trim()
       return [replaceTop(model, { ...top, q, loading: true, failed: false }), [{ type: 'pick-list', purpose: 'pick', q, cursor: null }]]
     }
     case 'revisit/more': {
@@ -1217,6 +1270,7 @@ function step(model: Model, action: Action): Step {
       return withState(model, {
         s: 'review',
         session: state.session,
+        pending: state.pending,
         draft: draftFromOut(action.draft),
         saving: 'idle',
         error: null,
@@ -1229,12 +1283,17 @@ function step(model: Model, action: Action): Step {
       return onSummarizeFail(model, state, action.error, action.now)
     case 'summarize/cancel':
       if (state.s !== 'summarizing') return [model, NONE]
-      return withState(model, chat(state.session), [{ type: 'abort', target: 'summarize' }])
+      return withState(model, backToChat(state.session, state.pending), [{ type: 'abort', target: 'summarize' }])
     case 'summarize/retry':
+      // I2: by hand only after a final error, never beside the scheduled llm_busy retry; after a
+      // 429 only once its countdown is over.
       if (state.s !== 'summarizing' || state.error === null) return [model, NONE]
-      return beginSummarize(model, state.session)
+      if (state.until !== null && action.now < state.until) return [model, NONE]
+      return beginSummarize(model, state.session, state.pending)
     case 'review/update':
-      if (state.s !== 'review' || state.saving === 'saving') return [model, NONE]
+      // Not while saving, and not after an unknown result: the save-check must compare the newest
+      // record with the body that went out, not with a later edit (§7.3).
+      if (state.s !== 'review' || state.saving !== 'idle') return [model, NONE]
       return withState(model, { ...state, draft: action.draft, issues: [], error: null })
     case 'review/save':
       if (state.s !== 'review' || state.session.noSave || state.saving === 'saving') return [model, NONE]
@@ -1244,7 +1303,7 @@ function step(model: Model, action: Action): Step {
       return ended(model)
     case 'review/back':
       if (state.s !== 'review' || state.saving === 'saving') return [model, NONE]
-      return withState(model, chat(state.session))
+      return withState(model, backToChat(state.session, state.pending))
     case 'save/ok':
       if (state.s !== 'review' || state.id !== action.id || state.saving !== 'saving') return [model, NONE]
       return saved(model, action.summary)
@@ -1259,7 +1318,7 @@ function step(model: Model, action: Action): Step {
     }
     case 'save/check-fail':
       if (state.s !== 'review' || state.id !== action.id || state.saving !== 'saving') return [model, NONE]
-      if (action.error.status === 401) return unauthenticated(model, state.session, null, state.draft)
+      if (action.error.status === 401) return unauthenticated(model, state.session, state.pending, state.draft)
       // Still unknown: never POST blind.
       return withState(model, { ...state, saving: 'unknown', error: uiError('save_unknown', { requestId: action.error.requestId }) })
 
@@ -1330,7 +1389,7 @@ function step(model: Model, action: Action): Step {
       const me = ctx.me === null ? null : { ...ctx.me, consents_ok: false }
       // Closed explicitly: revoking from the consent screen keeps `s`, so reduce() would not.
       return [
-        { state: consent('first'), overlay: [], ctx: { ...ctx, consents: action.consents, diary, me, op: null } },
+        { state: consent('first', { fresh: true }), overlay: [], ctx: { ...ctx, consents: action.consents, diary, me, op: null } },
         [{ type: 'abort', target: 'all' }, { type: 'announcer/clear' }],
       ]
     }

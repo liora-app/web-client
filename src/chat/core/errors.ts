@@ -187,7 +187,13 @@ export function uiError(code: string, init: Partial<UiError> = {}): UiError {
 }
 
 /** Network failure, our own timeout, or a gateway that answered without a body: the request may
- *  or may not have reached the server. */
+ *  or may not have reached the server. A 2xx whose body broke off or could not be read (api.ts
+ *  turns it into network/internal with the status kept) is the same: the server has done the
+ *  work, we only did not see the result. */
 export function outcomeUnknown(error: ApiError): boolean {
-  return error.status === 0 || (error.status >= 500 && error.code === 'upstream_unavailable')
+  return (
+    error.status === 0 ||
+    (error.status >= 200 && error.status < 300) ||
+    (error.status >= 500 && error.code === 'upstream_unavailable')
+  )
 }

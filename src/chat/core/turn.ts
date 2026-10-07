@@ -127,6 +127,13 @@ export async function runTurn(deps: TurnDeps, body: TurnRequest, opts: TurnOptio
         clearT(headersTimer)
       }
       responded = true
+      // From the headers on, 45 s of silence ends any body, an error body included: a 503 whose
+      // JSON never arrives must not leave the turn waiting for ever (§5.5).
+      const arm = () => {
+        if (idle !== null) clearT(idle)
+        idle = setT(() => idleCtl.abort('idle'), IDLE_TIMEOUT)
+      }
+      arm()
       if (!res.ok) {
         const error = await fromResponse(res, now())
         if (signal.aborted) return byReason(signal.reason)
@@ -139,11 +146,6 @@ export async function runTurn(deps: TurnDeps, body: TurnRequest, opts: TurnOptio
         return { kind: 'http', error: clientError('internal', { status: res.status, requestId }) }
       }
       if (res.body === null) return { kind: 'truncated' }
-      const arm = () => {
-        if (idle !== null) clearT(idle)
-        idle = setT(() => idleCtl.abort('idle'), IDLE_TIMEOUT)
-      }
-      arm()
       let text = ''
       let metaId: string | null = null
       for await (const event of chatEvents(readFrames(res.body, arm))) {
