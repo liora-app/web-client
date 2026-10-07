@@ -125,6 +125,24 @@ test.describe('content and structure', () => {
     expect(foreign).toEqual([])
   })
 
+  test('runs under the site CSP without a single violation', async ({ page }) => {
+    await page.addInitScript(() => {
+      const seen: string[] = []
+      ;(window as unknown as { __csp: string[] }).__csp = seen
+      document.addEventListener('securitypolicyviolation', (event) => seen.push(`${event.violatedDirective} ${event.blockedURI}`))
+    })
+    const response = await page.goto('/')
+    // The same string as deploy/Caddyfile and vite.config.ts (ADR-007); without it this test proves nothing.
+    expect(response?.headers()['content-security-policy']).toBe(
+      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    )
+    await page.waitForLoadState('networkidle')
+    // Everything lazy (the scene chunk, fonts used further down) gets its chance.
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+    await page.waitForTimeout(1200)
+    expect(await page.evaluate(() => (window as unknown as { __csp: string[] }).__csp)).toEqual([])
+  })
+
   test('external links open safely', async ({ page }) => {
     await page.goto('/')
     const external = page.locator('a[href^="http"]')
@@ -343,7 +361,10 @@ test.describe('layers', () => {
     expect(fadeIsClickThrough).toBe(true)
 
     // elementsFromPoint skips pointer-events: none; let the decorative layers be hit in this test only.
-    await page.addStyleTag({ content: '.scene, .vignette { pointer-events: auto !important; }' })
+    // Through CSSOM, not a <style> tag: the site CSP (style-src 'self') blocks inline style elements.
+    await page
+      .locator('.scene, .vignette')
+      .evaluateAll((layers) => layers.forEach((layer) => (layer as HTMLElement).style.setProperty('pointer-events', 'auto', 'important')))
     const stackAt = (selector: string): Promise<{ target: number; canvas: number; vignette: number }> =>
       page
         .locator(selector)

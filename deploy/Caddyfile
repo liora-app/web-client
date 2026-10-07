@@ -1,5 +1,5 @@
 # Static server inside the web-client container. Only the edge Caddy (devops/caddy/Caddyfile) talks to
-# it over the compose network; TLS, HSTS and the other edge headers are set there.
+# it over the compose network; TLS, HSTS, Referrer-Policy and the other edge headers are set there.
 # No access log: the landing collects nothing, its server does not either.
 {
 	admin off
@@ -10,12 +10,23 @@
 	root * /srv
 	encode zstd gzip
 
+	# Three matchers that never overlap, so no-store on the chat does not depend on directive order.
 	# Vite fingerprints everything under /assets/: safe to keep for a year.
 	@assets path /assets/*
 	header @assets Cache-Control "public, max-age=31536000, immutable"
-	# The page itself and unhashed files (favicon, og image) are revalidated on every visit.
-	@other not path /assets/*
+	# The chat (ADR-007) holds a conversation in memory: never stored by a cache, nor is the 308 that
+	# file_server answers for /chat without the slash. The query (?auth_error=…) does not change the path.
+	@chat path /chat /chat/ /chat/index.html
+	header @chat Cache-Control "no-store"
+	# The landing and unhashed files (favicon, og image) are revalidated on every visit.
+	@other not path /assets/* /chat /chat/ /chat/index.html
 	header @other Cache-Control "no-cache"
+
+	# One policy for the whole site, "/" and "/chat/" alike (ADR-007, verbatim). Vite builds without
+	# inline scripts, inline styles or data: URIs (vite.config.ts), and the chat talks only to its own
+	# origin's /api/v1. vite.config.ts mirrors these two headers for the e2e run against preview.
+	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+	header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
 
 	file_server
 }
