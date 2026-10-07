@@ -4,7 +4,9 @@
 //   data-gl="off"      static CSS backdrop; data-gl-reason says why
 // The page is complete without the scene: all text lives in the DOM, the canvas is decorative.
 // Which scene runs is the page's choice (BootOptions.load); the reasons to stay static are the same
-// for every scene. This module lands in the page's entry chunk: type-only imports from the GL side,
+// for every scene. bootGL returns a GlControl: the page reaches the scene's own handle (the chat's
+// setPresence/pulse) and can suspend the scene (a hidden slot) without it counting as a reason
+// to stay static. This module lands in the page's entry chunk: type-only imports from the GL side,
 // so three.js stays in the lazy scene chunk.
 
 import { motionAllowed, onMotionChange, systemReducesMotion } from '../../ui/motion'
@@ -33,14 +35,29 @@ export interface SceneOptions {
   sizeTo?: HTMLElement
 }
 
-/** What a lazily imported scene module (../scene, the chat's ../presence) exports. */
-export interface SceneModule {
-  createScene(canvas: HTMLCanvasElement, callbacks: SceneCallbacks, options?: SceneOptions): Promise<SceneHandle>
+/** What a lazily imported scene module (../scene, the chat's ../presence) exports. H is the
+ *  scene's own handle: SceneHandle plus whatever the page drives (the chat's setPresence, pulse). */
+export interface SceneModule<H extends SceneHandle = SceneHandle> {
+  createScene(canvas: HTMLCanvasElement, callbacks: SceneCallbacks, options?: SceneOptions): Promise<H>
 }
 
-export interface BootOptions extends SceneOptions {
+export interface BootOptions<H extends SceneHandle = SceneHandle> extends SceneOptions {
   /** Loads the scene module as its own chunk: () => import('./gl/scene'). */
-  load: () => Promise<SceneModule>
+  load: () => Promise<SceneModule<H>>
+  /** Called once, when the scene exists and is already paused or running as it should be:
+   *  the place to apply the page's current state to it (the chat's data-presence). */
+  onReady?: (handle: H) => void
+}
+
+/** What bootGL gives back to the page. The landing ignores it. */
+export interface GlControl<H extends SceneHandle = SceneHandle> {
+  /** The live scene, or null before it started and after it gave up (slow, error, …).
+   *  Read it each time instead of keeping the onReady argument. */
+  handle(): H | null
+  /** false pauses the scene and keeps it paused through every later sync (motion toggle,
+   *  forced colors, a restored context) until true. Not a reason to stay static: data-gl and
+   *  data-gl-reason do not change. */
+  setActive(active: boolean): void
 }
 
 export type GlReason =
@@ -101,11 +118,16 @@ function afterFirstPaint(task: () => void): void {
   else window.addEventListener('load', schedule, { once: true })
 }
 
-export function bootGL(canvas: HTMLCanvasElement, { load, ...sceneOptions }: BootOptions): void {
-  let handle: SceneHandle | null = null
+export function bootGL<H extends SceneHandle = SceneHandle>(
+  canvas: HTMLCanvasElement,
+  { load, onReady, ...sceneOptions }: BootOptions<H>,
+): GlControl<H> {
+  let handle: H | null = null
   let starting = false
   let drawn = false
   let contextLost = false
+  // The page put the scene away (GlControl.setActive(false)): paused, but not a fallback reason.
+  let suspended = false
   // Set once the scene proved it cannot run here; the static backdrop then stays for this visit.
   let unavailable: GlReason | null = null
 
@@ -128,7 +150,8 @@ export function bootGL(canvas: HTMLCanvasElement, { load, ...sceneOptions }: Boo
       handle?.pause()
       setGlStatus('off', reason)
     } else if (handle) {
-      handle.resume()
+      if (suspended) handle.pause()
+      else handle.resume()
       setGlStatus(drawn ? 'on' : 'loading')
     } else if (!starting) {
       starting = true
@@ -185,9 +208,19 @@ export function bootGL(canvas: HTMLCanvasElement, { load, ...sceneOptions }: Boo
     }
     starting = false
     sync()
+    // Outside the try: a bug in the page's handler must not tear down a working scene.
+    if (handle) onReady?.(handle)
   }
 
   onMotionChange(() => sync())
   forcedColors.addEventListener('change', () => sync())
   sync()
+
+  return {
+    handle: () => handle,
+    setActive: (active) => {
+      suspended = !active
+      sync()
+    },
+  }
 }

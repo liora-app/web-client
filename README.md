@@ -45,7 +45,9 @@ src/ui/               motion.ts (пауза / reduced motion), nav.ts (aria-curr
 src/gl/               WebGL-шар — окремий лінивий чанк з three.js
   core/               спільне для кожної сцени (лендінг, згодом чат):
     boot.ts           чи запускати сцену; стан у <html data-gl="loading|on|off" data-gl-reason>;
-                      bootGL(canvas, { load, tier?, dprCap?, sizeTo? }): яку сцену вантажити, вирішує сторінка;
+                      bootGL(canvas, { load, onReady?, tier?, dprCap?, sizeTo? }): яку сцену вантажити, вирішує
+                      сторінка; повертає { handle(), setActive(active) } — handle сцени (null до старту й
+                      після відмови) і пауза, яку не скасують наступні sync (лендінг це ігнорує);
                       лежить у вхідному чанку, без three.js
     renderer.ts       createRenderer(canvas, { msaa }): єдине місце, де створюється WebGLRenderer
     quality.ts        тири (частинки, боке, DPR, msaa / charLod / envSize; pickTier({ force }) → ?tier=low|medium|high
