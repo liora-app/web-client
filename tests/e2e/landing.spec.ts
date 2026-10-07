@@ -125,6 +125,15 @@ test.describe('content and structure', () => {
     expect(foreign).toEqual([])
   })
 
+  test('the footer says which cookies exist once the chat signs in', async ({ page }) => {
+    await page.goto('/')
+    const note = page.locator('.site-footer__note')
+    await expect(note).toContainText('Лендінг сам не ставить файли cookie і не має аналітики.')
+    await expect(note).toContainText('браузер тримає файл cookie сесії, недоступний скриптам сторінки')
+    await expect(note).toContainText('тимчасовий файл cookie входу')
+    await expect(note).not.toContainText('не використовує файли cookie')
+  })
+
   test('runs under the site CSP without a single violation', async ({ page }) => {
     await page.addInitScript(() => {
       const seen: string[] = []
@@ -141,6 +150,26 @@ test.describe('content and structure', () => {
     await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
     await page.waitForTimeout(1200)
     expect(await page.evaluate(() => (window as unknown as { __csp: string[] }).__csp)).toEqual([])
+  })
+
+  test('a sign-in error that lands on "/" moves to the chat, with a known code only', async ({ page }) => {
+    // The chat page asks the API on load; keep it offline: this test is about the landing's hop.
+    await page.route('**/api/**', (route) => route.abort())
+    const pages: string[] = []
+    page.on('request', (request) => {
+      if (!request.isNavigationRequest() || request.frame() !== page.mainFrame()) return
+      const url = new URL(request.url())
+      pages.push(url.pathname + url.search)
+    })
+    // Resolve on commit: the landing replaces itself while it is still loading.
+    await page.goto('/?auth_error=expired', { waitUntil: 'commit' })
+    await expect(page).toHaveURL(/\/chat\/(\?|$)/) // the chat then drops the query itself
+    expect(pages).toEqual(['/?auth_error=expired', '/chat/?auth_error=expired'])
+
+    pages.length = 0
+    await page.goto('/?auth_error=%3Cscript%3E', { waitUntil: 'commit' })
+    await expect(page).toHaveURL(/\/chat\/(\?|$)/)
+    expect(pages).toEqual(['/?auth_error=%3Cscript%3E', '/chat/?auth_error=unknown'])
   })
 
   test('external links open safely', async ({ page }) => {
@@ -307,6 +336,33 @@ test.describe('layout', () => {
         )
         .toBeGreaterThanOrEqual(16)
     }
+  })
+
+  test('the light opens the chat, out of the tab order and the accessibility tree', async ({ page }, testInfo) => {
+    await page.goto('/')
+    const link = page.locator('.hero a.hero__orb-link')
+    await expect(link).toHaveCount(1)
+    await expect(link).toHaveAttribute('href', '/chat/')
+    await expect(link).toHaveAttribute('tabindex', '-1')
+    await expect(link).toHaveAttribute('aria-hidden', 'true')
+    // The same circle as the light (both read --light-x/-y/-d).
+    await page.evaluate(() => document.fonts.ready)
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const light = document.querySelector('.hero__orb')!.getBoundingClientRect()
+          const hit = document.querySelector('.hero__orb-link')!.getBoundingClientRect()
+          return Math.max(...(['left', 'top', 'width', 'height'] as const).map((side) => Math.abs(light[side] - hit[side])))
+        }),
+      )
+      .toBeLessThanOrEqual(1)
+    // On the wide layout the light stands clear of the text: its centre takes the click.
+    if (testInfo.project.name !== 'desktop') return
+    const target = await link.evaluate((node) => {
+      const box = node.getBoundingClientRect()
+      return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest('a')?.className ?? null
+    })
+    expect(target).toBe('hero__orb-link')
   })
 
   test('largest contentful paint is text, not the scene', async ({ page, browserName }) => {

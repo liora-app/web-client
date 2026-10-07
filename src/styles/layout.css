@@ -150,6 +150,36 @@
     rgb(4 8 9 / 0.82);
 }
 
+/* «Розмова з AI →»: the one filled action, the way into /chat/ (the chat's primary button, smaller).
+   In the header from 64em only: on phones it heads the menu. The transparent border becomes the
+   button's outline in forced colours. */
+.cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.5rem;
+  padding: 0 1.1rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--color-light);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-bg);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) ease;
+}
+
+.cta:hover {
+  background: var(--color-light-strong);
+}
+
+.site-header__cta {
+  display: none;
+}
+
 /* Motion and sound: one pill, two round icon buttons. Shown once either button is (JS). */
 .media {
   display: none;
@@ -355,6 +385,10 @@ html[data-sound='on'][data-motion='on'] .sound-toggle__wave span:nth-child(4) {
   .menu-toggle:not([hidden]) {
     display: none;
   }
+
+  .site-header__cta {
+    display: inline-flex;
+  }
 }
 
 /* Narrow phones: the mark alone; the name stays for screen readers (the link needs a name). */
@@ -441,6 +475,12 @@ html:has(.site-menu[open]) {
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
+}
+
+/* The menu's first item: the chat, as a full-width primary button above the chapters. */
+.site-menu__cta {
+  min-height: 3rem;
+  font-size: 1rem;
 }
 
 .site-menu__list {
