@@ -568,6 +568,23 @@ test.describe('crisis', () => {
     await expectCrisis(page, USER, testInfo)
   })
 
+  test('#13b text typed before the theses does not come back after a 409 crisis_stop and «Почати нову»', async ({ page, api }) => {
+    api.on('POST /chat/summarize', fail(409, 'crisis_stop', { helplines: RAW_HELPLINES }))
+    await openChat(page)
+    await exchange(page, USER)
+    // The field leaves the DOM on the theses with this text in it.
+    await composer(page).fill('Синтетична чернетка, яку так і не надіслали.')
+    await page.locator('[data-el="session-end"]').click()
+    await confirmDialog(page).getByRole('button', { name: 'Підсумувати' }).click()
+    await onScreen(page, 'crisis')
+    await page.getByRole('button', { name: 'Почати нову розмову' }).click()
+    // «Текст цієї розмови зникне зі сторінки» — the unsent draft too.
+    await confirmDialog(page).getByRole('button', { name: 'Почати нову' }).click()
+    await onScreen(page, 'chat')
+    await expect(composer(page)).toHaveValue('')
+    await expect(sendButton(page)).toHaveAttribute('aria-disabled', 'true')
+  })
+
   test('#51b a dialog open when the screen changes: closed, focus on the new h1 (help → crisis)', async ({ page }) => {
     const stream = await streamTurns(page)
     await openChat(page)
@@ -785,6 +802,10 @@ test.describe('errors', () => {
     const resend = unsent.getByRole('button', { name: 'Надіслати ще раз' })
     await expect(resend).toHaveAttribute('aria-disabled', 'true')
     await expect(unsent.locator('.said__why')).toContainText('Надіслати знову можна через')
+    // Said once at the start, with the seconds, like the line: not «Можна надіслати ще раз» while
+    // the button is still aria-disabled (WCAG 4.1.3). That comes only at the end.
+    await expect.poll(async () => (await announced(page)).some((text) => /^Не надіслано\. .*Надіслати знову можна через 1[12] с\.$/.test(text))).toBe(true)
+    expect((await announced(page)).filter((text) => text.includes(COOLDOWN_OVER))).toEqual([])
     await composer(page).fill('Ще одне синтетичне повідомлення.')
     await expect(sendButton(page)).toHaveAttribute('aria-disabled', 'true')
     await axe(page, 'conversation in the 429 countdown')
@@ -817,9 +838,13 @@ test.describe('errors', () => {
     await endWithoutTheses(page)
     await page.getByRole('button', { name: 'Почати нову розмову' }).click()
     await onScreen(page, 'chat')
+    // The new conversation inherits no countdown: with text in the field «Надіслати» is ready now,
+    // and the old countdown's end is not said here.
+    await composer(page).fill('Синтетичне повідомлення в новій розмові.')
+    await expect(sendButton(page)).not.toHaveAttribute('aria-disabled', 'true')
     const before = (await announced(page)).length
     await page.clock.runFor(12_000)
-    await expect(sendButton(page)).toHaveAttribute('aria-disabled', 'true')
+    await expect(sendButton(page)).not.toHaveAttribute('aria-disabled', 'true')
     expect((await announced(page)).slice(before)).not.toContain(COOLDOWN_OVER)
     never.open()
   })
@@ -913,6 +938,9 @@ test.describe('sign-in and consent', () => {
     await openChat(page, '/chat/?auth_error=not_invited', 'not-invited')
     await expect(page.locator('[data-el="ni-guest"]')).toBeVisible()
     await expect(page.locator('[data-el="ni-member"]')).toBeHidden()
+    // Only about this sign-in: a tester taken off the list still has an account and a diary (§3.4).
+    await expect(page.locator('[data-el="ni-guest"] .prose')).toContainText('Новий акаунт не створено, і під час цього входу вашої адреси ми не записали.')
+    await expect(page.locator('[data-el="ni-guest"] .prose')).not.toContainText('Акаунт не створено')
     await expect(page).toHaveURL(/\/chat\/$/)
     // The variant keeps the screen's rhythm: the heading, the text and the button do not touch.
     const gaps = await page.evaluate(() => {
@@ -1104,6 +1132,31 @@ test.describe('revisit', () => {
     expect(api.count('POST /chat/turn')).toBe(0)
   })
 
+  test('#30c the closed picker keeps no records; after «Вийти» neither the chosen names nor the email stay in the page', async ({ page, api }) => {
+    await openChat(page)
+    await chooseRecords(page, [0])
+    await expect(page.locator('[data-el="revisit-names"]')).toHaveText(RECORDS[0]!.title)
+    // Closed, the picker lets go of its list: titles, tags and first theses of the diary.
+    await expect(pickDialog(page).locator('.pick')).toHaveCount(0)
+    const closed = await markup(page)
+    for (const r of RECORDS.slice(1)) expect(closed.includes(r.title), r.title).toBe(false)
+    expect(closed.includes(RECORDS[0]!.bullets[0]!), 'a first thesis').toBe(false)
+    // Opened again, it is filled again.
+    await page.locator('[data-el="revisit-open"]').click()
+    await expect(pickDialog(page).locator('.pick__input')).toHaveCount(RECORDS.length)
+    await page.keyboard.press('Escape')
+    await expect(pickDialog(page)).toBeHidden()
+
+    await accountToggle(page).click()
+    await expect(accountSheet(page).locator('[data-el="account-email"]')).toHaveText(EMAIL)
+    await accountSheet(page).getByRole('button', { name: 'Вийти', exact: true }).click()
+    await onScreen(page, 'signed-out')
+    expect(api.count('POST /auth/logout')).toBe(1)
+    const after = await markup(page)
+    expect(after.includes(EMAIL), 'the email in the closed account sheet').toBe(false)
+    for (const r of RECORDS) expect(after.includes(r.title), r.title).toBe(false)
+  })
+
   test('#30 404 on a record: the picker opens again with the banner; a new choice sends the turn again', async ({ page, api }) => {
     api.on('POST /chat/turn', fail(404, 'not_found'), { sse: reply() })
     await openChat(page)
@@ -1269,8 +1322,21 @@ test.describe('theses', () => {
     await page.locator('#review-tag-input').fill('ранок')
     await page.getByRole('button', { name: 'Додати', exact: true }).click()
     await page.getByRole('button', { name: 'Зберегти в щоденник' }).click()
-    await expect(page.locator('.tagpill', { hasText: '#ранок' })).toHaveClass(/tagpill--invalid/)
+    const wrong = page.locator('.tagpill', { hasText: '#ранок' })
+    await expect(wrong).toHaveClass(/tagpill--invalid/)
     await expect(page.locator('.tagpill', { hasText: '#стосунки' })).not.toHaveClass(/tagpill--invalid/)
+    // Named in text, not only by colour (SC 1.4.1, 3.3.1): the line says which tag, the focus is on
+    // that tag's «×», which the line describes; the border is dashed as well.
+    await expect(page.locator('#review-tag-error')).toHaveText(`«#ранок»: ${DRAFT_TEXT['tag-invalid']}`)
+    const remove = page.getByRole('button', { name: 'Прибрати тег «ранок»' })
+    await expect(remove).toBeFocused()
+    await expect(remove).toHaveAccessibleDescription(`«#ранок»: ${DRAFT_TEXT['tag-invalid']}`)
+    expect(await wrong.evaluate((node) => getComputedStyle(node).borderTopStyle)).toBe('dashed')
+    await expect(page.locator('#review-tag-input')).not.toBeFocused()
+    // The next edit clears the issues, and the line with them.
+    await page.locator('#thesis-b2').fill('Синтетична теза після правки.')
+    await expect(page.locator('#review-tag-error')).toHaveText('')
+    await expect(wrong).not.toHaveClass(/tagpill--invalid/)
     expect((api.bodies('POST /summaries')[1] as { tags: unknown[] }).tags).toEqual([
       { name: 'стосунки', source: 'ai' },
       { name: 'ранок', source: 'user' },
@@ -1309,24 +1375,30 @@ test.describe('theses', () => {
     held.open()
   })
 
-  test('#32c llm_busy on the theses: the countdown is said once, its seconds are not; a pagehide before the retry offers «Скласти ще раз»', async ({ page, api }) => {
+  test('#32c llm_busy on the theses: the countdown is said once, its seconds are not live; a pagehide cancels the retry for good and offers «Скласти ще раз»', async ({ page, api }) => {
+    await page.clock.install()
     api.on('POST /chat/summarize', fail(503, 'llm_busy', undefined, { 'retry-after': '30' }), { json: DRAFT })
     await openChat(page)
     await exchange(page)
     await page.locator('[data-el="session-end"]').click()
     await confirmDialog(page).getByRole('button', { name: 'Підсумувати' }).click()
     await onScreen(page, 'summarizing')
-    // The live part says what happened; the ticking seconds beside it are aria-hidden (§5.7).
+    // The live part says what happened; the ticking seconds stand beside it, outside it (§5.7):
+    // readable in browse mode (not aria-hidden), never announced.
     await expect(page.locator('[data-el="sum-status"]')).toHaveText(BUSY_NOW)
-    await expect(page.locator('[data-el="sum-countdown"]')).toContainText('Пробуємо ще раз через')
-    await expect(page.locator('[data-el="sum-countdown"]')).toHaveAttribute('aria-hidden', 'true')
+    const countdown = page.locator('[data-el="sum-countdown"]')
+    await expect(countdown).toContainText('Пробуємо ще раз через')
+    await expect(countdown).not.toHaveAttribute('aria-hidden', 'true')
+    expect(await countdown.evaluate((node) => node.closest('[role="status"], [aria-live]') === null)).toBe(true)
     await expect(announcer(page)).toHaveText('Пробуємо ще раз через 30 секунд')
     // The page is hidden before the scheduled retry: it never goes, and the screen says so.
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })))
     const retry = page.getByRole('button', { name: 'Скласти ще раз' })
     await expect(retry).toBeVisible()
-    await expect(page.locator('[data-el="sum-countdown"]')).toHaveText('')
+    await expect(countdown).toHaveText('')
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })))
+    // Past the moment the retry was due: still the one request.
+    await page.clock.runFor(31_000)
     expect(api.count('POST /chat/summarize')).toBe(1)
     await retry.click()
     await onScreen(page, 'review')
@@ -1417,6 +1489,8 @@ test.describe('theses', () => {
     await page.getByRole('button', { name: 'Видалити тези' }).click()
     const confirm = confirmDialog(page)
     await expect(confirm.locator('[data-if="maybe-saved"]')).toBeVisible()
+    // The draft on screen may never have gone out: only the conversation's theses may be there.
+    await expect(confirm.locator('[data-if="maybe-saved"]')).toContainText('можливо, тези з цієї розмови вже є у вашому щоденнику')
     await expect(confirm.locator('[data-if="not-maybe-saved"]')).toBeHidden()
     await axe(page, 'confirm discard after an unconfirmed save')
     await confirm.getByRole('button', { name: 'Видалити', exact: true }).click()
@@ -1507,6 +1581,8 @@ test.describe('account', () => {
     expect(api.count('POST /auth/logout')).toBe(1)
     const after = await markup(page)
     for (const text of [DRAFT.title, ...DRAFT.bullets]) expect(after.includes(text), text).toBe(false)
+    // The account sheet was opened for «Вийти»: closed, it keeps no email either.
+    expect(after.includes(EMAIL), 'the email in the closed account sheet').toBe(false)
   })
 
   test('#38 delete the account: focus starts on «Скасувати»; 204 → account-deleted', async ({ page, api, consoleLines }) => {
@@ -1516,6 +1592,8 @@ test.describe('account', () => {
     const confirm = confirmDialog(page)
     await expect(confirm.getByRole('button', { name: 'Скасувати' })).toBeFocused()
     await expect(confirm).toContainText('Ollama Cloud (Ollama Inc.)')
+    // The name already has its brackets: no «(Ollama Cloud (Ollama Inc.))».
+    await expect(confirm).not.toContainText('(Ollama Cloud')
     await axe(page, 'confirm delete-account')
     await confirm.getByRole('button', { name: 'Так, видалити все' }).click()
     await onScreen(page, 'account-deleted')
@@ -1689,6 +1767,61 @@ test.describe('page life', () => {
     expect(api.count('GET /me')).toBe(2)
   })
 
+  test('#41c «Піти» from the theses: the text left in the field goes with the conversation too', async ({ page }) => {
+    await page.route((url) => url.pathname === '/', (route) => route.fulfill({ status: 204 }))
+    await openChat(page)
+    await exchange(page, USER)
+    const draft = 'Синтетична чернетка, що лишилася в полі.'
+    await composer(page).fill(draft)
+    await toReview(page)
+    await page.locator('.chat-header .brand').click()
+    await confirmDialog(page).getByRole('button', { name: 'Піти', exact: true }).click()
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })))
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })))
+    await onScreen(page, 'chat')
+    // «Як після першого завантаження, без … чернетки» (§5.6). outerHTML never holds a field's value,
+    // so the field itself is asked.
+    await expect(composer(page)).toHaveValue('')
+  })
+
+  test('#41d «Піти з розмови?» advises only what can be done: summarize in the conversation, save on the theses', async ({ page }) => {
+    const confirm = confirmDialog(page)
+    const brand = page.locator('.chat-header .brand')
+    const summarizeLine = confirm.locator('p[data-if="can-summarize"]')
+    const saveLine = confirm.locator('p[data-if="review-save"]')
+    await openChat(page)
+    await exchange(page)
+    await brand.click()
+    await expect(confirm).toContainText('Піти з розмови?')
+    await expect(summarizeLine).toBeVisible()
+    await expect(confirm.getByRole('button', { name: 'Підсумувати' })).toBeVisible()
+    await expect(saveLine).toBeHidden()
+    await confirm.getByRole('button', { name: 'Залишитися' }).click()
+    // On the theses the way to keep them is the save, not a summary.
+    await toReview(page)
+    await brand.click()
+    await expect(saveLine).toBeVisible()
+    await expect(summarizeLine).toBeHidden()
+    await expect(confirm.getByRole('button', { name: 'Підсумувати' })).toBeHidden()
+    await confirm.getByRole('button', { name: 'Залишитися' }).click()
+    // «Не зберігати»: neither piece of advice.
+    await page.getByRole('button', { name: 'Повернутися до розмови' }).click()
+    await endWithoutTheses(page)
+    await page.getByRole('button', { name: 'Почати нову розмову' }).click()
+    await onScreen(page, 'chat')
+    await page.getByRole('switch', { name: 'Не зберігати цю розмову' }).click()
+    await exchange(page)
+    await brand.click()
+    await expect(confirm).toContainText('Піти з розмови?')
+    await expect(summarizeLine).toBeHidden()
+    await expect(saveLine).toBeHidden()
+    await confirm.getByRole('button', { name: 'Залишитися' }).click()
+    await toReview(page)
+    await brand.click()
+    await expect(saveLine).toBeHidden()
+    await expect(summarizeLine).toBeHidden()
+  })
+
   test('#42 the live region: at most two writes for a 50-token answer; empty 5 s after it and when the conversation ends', async ({ page, api }) => {
     await page.clock.install()
     const words = Array.from({ length: 50 }, (_, i) => `слово${i + 1} `)
@@ -1813,12 +1946,42 @@ async function tabTo(page: Page, from: Locator, target: Locator, key: 'Tab' | 'S
 const LAYERS = ['.site-header', '[data-el="session"]', '[data-el="composer"]'] as const
 
 test.describe('layout', () => {
-  test('#43 the composer stays in view at 1440 × 900 and on a Pixel 7', async ({ page }) => {
+  test('#43 the composer stays in view at 1440 × 900 and on a Pixel 7; «Надіслати» sits in the middle of a one-line field', async ({ page }, testInfo) => {
     await openChat(page)
     await expect(composer(page)).toBeInViewport()
+    // 6 px above and below the 44 px button on a desktop, 4 px on the phone (§3.7.3).
+    const send = await page.evaluate(() => {
+      const field = document.querySelector('#composer-input')!.getBoundingClientRect()
+      const button = document.querySelector('[data-el="composer-send"]')!.getBoundingClientRect()
+      return { above: button.top - field.top, below: field.bottom - button.bottom }
+    })
+    expect(Math.abs(send.above - send.below), JSON.stringify(send)).toBeLessThanOrEqual(1)
+    expect(send.below, JSON.stringify(send)).toBeGreaterThanOrEqual(3)
+    if (isDesktop(testInfo)) {
+      // A new conversation is one screen high: the column's top offset is subtracted once, and the
+      // focus put into the field does not scroll the page (§3.6).
+      const fit = await page.evaluate(() => ({ scrollY: window.scrollY, extra: document.documentElement.scrollHeight - window.innerHeight }))
+      expect(fit.scrollY, JSON.stringify(fit)).toBe(0)
+      expect(fit.extra, JSON.stringify(fit)).toBeLessThanOrEqual(1)
+      await expect(composer(page)).toBeFocused()
+    }
     await exchange(page)
     await exchange(page)
     await expect(composer(page)).toBeInViewport()
+  })
+
+  test('#43 Pixel 7 (412 × 839), a new conversation: «Не зберігати» is in view above the composer, not under its fade', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'mobile', 'a phone layout')
+    await openChat(page)
+    await page.evaluate(() => document.fonts.ready)
+    const where = await page.evaluate(() => {
+      const toggle = document.querySelector('.nosave .switch')!.getBoundingClientRect()
+      const bar = document.querySelector('[data-el="composer"]')!.getBoundingClientRect()
+      return { scrollY: window.scrollY, viewport: window.innerHeight, switchBottom: Math.round(toggle.bottom), composerTop: Math.round(bar.top) }
+    })
+    // The composer's fade reaches 32 px above its box.
+    expect(where.switchBottom, JSON.stringify(where)).toBeLessThanOrEqual(where.composerTop - 32)
+    expect(where.scrollY, JSON.stringify(where)).toBe(0)
   })
 
   test('#43 at 1024 × 768 and 1100 × 800 the light stays out of the text column', async ({ page }, testInfo) => {
@@ -1881,6 +2044,57 @@ test.describe('layout', () => {
     await send(page, CRISIS_TEXT)
     await onScreen(page, 'crisis')
     await check('crisis')
+  })
+
+  test('#43d at 320 px long words wrap on the saved record, in the record picker and in the chosen names', async ({ page, api }, testInfo) => {
+    test.skip(testInfo.project.name !== 'mobile', 'one engine is enough for reflow')
+    // 40 characters without a space (the longest tag), a thesis and a title with one long word.
+    const tag = 'тег'.repeat(13) + 'и'
+    const word = 'Синтетичнийдовгийрядокбезжодногопробілу'.repeat(3)
+    api.on('POST /chat/summarize', { json: { ...DRAFT, bullets: [word, ...DRAFT.bullets.slice(1)], tags: [tag] } })
+    const long = record(1, { title: word, bullets: [word], tags: [{ id: '00000000-0000-4000-9000-000000000177', name: tag, source: 'ai' }] })
+    api.on('GET /summaries', { json: diary([long, record(2)]) })
+    await page.setViewportSize({ width: 320, height: 640 })
+    await openChat(page)
+    await exchange(page)
+    await toReview(page)
+    await page.getByRole('button', { name: 'Зберегти в щоденник' }).click()
+    await onScreen(page, 'saved')
+    await expect(page.locator('[data-el="saved-tags"]')).toHaveText(`#${tag}`)
+    await page.evaluate(() => document.fonts.ready)
+    expect(await cutOffAtEdges(page), 'saved').toEqual([])
+    expect(await page.evaluate(() => window.innerWidth), 'saved: the layout viewport did not widen').toBe(320)
+
+    await page.getByRole('button', { name: 'Почати нову розмову' }).click()
+    await onScreen(page, 'chat')
+    await scenarioList(page).getByRole('radio', { name: 'Повернення до теми' }).check()
+    await page.locator('[data-el="revisit-open"]').click()
+    const dialog = pickDialog(page)
+    await expect(dialog.locator('.pick__input')).toHaveCount(2)
+    // The picker scrolls down, never sideways.
+    const box = await dialog.evaluate((node) => ({ scroll: node.scrollWidth, client: node.clientWidth }))
+    expect(box.scroll, `picker: ${JSON.stringify(box)}`).toBeLessThanOrEqual(box.client)
+    await dialog.locator('.pick__input').first().check()
+    await dialog.getByRole('button', { name: 'Продовжити (1)' }).click()
+    await expect(dialog).toBeHidden()
+    await expect(page.locator('[data-el="revisit-names"]')).toHaveText(word)
+    expect(await cutOffAtEdges(page), 'the chosen names').toEqual([])
+  })
+
+  test('#43e the session row breaks only at «·»: «не терапія» and «Не зберігати» stay whole at 375 and 412 px', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'mobile', 'a phone layout')
+    await openChat(page)
+    await scenarioList(page).getByRole('radio', { name: 'Розбір дня' }).check()
+    await page.getByRole('switch', { name: 'Не зберігати цю розмову' }).click()
+    await exchange(page)
+    await expect(page.locator('[data-el="session-nosave"]')).toBeVisible()
+    await expect(page.locator('[data-el="session-end"]')).toBeVisible()
+    for (const width of [375, 412]) {
+      await page.setViewportSize({ width, height: 800 })
+      await page.evaluate(() => document.fonts.ready)
+      const parts = await page.locator('.session .keep').evaluateAll((spans) => spans.map((span) => `${span.textContent}: ${span.getClientRects().length}`))
+      expect(parts, `${width} px`).toEqual(['Не зберігати: 1', 'Не людина: 1', 'не терапія: 1'])
+    }
   })
 
   test('#43 Tab never leaves the focus under the header, the session row or the composer', async ({ page, api }) => {
@@ -1959,6 +2173,8 @@ test.describe('layout', () => {
         return { style: style.borderTopStyle, width: parseFloat(style.borderTopWidth), color: style.borderTopColor }
       })
     await openChat(page)
+    // A dialog stops the page's scrolling; the scrollbar's place stays, so nothing jumps sideways.
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('scrollbar-gutter'))).toBe('stable')
     await page.emulateMedia({ forcedColors: 'active' })
     for (const selector of ['#composer-input', '[data-el="composer-send"]', '.pill', '.account-toggle', '.switch__track']) {
       const b = await border(selector)
@@ -2057,6 +2273,38 @@ test.describe('accessibility', () => {
     await expect(unsent.locator('.said__flag')).toHaveText('Відповідь зупинено')
     await expect(cancel).toBeHidden()
     await expect(next).toBeFocused()
+  })
+
+  test('#53 the live lines of the screens are rendered while still empty: a region shown together with its text may go unheard (§5.7)', async ({ page, api }) => {
+    const held = gate()
+    api.on(
+      'POST /chat/summarize',
+      async () => {
+        await held.wait
+        return fail(502, 'llm_failed')
+      },
+      { json: DRAFT },
+    )
+    /** In the accessibility tree (a box, no [hidden] or display: none on the way up) and empty. */
+    const empty = (selector: string) =>
+      page.locator(selector).evaluate((node) => ({ rendered: node.getClientRects().length > 0 && node.closest('[hidden]') === null, text: node.textContent }))
+    await openChat(page)
+    for (const selector of ['[data-el="composer-status"]', '[data-el="chat-line"]']) expect(await empty(selector), selector).toEqual({ rendered: true, text: '' })
+    await exchange(page)
+    for (const selector of ['[data-el="composer-status"]', '[data-el="chat-line"]']) expect(await empty(selector), selector).toEqual({ rendered: true, text: '' })
+    await page.locator('[data-el="session-end"]').click()
+    await confirmDialog(page).getByRole('button', { name: 'Підсумувати' }).click()
+    await onScreen(page, 'summarizing')
+    expect(await empty('[data-el="sum-status"]')).toEqual({ rendered: true, text: '' })
+    held.open()
+    const status = page.locator('[data-el="sum-status"]')
+    await expect(status).toHaveText(summarizeError(uiError('llm_failed', { status: 502 }), 0, null).why)
+    await expect(status).toBeVisible()
+    await page.getByRole('button', { name: 'Скласти ще раз' }).click()
+    await onScreen(page, 'review')
+    expect(await empty('#review-tag-error')).toEqual({ rendered: true, text: '' })
+    // Empty, they take no room: no gap of the screen opens around them.
+    expect(await page.locator('#review-tag-error').evaluate((node) => getComputedStyle(node).position)).toBe('absolute')
   })
 
   test('axe: booting, signed-out with and without the banner, not-invited without a session', async ({ page, api }) => {

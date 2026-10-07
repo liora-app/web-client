@@ -59,6 +59,7 @@ import {
 import type { ConsentState, ScenarioOut, SummaryCreate, SummaryList, SummaryOut, TurnRequest } from '../../src/chat/core/types'
 // UI modules whose logic needs no DOM to load: what they decide is tested here, the page in CI.
 import { CLEAR_AFTER_MS, createAnnouncer, type Region } from '../../src/chat/ui/announcer'
+import { sayRetry } from '../../src/chat/ui/copy'
 import { KEYBOARD_DROP, keyboardInset, keyboardShown } from '../../src/chat/ui/keyboard'
 import { SKY_KEY, parseSky, skyAttribute } from '../../src/ui/sky'
 
@@ -757,6 +758,19 @@ test.describe('api', () => {
     expect(c.ok && c.data.llm_provider).toBeNull()
   })
 
+  test('a provider without a country is no provider: no consent to hand the text to «{provider}, »', async () => {
+    const withProvider = (llm_provider: unknown) =>
+      createApi({
+        fetch: async () => new Response(JSON.stringify({ current_policy_version: 'v1', required: [], granted: [], missing: [], llm_provider }), { status: 200 }),
+      }).consents()
+    for (const country of ['', '   ', 'X'.repeat(65)]) {
+      const r = await withProvider({ name: 'Ollama Cloud (Ollama Inc.)', country })
+      expect(r.ok && r.data.llm_provider, JSON.stringify(country)).toBeNull()
+    }
+    const ok = await withProvider({ name: '  Ollama Cloud (Ollama Inc.) ', country: ' US ' })
+    expect(ok.ok && ok.data.llm_provider).toEqual({ name: 'Ollama Cloud (Ollama Inc.)', country: 'US' })
+  })
+
   test('helplines() returns the sanitized object only', async () => {
     const { api } = recorder(() => new Response(JSON.stringify(RAW_HELPLINES), { status: 200 }))
     const r = await api.helplines()
@@ -861,6 +875,28 @@ test.describe('helplines', () => {
     expect(safe.lines.map((l) => l.name)).toEqual(['Синтетична лінія підтримки', 'Без вартості'])
     expect(safe.message).toBe(FALLBACK_MESSAGE)
     expect(safe.abroadText).toBe(FALLBACK_ABROAD)
+  })
+
+  test('bidi controls drop the text: «3337» under a right-to-left override would draw the paused number', () => {
+    // Escapes, never the invisible characters themselves.
+    const reversed = '\u202E' + '3337'
+    // The digit checks alone let it through: the digits, in order, are not the paused number.
+    expect(reversed.normalize('NFKC').replace(/\D/g, '')).not.toContain(PAUSED)
+    const safe = sanitizeHelplines({
+      message: `Синтетичний лід ${reversed}`,
+      lines: [
+        { name: `Лінія ${reversed}`, phone: '0 800 00 00 07', hours: null, free: true },
+        { name: 'Синтетична лінія з годинами', phone: '0 800 00 00 08', hours: `з ${reversed}`, free: true },
+        { name: 'Синтетична лінія з ізоляцією', phone: '0 800 00 00 09', hours: '\u2067цілодобово\u2069', free: true },
+        { name: 'Синтетична лінія з міткою', phone: '0 800 00 00 10', hours: '\u200Fцілодобово', free: true },
+        { name: 'Звичайна синтетична лінія', phone: '0 800 00 00 11', hours: 'цілодобово', free: true },
+      ],
+      abroad: { text: `За кордоном: ${reversed}` },
+    })
+    expect(safe.lines.map((l) => l.name)).toEqual(['Звичайна синтетична лінія'])
+    expect(safe.message).toBe(FALLBACK_MESSAGE)
+    expect(safe.abroadText).toBe(FALLBACK_ABROAD)
+    expect(JSON.stringify(safe)).not.toMatch(/[\u202A-\u202E\u2066-\u2069\u200E\u200F\u061C]/)
   })
 
   test('112, 103 and the howareu link are constants; abroad.url and emergency are never read', () => {
@@ -2164,6 +2200,80 @@ test.describe('state: leaving the page, the account after a 401, countdowns, unc
   })
 })
 
+test.describe('state: one account operation at a time, late answers, a boot cut by pagehide', () => {
+  function revoking(): Model {
+    return run(answered(booted()), { type: 'overlay/open', overlay: 'account' }, { type: 'confirm/open', kind: 'revoke', revoke: 'data_processing' }, { type: 'confirm/accept' })
+      .model
+  }
+
+  test('a revoke on its way, its confirm closed with Esc: no DELETE /me, logout or second revoke beside it', () => {
+    const busy = revoking()
+    expect(busy.ctx.op).toMatchObject({ name: 'revoke', busy: true })
+    const closed = run(busy, { type: 'overlay/close' }).model
+    expect(closed.overlay.map((o) => o.o)).toEqual(['account'])
+    expect(closed.ctx.op).toEqual(busy.ctx.op)
+    for (const kind of ['delete-account', 'logout'] as const) {
+      const pressed = run(closed, { type: 'confirm/open', kind }, { type: 'confirm/accept' })
+      expect(pressed.effects, kind).toEqual([])
+      expect(pressed.model.ctx.op, kind).toEqual(busy.ctx.op)
+    }
+    expect(run(closed, { type: 'confirm/open', kind: 'revoke', revoke: 'age_18' }, { type: 'confirm/accept' }).effects).toEqual([])
+    expect(run(closed, { type: 'account/logout' }).effects).toEqual([])
+    // Not an account operation: «Завершити» still goes.
+    const end = run(closed, { type: 'overlay/close' }, { type: 'confirm/open', kind: 'end' }, { type: 'confirm/accept' })
+    expect(end.model.state.s).toBe('summarizing')
+    // Once the revoke failed (not a 401), the next operation may start.
+    const failed = run(closed, { type: 'revoke/fail', kind: 'data_processing', error: apiError(0, 'network') }).model
+    expect(failed.ctx.op).toMatchObject({ name: 'revoke', busy: false })
+    expect(run(failed, { type: 'confirm/open', kind: 'delete-account' }, { type: 'confirm/accept' }).effects).toEqual([
+      { type: 'abort', target: 'all' },
+      { type: 'delete-me' },
+    ])
+  })
+
+  test('a late revoke answer changes no screen once the session is gone: account-deleted and signed-out stay', () => {
+    const busy = revoking()
+    const consents: ConsentState = { ...CONSENTS_OK, missing: ['data_processing'] }
+    const deleted = run(busy, { type: 'delete/ok' }).model
+    expect(deleted.state).toEqual({ s: 'account-deleted', variant: 'confirmed' })
+    for (const late of [
+      { type: 'revoke/ok', kind: 'data_processing', consents },
+      { type: 'revoke/fail', kind: 'data_processing', error: apiError(401, 'unauthenticated') },
+    ] as const) {
+      const after = run(deleted, late).model
+      expect(after.state, late.type).toEqual(deleted.state)
+      expect(after.ctx.me, late.type).toBeNull()
+      expect(after.ctx.consents, late.type).toBeNull()
+      expect(after.ctx.op, late.type).toBeNull()
+    }
+    const out = run(busy, { type: 'logout/ok' }).model
+    expect(run(out, { type: 'revoke/ok', kind: 'data_processing', consents }).model.state).toEqual(out.state)
+    // session-expired with an operation still marked busy: let go of it, stay on the screen.
+    const sent = run(answered(booted()), { type: 'chat/send', text: 'Друге' })
+    const expired = run(sent.model, { type: 'turn/outcome', id: turnEffect(sent.effects).id, now: NOW, outcome: { kind: 'http', error: apiError(401, 'unauthenticated') } }).model
+    const stuck: Model = { ...expired, ctx: { ...expired.ctx, op: { name: 'revoke', busy: true, error: null } } }
+    const released = run(stuck, { type: 'revoke/ok', kind: 'data_processing', consents }).model
+    expect(released.state.s).toBe('session-expired')
+    expect(released.ctx.op).toBeNull()
+  })
+
+  test('pagehide during the boot keeps it booting, and the page restored from the bfcache boots again', () => {
+    const start = run(INITIAL_MODEL, { type: 'boot', search: '' }).model
+    const cut = run(start, { type: 'me/fail', purpose: 'boot', error: apiError(0, 'aborted') })
+    expect(cut.model.state).toEqual({ s: 'booting' })
+    expect(cut.effects).toEqual([])
+    expect(run(cut.model, { type: 'page/show', persisted: true }).effects).toEqual([{ type: 'url/clean' }, { type: 'me', purpose: 'boot', timeoutMs: BOOT_TIMEOUT }])
+    const half = run(start, { type: 'me/ok', purpose: 'boot', me: ME }).model
+    const consentsCut = run(half, { type: 'consents/fail', purpose: 'boot', error: apiError(0, 'aborted') })
+    expect(consentsCut.model.state).toEqual({ s: 'booting' })
+    expect(consentsCut.effects).toEqual([])
+    expect(types(run(consentsCut.model, { type: 'page/show', persisted: true }).effects)).toEqual(['url/clean', 'me'])
+    // The boot's own deadline is still «немає зʼєднання».
+    expect(run(start, { type: 'me/fail', purpose: 'boot', error: apiError(0, 'timeout') }).model.state.s).toBe('fatal')
+    expect(run(half, { type: 'consents/fail', purpose: 'boot', error: apiError(0, 'timeout') }).model.state.s).toBe('fatal')
+  })
+})
+
 // ── UI decisions without a page: the live region, the keyboard, the sky ─────────────────────────
 
 /** Timers that run only when told to; the region records every non-empty write (test #42). */
@@ -2209,6 +2319,21 @@ function liveRegion() {
     pending: () => timers.size,
   }
 }
+
+test('copy: «Пробуємо ще раз через {n} …» agrees with the number', () => {
+  expect([1, 2, 3, 4, 5, 11, 21, 22, 25, 30].map(sayRetry)).toEqual([
+    'Пробуємо ще раз через 1 секунду',
+    'Пробуємо ще раз через 2 секунди',
+    'Пробуємо ще раз через 3 секунди',
+    'Пробуємо ще раз через 4 секунди',
+    'Пробуємо ще раз через 5 секунд',
+    'Пробуємо ще раз через 11 секунд',
+    'Пробуємо ще раз через 21 секунду',
+    'Пробуємо ще раз через 22 секунди',
+    'Пробуємо ще раз через 25 секунд',
+    'Пробуємо ще раз через 30 секунд',
+  ])
+})
 
 test.describe('announcer', () => {
   test('a turn writes at most twice: the first progress line and the end; the rest is dropped', () => {
@@ -2411,6 +2536,18 @@ test.describe('source rules', () => {
     ]) {
       expect(offenders(core, pattern), String(pattern)).toEqual([])
     }
+  })
+
+  test('chat/index.html: every text field is left out of the browser’s form restore (autocomplete="off")', () => {
+    // Firefox's session store keeps a textarea's text on disk unless it has autocomplete="off"; the
+    // consent screen promises the browser keeps only the session cookie and two choices (§3.5).
+    const repo = resolve(test.info().project.testDir, '..', '..')
+    const chat = readFileSync(join(repo, 'chat', 'index.html'), 'utf8')
+    const tags = [...chat.matchAll(/<textarea\b[^>]*>/g), ...chat.matchAll(/<input\b[^>]*>/g)].map((m) => m[0])
+    const fields = tags.filter((tag) => tag.startsWith('<textarea') || !/\stype="/.test(tag) || /\stype="(?:text|search)"/.test(tag))
+    // The message, the title, a thesis (template), a new tag, the picker's search.
+    expect(fields.length).toBeGreaterThanOrEqual(5)
+    expect(fields.filter((tag) => !/\sautocomplete="off"/.test(tag))).toEqual([])
   })
 
   test('the paused number is spelled nowhere in src', () => {
