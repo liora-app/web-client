@@ -122,7 +122,7 @@ async function expectSafeLines(list: Locator): Promise<void> {
 /** The crisis takeover (spec §6, tests #5, #6, #13). */
 async function expectCrisis(page: Page, said: string | null, testInfo: TestInfo): Promise<void> {
   await onScreen(page, 'crisis')
-  const screen = page.locator('[data-screen="crisis"]')
+  const screen = page.locator('section[data-screen="crisis"]')
   await expect(page.locator('textarea')).toHaveCount(0)
   await expect(page.locator('#crisis-title')).toBeFocused()
   await expect(screen.locator('a.help__number[href="tel:112"]')).toHaveCount(1)
@@ -571,7 +571,7 @@ test.describe('errors', () => {
     await onScreen(page, 'session-expired')
     const stale = page.locator('[data-el="expired-talk"]')
     await expect(stale).toContainText(USER)
-    await expect(stale.locator('.said__flag')).toHaveText('Не надіслано')
+    await expect(stale.locator('li.said--you .said__flag')).toHaveText('Не надіслано')
     // The clipboard is read in one project.
     if (isDesktop(testInfo)) await expectCopied(page, context, page.locator('[data-el="expired-copy"]'))
   })
@@ -583,7 +583,7 @@ test.describe('errors', () => {
     await onScreen(page, 'not-invited')
     const details = page.locator('[data-el="ni-details"]')
     await expect(details).toContainText(USER)
-    await expect(details.locator('.said__flag')).toHaveText('Не надіслано')
+    await expect(details.locator('li.said--you .said__flag')).toHaveText('Не надіслано')
     if (isDesktop(testInfo)) await expectCopied(page, context, page.locator('[data-el="ni-copy"]'))
   })
 
@@ -593,7 +593,7 @@ test.describe('errors', () => {
     await exchange(page, USER)
     await send(page, 'Друге синтетичне повідомлення.')
     await onScreen(page, 'not-invited')
-    const screen = page.locator('[data-screen="not-invited"]')
+    const screen = page.locator('section[data-screen="not-invited"]')
     await expect(screen.locator('[data-el="ni-member"]')).toBeVisible()
     await expect(screen.locator('[data-el="ni-guest"]')).toBeHidden()
     await expect(screen.locator('[data-el="ni-email"]')).toHaveText(EMAIL)
@@ -829,7 +829,7 @@ test.describe('sign-in and consent', () => {
       await expect(page.locator('[data-el="chat-auth-text"]')).toHaveText(stillSignedIn(code, EMAIL))
       const above = await page.evaluate(() => {
         const node = document.querySelector('[data-el="chat-auth"]')!
-        const tag = document.querySelector('[data-screen="chat"] .tag')!
+        const tag = document.querySelector('section[data-screen="chat"] .tag')!
         return (node.compareDocumentPosition(tag) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
       })
       expect(above).toBe(true)
@@ -849,7 +849,7 @@ test.describe('sign-in and consent', () => {
   test('#28 consent: the provider and its country, the version date, every box required, kinds = missing, «Не зараз»', async ({ page, api }) => {
     api.on('GET /consents', { json: consents(['llm_transfer', 'age_18']) })
     await openChat(page, '/chat/', 'consent')
-    const screen = page.locator('[data-screen="consent"]')
+    const screen = page.locator('section[data-screen="consent"]')
     await expect(screen.locator('[data-el="provider"]').first()).toHaveText('Ollama Cloud (Ollama Inc.)')
     await expect(screen.locator('[data-el="country"]').first()).toHaveText('США')
     await expect(screen.locator('[data-el="consent-version"]')).toHaveText('6 жовтня 2026 р.')
@@ -1455,7 +1455,7 @@ test.describe('page life', () => {
     await send(page, USER)
     await onScreen(page, 'not-invited')
     expect(await beforeUnload(page)).toBe(1)
-    await page.locator('[data-screen="not-invited"] .helpblock a[href="tel:112"]').click()
+    await page.locator('section[data-screen="not-invited"] .helpblock a[href="tel:112"]').click()
     await page.waitForTimeout(500)
     expect(dialogs).toEqual([])
   })
@@ -1543,21 +1543,40 @@ test.describe('help', () => {
 
 // ── Layout ───────────────────────────────────────────────────────────────────────────────────
 
-/** Which sticky layers the focused element's box overlaps. */
-async function coveredBy(page: Page, layers: readonly string[]): Promise<string[]> {
-  return page.evaluate((selectors) => {
+/** Which sticky layers the focused element's box overlaps, once scrolling has stopped: with motion
+ *  allowed html scrolls smoothly, and the focus scroll may still be running when Tab returns. The
+ *  geometry goes into the failure message. */
+async function coveredBy(page: Page, layers: readonly string[]): Promise<Readonly<{ hits: string[]; geometry: string }>> {
+  return page.evaluate(async (selectors) => {
+    await new Promise<void>((resolve) => {
+      const started = performance.now()
+      let last = `${window.scrollX},${window.scrollY}`
+      let still = 0
+      const tick = (): void => {
+        const now = `${window.scrollX},${window.scrollY}`
+        still = now === last ? still + 1 : 0
+        last = now
+        if (still >= 5 || performance.now() - started > 2_000) resolve()
+        else window.requestAnimationFrame(tick)
+      }
+      window.requestAnimationFrame(tick)
+    })
     const focused = document.activeElement
-    if (!(focused instanceof HTMLElement)) return ['no focus']
+    if (!(focused instanceof HTMLElement)) return { hits: ['no focus'], geometry: '' }
     const box = focused.getBoundingClientRect()
+    const css = getComputedStyle(document.documentElement)
+    const span = (r: DOMRect): string => `${Math.round(r.top)}..${Math.round(r.bottom)}`
+    const parts = [`scrollY ${Math.round(window.scrollY)}`, `viewport ${document.documentElement.clientHeight}`, `padding ${css.scrollPaddingTop}/${css.scrollPaddingBottom}`, `focus ${span(box)}`]
     const hits: string[] = []
     for (const selector of selectors) {
       const layer = document.querySelector<HTMLElement>(selector)
       if (!layer || !layer.isConnected || layer.closest('[hidden]') !== null || layer.contains(focused)) continue
       const r = layer.getBoundingClientRect()
       if (r.width === 0 || r.height === 0) continue
+      parts.push(`${selector} ${span(r)}`)
       if (box.left < r.right && r.left < box.right && box.top < r.bottom && r.top < box.bottom) hits.push(selector)
     }
-    return hits
+    return { hits, geometry: parts.join('; ') }
   }, layers)
 }
 
@@ -1640,9 +1659,11 @@ test.describe('layout', () => {
     const h1 = page.locator('#chat-title')
     // A new conversation: the scenario pills and the switch.
     await tabTo(page, h1, scenarioList(page).locator('input:checked'))
-    expect(await coveredBy(page, LAYERS), 'scenario pill').toEqual([])
+    const pill = await coveredBy(page, LAYERS)
+    expect(pill.hits, `scenario pill: ${pill.geometry}`).toEqual([])
     await tabTo(page, h1, page.getByRole('switch', { name: 'Не зберігати цю розмову' }))
-    expect(await coveredBy(page, LAYERS), 'switch').toEqual([])
+    const toggle = await coveredBy(page, LAYERS)
+    expect(toggle.hits, `switch: ${toggle.geometry}`).toEqual([])
 
     await exchange(page)
     await send(page, 'Друге синтетичне повідомлення.')
@@ -1650,7 +1671,8 @@ test.describe('layout', () => {
     await expect(unsent.locator('.said__why')).toHaveText(why('llm_failed'))
     for (const name of ['Надіслати ще раз', 'Змінити']) {
       await tabTo(page, h1, unsent.getByRole('button', { name }))
-      expect(await coveredBy(page, LAYERS), name).toEqual([])
+      const action = await coveredBy(page, LAYERS)
+      expect(action.hits, `${name}: ${action.geometry}`).toEqual([])
     }
 
     // «↓ До кінця» shows while the end of the conversation is under the composer; it lives in the
@@ -1659,7 +1681,8 @@ test.describe('layout', () => {
     const jump = page.locator('[data-el="jump"]')
     await expect(jump).toBeVisible()
     await tabTo(page, composer(page), jump, 'Shift+Tab')
-    expect(await coveredBy(page, ['.site-header', '[data-el="session"]']), 'the «↓» pill').toEqual([])
+    const pillDown = await coveredBy(page, ['.site-header', '[data-el="session"]'])
+    expect(pillDown.hits, `the «↓» pill: ${pillDown.geometry}`).toEqual([])
   })
 
   test('#43b the /chat/ header fits at 320 px: wordmark, «Якщо важко», motion and sound, «Акаунт»', async ({ page }, testInfo) => {
@@ -1755,7 +1778,7 @@ test.describe('headers and copy', () => {
   test('#50 the stop-list holds for every screen, dialog and confirm of /chat/', async ({ page }) => {
     await openChat(page)
     const text = await page.evaluate(() => {
-      for (const section of Array.from(document.querySelectorAll<HTMLElement>('[data-screen]'))) section.hidden = false
+      for (const section of Array.from(document.querySelectorAll<HTMLElement>('section[data-screen]'))) section.hidden = false
       for (const node of Array.from(document.querySelectorAll<HTMLElement>('main [hidden], dialog [hidden]'))) node.hidden = false
       for (const details of Array.from(document.querySelectorAll('details'))) details.open = true
       const holder = document.createElement('div')
