@@ -662,6 +662,11 @@ function unauthenticated(model: Model, session: Session | null, pending: Pending
   return withState(next, { s: 'session-expired', stale: session, pending, draft }, [{ type: 'abort', target: 'all' }])
 }
 
+/** The account operation is over, whatever screen the page is on. */
+function withoutOp(model: Model): Model {
+  return model.ctx.op === null ? model : { ...model, ctx: { ...model.ctx, op: null } }
+}
+
 /** The page as a fresh load has it: no session, no conversation, no account data (§5.6). */
 function wiped(model: Model): Step {
   return [
@@ -967,6 +972,10 @@ function onConfirmAccept(model: Model, choice: 'summarize' | undefined): Step {
   const top = topOverlay(model)
   if (top === undefined || top.o !== 'confirm') return [model, NONE]
   const { state, ctx } = model
+  // One account operation at a time: a revoke still on its way (its confirm closed with Esc) must
+  // not let a DELETE /me or a logout start beside it — the later answer would land on the wrong
+  // screen. «Увійти» and «Завершити» are not account operations and stay free.
+  if (STACKED.has(top.kind) && ctx.op?.busy === true) return [model, NONE]
   const popped: Model = { ...model, overlay: model.overlay.slice(0, -1) }
   switch (top.kind) {
     case 'end':
@@ -1058,6 +1067,9 @@ function step(model: Model, action: Action): Step {
         return signedOut(model, 'fresh', null)
       }
       if (state.s !== 'booting') return [model, NONE]
+      // Only pagehide aborts the boot (its deadline is 'timeout'): the page stays `booting`, and
+      // a restore from the bfcache boots it again (page/show) instead of «немає зʼєднання».
+      if (action.error.code === 'aborted') return [model, NONE]
       if (action.error.status === 401) {
         const code = ctx.authError
         const next: Model = { ...model, ctx: { ...ctx, authError: null, me: null } }
@@ -1086,6 +1098,7 @@ function step(model: Model, action: Action): Step {
     case 'consents/fail': {
       if (action.purpose === 'boot') {
         if (state.s !== 'booting') return [model, NONE]
+        if (action.error.code === 'aborted') return [model, NONE]
         if (action.error.status === 401) return signedOut(model, 'fresh', null)
         return withState(model, { s: 'fatal', error: toUiError(action.error) })
       }
@@ -1464,6 +1477,9 @@ function step(model: Model, action: Action): Step {
       ]
     }
     case 'revoke/ok': {
+      // A late answer after the session ended (signed out, account deleted, 401 meanwhile) changes
+      // no screen; it only lets go of the operation.
+      if (!accountReachable(model)) return [withoutOp(model), NONE]
       // Withdrawing data_processing erases the journal on the server: drop it here too, or the
       // revisit picker would offer deleted records (§8.6).
       const diary = action.kind === 'data_processing' ? EMPTY_DIARY : ctx.diary
@@ -1475,6 +1491,8 @@ function step(model: Model, action: Action): Step {
       ]
     }
     case 'revoke/fail':
+      // The same for a late failure: a 401 must not turn «акаунт видалено» into the sign-in screen.
+      if (!accountReachable(model)) return [withoutOp(model), NONE]
       if (action.error.status === 401) return unauthenticated(model, sessionOf(state), pendingOf(state), draftOf(state))
       return [{ ...model, ctx: { ...ctx, op: { name: 'revoke', busy: false, error: toUiError(action.error) } } }, NONE]
   }

@@ -3,7 +3,8 @@
 // - 112, 103 and the "Ти як?" directory are constants here and in the page: `emergency` and
 //   `abroad.url` from the payload are never read.
 // - Every text that could carry the paused hotline number is dropped (NO_PAUSED_LINE), digits
-//   counted even when the number is split by spaces or dashes.
+//   counted even when the number is split by spaces or dashes, and so is any text with bidi
+//   controls, which could draw the number reversed from other digits.
 // - Unknown fields (notes, sources, verified_at, …) are never read, and the raw object is never
 //   kept, stringified or logged: only the SafeHelplines built here leaves this module.
 
@@ -68,10 +69,14 @@ export function noPausedLine(text: string): boolean {
   return !normal.includes(PAUSED) && !normal.replace(/\D/g, '').includes(PAUSED)
 }
 
+/** Bidi controls (embeddings, overrides, isolates, marks): «\u202E3337» passes every digit check
+ *  and still draws the paused number, reversed. No text the page shows needs them. */
+const BIDI_CONTROLS = /[\u202A-\u202E\u2066-\u2069\u200E\u200F\u061C]/
+
 function cleanText(value: unknown, max: number): string | null {
   if (typeof value !== 'string') return null
   const text = value.trim()
-  if (text === '' || codePoints(text) > max || !noPausedLine(text)) return null
+  if (text === '' || codePoints(text) > max || !noPausedLine(text) || BIDI_CONTROLS.test(text)) return null
   return text
 }
 

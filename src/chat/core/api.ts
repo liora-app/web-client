@@ -112,12 +112,16 @@ function parseMe(raw: unknown): MeOut | null {
   }
 }
 
+/** Named and located, or not at all: a consent to hand the conversation over needs both the name
+ *  and the country (§3.5). Without either the page says it cannot ask for that consent. */
 function parseProvider(raw: unknown): LLMProviderInfo | null {
   if (!isObj(raw) || !isStr(raw.name) || !isStr(raw.country)) return null
   const name = raw.name.trim()
+  const country = raw.country.trim()
   const length = codePoints(name)
   if (length < 1 || length > 200) return null
-  return { name, country: raw.country.trim() }
+  if (country === '' || codePoints(country) > 64) return null
+  return { name, country }
 }
 
 function parseConsents(raw: unknown): ConsentState | null {
