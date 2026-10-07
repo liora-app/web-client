@@ -836,9 +836,11 @@ html[data-gl='on'] .presence .orb {
   color: var(--color-teal);
 }
 
+/* The bottom margin keeps the hint clear of the composer's 32 px fade at the end of the page. */
 .nosave {
   display: grid;
   gap: 0.25rem;
+  margin-bottom: 1.5rem;
 }
 
 .switch {
@@ -1197,6 +1199,18 @@ html[data-motion='on'] .said--waiting .said__wait::before {
 /* The chat screen ends with the composer: no strip of sky under the band at the end of the page. */
 html[data-screen='chat'] .chat__text {
   padding-bottom: 0;
+}
+
+/* The field stands at the bottom of the screen from the start, where it stays once the talk grows:
+   no band floating mid-screen while the page is short, no jump after the first message. */
+.screen--chat {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100svh - var(--header-h) - 1.25rem);
+}
+
+.screen--chat > .composer {
+  margin-top: auto;
 }
 
 .composer__field {
