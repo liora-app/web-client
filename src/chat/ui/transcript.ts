@@ -95,13 +95,15 @@ function textBox(li: HTMLElement): HTMLElement {
   return li.querySelector<HTMLElement>('.said__text')!
 }
 
-/** A read-only copy of a conversation (crisis, not-invited, session-expired): no actions. */
+/** A read-only copy of a conversation (crisis, not-invited, session-expired): no actions — not
+ *  even hidden ones in the tree, under any record. */
 export function renderStatic(list: HTMLOListElement, messages: readonly Msg[], pending: Pending | null): void {
   list.replaceChildren()
   for (const m of messages) {
     const { li, text } = said(m.role)
     writeText(textBox(li), text, shown(m.role, m.content))
     list.append(li)
+    li.querySelector('.said__status')?.remove()
   }
   if (pending !== null) {
     const { li, text } = said('user')

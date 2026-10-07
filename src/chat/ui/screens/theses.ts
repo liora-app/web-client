@@ -197,7 +197,7 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
 
   /** The pills are keyed by the tag's id, like the theses: a render keeps the node (and the focus
    *  on its «×») in place. A wrong tag says so in text, not only by its border (SC 1.4.1, 3.3.1):
-   *  the line under the field names it, and its «×» is described by that line. */
+   *  the line under the field names every wrong tag, and each one's «×» is described by that line. */
   const renderTags = (state: Review): void => {
     const pills = new Map(Array.from(tags.querySelectorAll<HTMLLIElement>('li[data-id]')).map((li) => [li.dataset.id!, li]))
     let previous: HTMLLIElement | null = null
@@ -222,10 +222,12 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
     }
     for (const stale of pills.values()) stale.remove()
     show(el('review-tags-none'), state.draft.tags.length === 0)
-    const tagIssue = state.issues.find((i) => state.draft.tags.some((t) => t.id === i.field))
-    const wrong = tagIssue === undefined ? undefined : state.draft.tags.find((t) => t.id === tagIssue.field)
-    if (tagIssue !== undefined && wrong !== undefined) {
-      setText(tagError, `«#${wrong.name}»: ${DRAFT_TEXT[tagIssue.reason] ?? ''}`)
+    const wrong = state.issues.flatMap((issue) => {
+      const tag = state.draft.tags.find((t) => t.id === issue.field)
+      return tag === undefined ? [] : [`«#${tag.name}»: ${DRAFT_TEXT[issue.reason] ?? ''}`]
+    })
+    if (wrong.length > 0) {
+      setText(tagError, wrong.join(' '))
       tagErrorFromIssue = true
     } else if (tagErrorFromIssue) {
       // The edit that cleared the issues clears its line too (the field's own hint stays).

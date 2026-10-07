@@ -243,9 +243,11 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       show(el('block-summarize'), blockText !== '' && !goneFirst)
       show(el('block-free'), goneFirst)
 
-      // Composer (§3.7.3).
+      // Composer (§3.7.3). Without it, «AI, не людина · може помилятися · не терапія» still stands
+      // on the screen: the line under the field goes with the field (§3.7.1).
       const composerShown = blockText === '' && !emptyDiary
       show(composer.element, composerShown)
+      show(el('chat-ai'), !composerShown)
       composer.setPlaceholder(placeholder(s.scenario, !hasUserMessage(s, null)))
       const inFlight = state.turn.p === 'waiting' || state.turn.p === 'streaming' || state.turn.p === 'busy-wait'
       const blocked = !inFlight && !canSendNow(state) && state.pending === null && !(revisit && s.revisitIds.length === 0)

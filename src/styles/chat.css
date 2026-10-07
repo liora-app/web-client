@@ -1411,6 +1411,7 @@ html[data-screen='chat'] .chat__text {
 }
 
 .composer__ai,
+.chat-ai,
 .composer__keys,
 .composer__count {
   font-family: var(--font-mono);
@@ -1421,12 +1422,20 @@ html[data-screen='chat'] .chat__text {
 }
 
 /* The disclosure breaks only at «·»: «не терапія» never splits into «не» and a lone «терапія». */
-.composer__ai {
+.composer__ai,
+.chat-ai {
   text-wrap: balance;
 }
 
-.composer__ai span {
+.composer__ai span,
+.chat-ai span {
   white-space: nowrap;
+}
+
+/* Without the composer its disclosure stands where the field stood: at the bottom of the screen. */
+.screen--chat > .chat-ai {
+  margin-top: auto;
+  padding: 1.25rem 0;
 }
 
 .composer__keys {

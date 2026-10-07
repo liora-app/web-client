@@ -508,6 +508,12 @@ test.describe('crisis', () => {
     await send(page, CRISIS_TEXT)
     await expectCrisis(page, CRISIS_TEXT, testInfo)
     expect((await markup(page)).includes('evil.example')).toBe(false)
+    // The conversation under <details> is a read-only copy: none of the live transcript's actions,
+    // not even hidden ones, under any record.
+    const stale = page.locator('[data-el="crisis-talk"]')
+    await expect(stale.locator('li')).not.toHaveCount(0)
+    for (const act of ['resend', 'edit', 'revisit-open', 'stop', 'copy', 'reload']) await expect(stale.locator(`[data-act="${act}"]`), act).toHaveCount(0)
+    await expect(stale.locator('.said__status')).toHaveCount(0)
     await axe(page, 'crisis')
     // I5: nothing sends from here — not even the detached button pressed with text in the detached
     // field, nor Ctrl+Enter in it (both still reach the page's own handlers).
@@ -1125,10 +1131,17 @@ test.describe('sign-in and consent', () => {
     await expect(page.locator('[data-el="scenario-text"]')).toHaveText(REVISIT_EMPTY)
     await expect(composer(page)).toBeHidden()
     await expect(page.locator('[data-el="revisit-free"]')).toBeVisible()
+    // The field is gone, its disclosure is not: the screen still says what it talks to.
+    const disclosure = page.locator('[data-el="chat-ai"]')
+    await expect(disclosure).toBeVisible()
+    await expect(disclosure).toHaveText('AI, не людина · може помилятися · не терапія')
+    await expect(page.locator('.composer__ai')).toBeHidden()
     await axe(page, 'new conversation, revisit with an empty diary')
     await page.locator('[data-el="revisit-free"]').click()
     await expect(scenarioList(page).getByRole('radio', { name: 'Вільна розмова' })).toBeChecked()
     await expect(composer(page)).toBeVisible()
+    await expect(page.locator('.composer__ai')).toBeVisible()
+    await expect(disclosure).toBeHidden()
   })
 
   test('#29b GET /scenarios fails: the conversation opens only once it answered, with free alone and a retry', async ({ page, api }) => {
@@ -1378,6 +1391,10 @@ test.describe('theses', () => {
       'POST /summaries',
       fail(422, 'validation_error', [{ field: 'bullets.1', message: SERVER_MESSAGE_SHORT }]),
       fail(422, 'validation_error', [{ field: 'tags.1.name', message: SERVER_MESSAGE_SHORT }]),
+      fail(422, 'validation_error', [
+        { field: 'tags.0.name', message: SERVER_MESSAGE_SHORT },
+        { field: 'tags.1.name', message: SERVER_MESSAGE_SHORT },
+      ]),
     )
     await page.getByRole('button', { name: 'Прибрати тезу 1' }).click()
     await page.getByRole('button', { name: 'Зберегти в щоденник' }).click()
@@ -1412,6 +1429,17 @@ test.describe('theses', () => {
       { name: 'стосунки', source: 'ai' },
       { name: 'ранок', source: 'user' },
     ])
+
+    // Two wrong tags at once: the line names both, and each «×» is described by all of it.
+    await page.getByRole('button', { name: 'Зберегти в щоденник' }).click()
+    const both = `«#стосунки»: ${DRAFT_TEXT['tag-invalid']} «#ранок»: ${DRAFT_TEXT['tag-invalid']}`
+    await expect(page.locator('#review-tag-error')).toHaveText(both)
+    for (const name of ['стосунки', 'ранок']) {
+      await expect(page.locator('.tagpill', { hasText: `#${name}` })).toHaveClass(/tagpill--invalid/)
+      await expect(page.getByRole('button', { name: `Прибрати тег «${name}»` })).toHaveAccessibleDescription(both)
+    }
+    await expect(page.getByRole('button', { name: 'Прибрати тег «стосунки»' })).toBeFocused()
+    expect(api.count('POST /summaries')).toBe(3)
   })
 
   test('#32 theses: a 502 offers «Скласти ще раз», and it works', async ({ page, api }) => {
