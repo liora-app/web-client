@@ -305,7 +305,7 @@ export type Action =
   | Readonly<{ type: 'revisit/search'; q: string }>
   | Readonly<{ type: 'revisit/more' }>
   | Readonly<{ type: 'revisit/list-ok'; purpose: 'pick' | 'pick-404'; q: string; cursor: string | null; diary: Diary }>
-  | Readonly<{ type: 'revisit/list-fail'; purpose: 'pick' | 'pick-404'; q: string; cursor: string | null }>
+  | Readonly<{ type: 'revisit/list-fail'; purpose: 'pick' | 'pick-404'; q: string; cursor: string | null; error: ApiError }>
   | Readonly<{ type: 'revisit/confirm' }>
   // theses
   | Readonly<{ type: 'summarize/ok'; id: number; draft: SummaryDraftOut }>
@@ -604,6 +604,11 @@ function unauthenticated(model: Model, session: Session | null, pending: Pending
 
 function notInvited(model: Model, session: Session | null, pending: Pending | null, draft: Draft | null): Step {
   return withState(model, { s: 'not-invited', hasSession: true, stale: session, pending, draft }, [{ type: 'abort', target: 'all' }])
+}
+
+/** A screen reached with a live session (a 401 there means the session ended meanwhile). */
+function signedInScreen(state: State): boolean {
+  return state.s !== 'signed-out' && state.s !== 'account-deleted' && state.s !== 'fatal'
 }
 
 function sessionOf(state: State): Session | null {
@@ -990,8 +995,12 @@ function step(model: Model, action: Action): Step {
       return [{ ...model, ctx: { ...ctx, scenarios: { status: 'loading' } } }, [{ type: 'scenarios' }]]
     case 'diary/ok':
       return [{ ...model, ctx: { ...ctx, diary: loaded(action.diary) } }, NONE]
-    case 'diary/fail':
-      return [{ ...model, ctx: { ...ctx, diary: { status: 'failed' } } }, NONE]
+    case 'diary/fail': {
+      const next: Model = { ...model, ctx: { ...ctx, diary: { status: 'failed' } } }
+      // A 401 on GET /summaries mid-session ends the session like any protected call (§4.3).
+      if (action.error.status === 401 && signedInScreen(state)) return unauthenticated(next, sessionOf(state), pendingOf(state), draftOf(state))
+      return [next, NONE]
+    }
     case 'diary/retry':
       if (ctx.diary.status === 'loading' || ctx.me === null) return [model, NONE]
       return [{ ...model, ctx: { ...ctx, diary: { status: 'loading' } } }, [{ type: 'diary' }]]
@@ -1181,6 +1190,7 @@ function step(model: Model, action: Action): Step {
       return [replaceTop(next, { ...top, list, loading: false, failed: false }), NONE]
     }
     case 'revisit/list-fail': {
+      if (action.error.status === 401 && signedInScreen(state)) return unauthenticated(model, sessionOf(state), pendingOf(state), draftOf(state))
       if (action.purpose === 'pick-404') {
         if (state.s !== 'chat') return [model, NONE]
         return [{ ...model, overlay: [pick({ gone: true, failed: true })] }, NONE]

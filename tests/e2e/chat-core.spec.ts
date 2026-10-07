@@ -1658,6 +1658,32 @@ test.describe('state: account and page life', () => {
     expect(run(crisis, { type: 'overlay/open', overlay: 'help' }).effects).toEqual([])
   })
 
+  test('a 401 on GET /summaries mid-session ends the session: the diary refresh and the record picker', () => {
+    const m = answered(booted())
+    const diary = run(m, { type: 'diary/retry' }, { type: 'diary/fail', error: apiError(401, 'unauthenticated') })
+    expect(diary.model.state).toMatchObject({ s: 'session-expired', pending: null, draft: null })
+    expect(types(diary.effects)).toEqual(['diary', 'abort'])
+    // Any other failure only marks the diary.
+    const down = run(m, { type: 'diary/fail', error: apiError(502, 'upstream_unavailable') }).model
+    expect(down.state.s).toBe('chat')
+    expect(down.ctx.diary).toEqual({ status: 'failed' })
+    // After «Збережено» nothing is left to keep: signed out.
+    const s = run(m, { type: 'chat/summarize' })
+    const sid = (s.effects[0] as Extract<Effect, { type: 'summarize' }>).id
+    const save = run(s.model, { type: 'summarize/ok', id: sid, draft: { title: 'Т', bullets: ['a'], tags: [] } }, { type: 'review/save' })
+    const saveId = (save.effects.at(-1) as Extract<Effect, { type: 'save' }>).id
+    const done = run(save.model, { type: 'save/ok', id: saveId, summary: SUMMARY }).model
+    expect(run(done, { type: 'diary/fail', error: apiError(401, 'unauthenticated') }).model.state).toEqual({ s: 'signed-out', variant: 'fresh', notice: null })
+
+    const picker = run(booted(), { type: 'chat/scenario', id: 'revisit' }, { type: 'revisit/open' })
+    const expired = run(picker.model, { type: 'revisit/list-fail', purpose: 'pick', q: '', cursor: null, error: apiError(401, 'unauthenticated') })
+    expect(expired.model.state.s).toBe('session-expired')
+    expect(expired.model.overlay).toEqual([])
+    const offlinePick = run(picker.model, { type: 'revisit/list-fail', purpose: 'pick', q: '', cursor: null, error: apiError(0, 'network') })
+    expect(offlinePick.model.state.s).toBe('chat')
+    expect(offlinePick.model.overlay[0]).toMatchObject({ o: 'revisit-pick', failed: true, loading: false })
+  })
+
   test('the help dialog fetches GET /helplines once per page view', () => {
     const m = run(booted(), { type: 'overlay/open', overlay: 'help' })
     expect(m.effects).toEqual([{ type: 'helplines' }])
