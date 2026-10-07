@@ -16,16 +16,18 @@ import {
   type FetchLike,
 } from '../../src/chat/core/api'
 import { countryName } from '../../src/chat/core/country'
-import { codeForStatus, fromResponse, retryAfterMs, toUiError, type ApiError } from '../../src/chat/core/errors'
+import { codeForStatus, fromResponse, outcomeUnknown, retryAfterMs, toUiError, type ApiError } from '../../src/chat/core/errors'
 import { FALLBACK, FALLBACK_ABROAD, FALLBACK_MESSAGE, HOWAREU_URL, sanitizeHelplines } from '../../src/chat/core/helplines'
 import {
   MAX_CONTENT,
+  MAX_QUERY,
   canSend,
   checkMessage,
   clampCodePoints,
   codePoints,
   draftFromOut,
   newTagIssue,
+  normalize,
   validateDraft,
   type Draft,
 } from '../../src/chat/core/limits'
@@ -54,7 +56,7 @@ import {
   type TurnOutcome,
   type TurnProgress,
 } from '../../src/chat/core/turn'
-import type { ConsentState, ScenarioOut, SummaryList, SummaryOut, TurnRequest } from '../../src/chat/core/types'
+import type { ConsentState, ScenarioOut, SummaryCreate, SummaryList, SummaryOut, TurnRequest } from '../../src/chat/core/types'
 
 test.beforeEach(({}, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'pure core tests: one project is enough')
@@ -110,6 +112,8 @@ function fakeClock(start = 1_700_000_000_000) {
     clearTimeout: (handle: unknown) => {
       timers.delete(handle as number)
     },
+    /** Timers still set: 0 once a turn has its outcome (no watchdog left running). */
+    pending: () => timers.size,
     flush,
     async advance(ms: number) {
       const end = now + ms
@@ -139,10 +143,11 @@ function fakeClock(start = 1_700_000_000_000) {
 const SSE_HEADERS = { 'content-type': 'text/event-stream; charset=utf-8', 'x-request-id': 'req-1' }
 
 /** A live SSE body the test writes into. Like a real fetch, an abort of the request's signal
- *  errors the body with the signal's reason. */
+ *  errors the body with the signal's reason (`aborted` then says so). */
 function live() {
   let ctl!: ReadableStreamDefaultController<Uint8Array>
   let cancelled = false
+  let aborted: unknown = null
   const body = new ReadableStream<Uint8Array>({
     start(c) {
       ctl = c
@@ -159,10 +164,15 @@ function live() {
     end() {
       ctl.close()
     },
+    /** The connection drops mid-stream (a phone changing networks): read() fails, no abort. */
+    fail() {
+      ctl.error(new TypeError('network reset'))
+    },
     wire(signal: AbortSignal) {
       signal.addEventListener(
         'abort',
         () => {
+          aborted = signal.reason
           try {
             ctl.error(signal.reason)
           } catch {
@@ -174,6 +184,10 @@ function live() {
     },
     get cancelled() {
       return cancelled
+    },
+    /** The reason the request's own signal aborted with, or null: proves the body was torn down. */
+    get aborted() {
+      return aborted
     },
   }
 }
@@ -253,6 +267,12 @@ function turnHarness(handlers: readonly Handler[]) {
     promise,
     get outcome() {
       return outcome
+    },
+    /** The outcome once it is in, with no watchdog or retry timer left running. */
+    async settled(): Promise<TurnOutcome> {
+      const o = await promise
+      expect(clock.pending(), 'timers left after the outcome').toBe(0)
+      return o
     },
   }
 }
@@ -373,7 +393,7 @@ test.describe('turn', () => {
   test('a normal stream gives done with the joined text; one request', async () => {
     const h = turnHarness([sseWhole(CANONICAL)])
     await h.clock.flush()
-    const outcome = await h.promise
+    const outcome = await h.settled()
     expect(outcome).toEqual({ kind: 'done', text: 'Привіт, як ви? 😀🌿 ї', finishReason: 'stop', requestId: 'req-1' })
     expect(h.calls).toHaveLength(1)
     expect(h.progress.filter((p) => p.type === 'token')).toHaveLength(5)
@@ -382,7 +402,7 @@ test.describe('turn', () => {
   test('a stream that ends without a final event is retried exactly once, with the identical body', async () => {
     const h = turnHarness([sseWhole(frame('meta', { request_id: 'a' }) + frame('token', { text: 'частина' })), sseWhole(CANONICAL)])
     await h.clock.flush()
-    const outcome = await h.promise
+    const outcome = await h.settled()
     expect(outcome.kind).toBe('done')
     expect(h.calls).toHaveLength(2)
     expect(h.calls[1]!.init.body).toBe(h.calls[0]!.init.body)
@@ -397,7 +417,7 @@ test.describe('turn', () => {
     const cut = frame('meta', { request_id: 'a' }) + frame('token', { text: 'x' })
     const h = turnHarness([sseWhole(cut), sseWhole(cut)])
     await h.clock.flush()
-    expect(await h.promise).toEqual({ kind: 'truncated' })
+    expect(await h.settled()).toEqual({ kind: 'truncated' })
     expect(h.calls).toHaveLength(2)
   })
 
@@ -405,7 +425,7 @@ test.describe('turn', () => {
     const busy = json(503, { error: { code: 'llm_busy', message: 'busy' } }, { 'retry-after': '3' })
     const h = turnHarness([busy, busy, busy])
     await h.clock.advance(10_000)
-    const outcome = await h.promise
+    const outcome = await h.settled()
     expect(outcome.kind).toBe('http')
     if (outcome.kind === 'http') expect(outcome.error.code).toBe('llm_busy')
     expect(h.calls.map((c) => c.at - h.calls[0]!.at)).toEqual([0, 3000, 6000])
@@ -418,7 +438,7 @@ test.describe('turn', () => {
     const busy = json(503, { error: { code: 'llm_busy', message: 'busy' } }, { 'retry-after': '5' })
     const h = turnHarness([busy, busy, sseWhole(CANONICAL)])
     await h.clock.advance(11_000)
-    expect((await h.promise).kind).toBe('done')
+    expect((await h.settled()).kind).toBe('done')
     expect(h.calls).toHaveLength(3)
   })
 
@@ -427,22 +447,28 @@ test.describe('turn', () => {
     await h.clock.advance(4_999)
     expect(h.calls).toHaveLength(1)
     await h.clock.advance(2)
-    expect((await h.promise).kind).toBe('done')
+    expect((await h.settled()).kind).toBe('done')
     expect(h.calls).toHaveLength(2)
 
     const f = turnHarness([sseWhole(frame('meta', { request_id: 'a' }) + frame('token', { text: 'x' }) + frame('error', { code: 'llm_failed', retryable: true }))])
     await f.clock.advance(10_000)
-    expect(await f.promise).toEqual({ kind: 'streamError', code: 'llm_failed' })
+    expect(await f.settled()).toEqual({ kind: 'streamError', code: 'llm_failed' })
     expect(f.calls).toHaveLength(1)
   })
 
-  test('an abort while waiting for Retry-After → aborted, no retry', async () => {
-    const h = turnHarness([json(503, { error: { code: 'llm_busy', message: 'busy' } }, { 'retry-after': '5' })])
-    await h.clock.advance(1_000)
-    h.user.abort('user')
-    await h.clock.advance(10_000)
-    expect(await h.promise).toEqual({ kind: 'aborted', reason: 'user' })
-    expect(h.calls).toHaveLength(1)
+  test('an abort while waiting for Retry-After → aborted at once, no retry, no timer left', async () => {
+    for (const reason of ['user', 'pagehide'] as const) {
+      const h = turnHarness([json(503, { error: { code: 'llm_busy', message: 'busy' } }, { 'retry-after': '5' })])
+      await h.clock.advance(1_000)
+      expect(h.progress.map((p) => p.type), reason).toEqual(['reset', 'busy-wait'])
+      ;(reason === 'user' ? h.user : h.page).abort(reason)
+      // No clock movement: the countdown itself must stop, not the retry that follows it.
+      await h.clock.flush()
+      expect(h.outcome, reason).toEqual({ kind: 'aborted', reason })
+      expect(h.clock.pending(), reason).toBe(0)
+      expect(h.progress.map((p) => p.type), reason).toEqual(['reset', 'busy-wait'])
+      expect(h.calls).toHaveLength(1)
+    }
   })
 
   test('HEADERS_TIMEOUT fires → headersTimeout, no automatic retry', async () => {
@@ -450,7 +476,7 @@ test.describe('turn', () => {
     await h.clock.advance(HEADERS_TIMEOUT - 1)
     expect(h.outcome).toBeNull()
     await h.clock.advance(1)
-    expect(await h.promise).toEqual({ kind: 'headersTimeout' })
+    expect(await h.settled()).toEqual({ kind: 'headersTimeout' })
     await h.clock.advance(60_000)
     expect(h.calls).toHaveLength(1)
   })
@@ -463,7 +489,7 @@ test.describe('turn', () => {
     await h.clock.advance(IDLE_TIMEOUT - 1)
     expect(h.calls).toHaveLength(1)
     await h.clock.advance(1)
-    expect((await h.promise).kind).toBe('done')
+    expect((await h.settled()).kind).toBe('done')
     expect(h.calls).toHaveLength(2)
 
     const pinged = live()
@@ -476,7 +502,7 @@ test.describe('turn', () => {
     }
     pinged.push(frame('token', { text: 'жива' }) + frame('done', { finish_reason: 'stop' }))
     await p.clock.flush()
-    expect(await p.promise).toMatchObject({ kind: 'done', text: 'жива' })
+    expect(await p.settled()).toMatchObject({ kind: 'done', text: 'жива' })
     expect(p.calls).toHaveLength(1)
   })
 
@@ -493,11 +519,11 @@ test.describe('turn', () => {
     }
     slow.push(frame('done', { finish_reason: 'stop' }))
     await h.clock.flush()
-    expect(await h.promise).toMatchObject({ kind: 'done', text: expected })
+    expect(await h.settled()).toMatchObject({ kind: 'done', text: expected })
     expect(h.calls).toHaveLength(1)
   })
 
-  test('abort reasons decide the outcome: user and pagehide → aborted, never retried', async () => {
+  test('abort reasons decide the outcome: user and pagehide → aborted at once, the body torn down, never retried', async () => {
     for (const reason of ['user', 'pagehide'] as const) {
       const stream = live()
       const h = turnHarness([sse(stream)])
@@ -505,10 +531,81 @@ test.describe('turn', () => {
       stream.push(frame('meta', { request_id: 'a' }) + frame('token', { text: 'част' }))
       await h.clock.flush()
       ;(reason === 'user' ? h.user : h.page).abort(reason)
+      // No clock movement: the idle watchdog must not be what ends it (the server slot is freed
+      // only when the request itself is aborted).
+      await h.clock.flush()
+      expect(h.outcome, reason).toEqual({ kind: 'aborted', reason })
+      expect(stream.aborted, reason).toBe(reason)
+      expect(h.clock.pending(), reason).toBe(0)
+      expect(h.progress.map((p) => p.type), reason).toEqual(['meta', 'token'])
       await h.clock.advance(60_000)
-      expect(await h.promise).toEqual({ kind: 'aborted', reason })
       expect(h.calls).toHaveLength(1)
     }
+  })
+
+  test('headers, then not a single byte → idle after 45 s → one retry with the same body', async () => {
+    const silent = live()
+    const h = turnHarness([sse(silent), sseWhole(CANONICAL)])
+    await h.clock.advance(IDLE_TIMEOUT - 1)
+    expect(h.calls).toHaveLength(1)
+    expect(h.outcome).toBeNull()
+    await h.clock.advance(1)
+    expect(h.outcome).toMatchObject({ kind: 'done' })
+    expect(h.calls).toHaveLength(2)
+    expect(h.calls[1]!.init.body).toBe(h.calls[0]!.init.body)
+    expect(silent.aborted).toBe('idle')
+    expect(await h.settled()).toMatchObject({ kind: 'done' })
+  })
+
+  test('a 503 whose body never arrives does not hang: idle → truncated → one retry', async () => {
+    const stalled = live()
+    const h = turnHarness([
+      async (_init, signal) => {
+        stalled.wire(signal)
+        return new Response(stalled.body, { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '5' } })
+      },
+      sseWhole(CANONICAL),
+    ])
+    await h.clock.advance(IDLE_TIMEOUT - 1)
+    expect(h.calls).toHaveLength(1)
+    expect(h.outcome).toBeNull()
+    await h.clock.advance(1)
+    expect(h.outcome).toMatchObject({ kind: 'done' })
+    expect(h.calls).toHaveLength(2)
+    expect(h.calls[1]!.init.body).toBe(h.calls[0]!.init.body)
+    expect(stalled.aborted).toBe('idle')
+    expect(h.progress.filter((p) => p.type === 'retry')).toEqual([{ type: 'retry', cause: 'truncated', attempt: 1 }])
+    await h.settled()
+  })
+
+  test('the connection drops mid-stream (read() fails, no abort) → truncated → one retry, reset first', async () => {
+    const broken = live()
+    const h = turnHarness([sse(broken), sseWhole(CANONICAL)])
+    await h.clock.flush()
+    broken.push(frame('meta', { request_id: 'a' }) + frame('token', { text: 'частина' }))
+    await h.clock.flush()
+    broken.fail()
+    await h.clock.flush()
+    expect(h.outcome).toMatchObject({ kind: 'done', text: 'Привіт, як ви? 😀🌿 ї' })
+    expect(h.calls).toHaveLength(2)
+    expect(h.calls[1]!.init.body).toBe(h.calls[0]!.init.body)
+    const types = h.progress.map((p) => p.type)
+    expect(types.slice(0, 4)).toEqual(['meta', 'token', 'reset', 'retry'])
+    expect(h.progress.filter((p) => p.type === 'retry')).toEqual([{ type: 'retry', cause: 'truncated', attempt: 1 }])
+    await h.settled()
+  })
+
+  test('an unfinished frame over 256 KB (ProtocolError) → one retry with the same body', async () => {
+    const huge = live()
+    const h = turnHarness([sse(huge), sseWhole(CANONICAL)])
+    await h.clock.flush()
+    huge.push(frame('meta', { request_id: 'a' }) + 'event: token\ndata: ' + 'x'.repeat(MAX_FRAME_BUFFER + 10))
+    await h.clock.flush()
+    expect(h.outcome).toMatchObject({ kind: 'done' })
+    expect(h.calls).toHaveLength(2)
+    expect(h.calls[1]!.init.body).toBe(h.calls[0]!.init.body)
+    expect(huge.cancelled).toBe(true)
+    await h.settled()
   })
 
   test('manual linking without AbortSignal.any keeps the reason', () => {
@@ -527,19 +624,19 @@ test.describe('turn', () => {
   test('200 with text/html → internal; 429 → http rate_limited, never retried; TypeError → network', async () => {
     const html = turnHarness([async () => new Response('<html></html>', { status: 200, headers: { 'content-type': 'text/html' } })])
     await html.clock.flush()
-    const o1 = await html.promise
+    const o1 = await html.settled()
     expect(o1.kind === 'http' && o1.error.code).toBe('internal')
 
     const limited = turnHarness([json(429, { error: { code: 'rate_limited', message: 'slow down' } }, { 'retry-after': '12' })])
     await limited.clock.advance(120_000)
-    const o2 = await limited.promise
+    const o2 = await limited.settled()
     expect(o2.kind === 'http' && o2.error.code).toBe('rate_limited')
     expect(o2.kind === 'http' && o2.error.retryAfterMs).toBe(12_000)
     expect(limited.calls).toHaveLength(1)
 
     const off = turnHarness([offline])
     await off.clock.advance(60_000)
-    expect(await off.promise).toEqual({ kind: 'network' })
+    expect(await off.settled()).toEqual({ kind: 'network' })
     expect(off.calls).toHaveLength(1)
   })
 
@@ -548,7 +645,7 @@ test.describe('turn', () => {
       sseWhole(frame('meta', { request_id: 'a' }) + frame('token', { text: 'текст' }) + frame('crisis', { source: 'model', helplines: { notes: PAUSED } })),
     ])
     await h.clock.flush()
-    const outcome = await h.promise
+    const outcome = await h.settled()
     expect(outcome.kind).toBe('crisis')
     expect(JSON.stringify(outcome)).not.toContain(PAUSED)
   })
@@ -780,6 +877,14 @@ test.describe('helplines', () => {
     expect(plus.lines[0]).toMatchObject({ tel: 'tel:+380000000000', hours: null })
   })
 
+  test('a phone without enough digits, with "+" inside or doubled spaces is dropped: no dead tel: link', () => {
+    const good = ['112', '+380 00 000 00 00', '0 800 00 00 05', '116 000']
+    const bad = ['+++', '+ +', '1+2', '12+', '+ 1', '12', '0 800  00 00 06', ' + 380 00', '++380 00 000']
+    const safe = sanitizeHelplines({ lines: [...good, ...bad].map((phone, i) => ({ name: `Лінія ${i}`, phone, hours: null, free: true })) })
+    expect(safe.lines.map((l) => l.phone)).toEqual(good)
+    expect(safe.lines.map((l) => l.tel)).toEqual(['tel:112', 'tel:+380000000000', 'tel:0800000005', 'tel:116000'])
+  })
+
   test('broken shapes give the fallback or an empty list, never a throw', () => {
     for (const raw of [null, undefined, 'рядок', 42, [], { lines: 'рядок' }, { lines: null }, { lines: {} }, { message: 5, abroad: 'x' }]) {
       const safe = sanitizeHelplines(raw)
@@ -860,6 +965,23 @@ test.describe('limits', () => {
       { field: 't1', reason: 'tag-dup' },
     ])
     expect(newTagIssue('СОН', [{ id: 't0', name: 'сон', source: 'ai' }])).toBe('tag-dup')
+    // Two names the server would merge into one tag are a duplicate here too.
+    expect(newTagIssue("пам'ять", [{ id: 't0', name: 'Памʼять', source: 'ai' }])).toBe('tag-dup')
+    expect(newTagIssue('Ёлка', [{ id: 't0', name: 'елка', source: 'ai' }])).toBe('tag-dup')
+    expect(newTagIssue('нова тема', [{ id: 't0', name: 'Нова   тема', source: 'ai' }])).toBe('tag-dup')
+    const merged = validateDraft(
+      {
+        title: 'Назва',
+        bullets: [{ id: 'b0', text: 'теза', removed: false }],
+        tags: [
+          { id: 't0', name: 'памʼять', source: 'ai' },
+          { id: 't1', name: "Пам'ять", source: 'user' },
+        ],
+      },
+      'free',
+    )
+    expect(merged.ok === false && merged.issues).toEqual([{ field: 't1', reason: 'tag-dup' }])
+    expect(normalize("  Памʼять’ ``Ё  ДЕНЬ\t")).toBe("пам'ять' ''е день")
     expect(newTagIssue('я'.repeat(41), [])).toBe('tag-long')
     expect(newTagIssue('новий', [])).toBeNull()
     expect(draftFromOut({ title: 't', bullets: ['a', 'b'], tags: ['x'] }).tags).toEqual([{ id: 't0', name: 'x', source: 'ai' }])
@@ -1067,6 +1189,23 @@ test.describe('state: consent', () => {
     const m = run(firstConsent(), { type: 'consent/reload' }).model
     const r = run(m, { type: 'consents/fail', purpose: 'fresh', error: apiError(0, 'network') })
     expect(r.model.state).toMatchObject({ s: 'consent', loading: false, error: { code: 'consents_load_failed' } })
+    // In `first` the boot data is the source: «Погоджуюся» still POSTs it.
+    expect(run(r.model, { type: 'consent/agree', checked: [...KINDS] }).effects).toEqual([
+      { type: 'grant', body: { policy_version: '2026-10-06', kinds: [...KINDS] } },
+    ])
+  })
+
+  test('409, then the fresh GET fails: «Погоджуюся» asks for the terms again instead of re-POSTing the old version', () => {
+    const m = run(firstConsent(), { type: 'consent/agree', checked: [...KINDS] }).model
+    const outdated = run(m, { type: 'grant/fail', error: apiError(409, 'policy_outdated', { policyVersion: '2026-11-01' }) }).model
+    const failed = run(outdated, { type: 'consents/fail', purpose: 'fresh', error: apiError(0, 'network') }).model
+    expect(failed.state).toMatchObject({ s: 'consent', mode: 'update', loading: false, fresh: false })
+    const agree = run(failed, { type: 'consent/agree', checked: [...KINDS] })
+    expect(agree.effects).toEqual([{ type: 'consents', purpose: 'fresh' }])
+    expect(agree.model.state).toMatchObject({ s: 'consent', loading: true, submitting: false, error: null })
+    const v2 = { ...CONSENTS_NONE, current_policy_version: '2026-11-01' }
+    const next = run(agree.model, { type: 'consents/ok', purpose: 'fresh', consents: v2 }, { type: 'consent/agree', checked: [...KINDS] })
+    expect(next.effects.at(-1)).toEqual({ type: 'grant', body: { policy_version: '2026-11-01', kinds: [...KINDS] } })
   })
 })
 
@@ -1303,6 +1442,20 @@ test.describe('state: protected-call failures carry the unsent message', () => {
     expect(turnEffect(retry.effects).body).toEqual(first.body)
   })
 
+  test('consent(resume) and a failed fresh GET: «Погоджуюся» never acts on the boot data (missing = [] there)', () => {
+    const { model } = failTurn(apiError(403, 'consent_required', { missing: [...KINDS], policyVersion: '2026-10-06' }))
+    // ctx.consents is still the boot answer: missing = [].
+    expect(model.ctx.consents?.missing).toEqual([])
+    const failed = run(model, { type: 'consents/fail', purpose: 'fresh', error: apiError(0, 'network') }).model
+    expect(failed.state).toMatchObject({ s: 'consent', mode: 'resume', loading: false, error: { code: 'consents_load_failed' } })
+    const agree = run(failed, { type: 'consent/agree', checked: [...KINDS] })
+    // Exactly a new GET: no turn repeated without consent, no grant.
+    expect(agree.effects).toEqual([{ type: 'consents', purpose: 'fresh' }])
+    expect(agree.model.state).toMatchObject({ s: 'consent', mode: 'resume', loading: true, pending: { text: 'НЕПОДАНИЙ-ТЕКСТ' } })
+    const ok = run(agree.model, { type: 'consents/ok', purpose: 'fresh', consents: CONSENTS_NONE }, { type: 'consent/agree', checked: [...KINDS] })
+    expect(ok.effects.at(-1)).toEqual({ type: 'grant', body: { policy_version: '2026-10-06', kinds: [...KINDS] } })
+  })
+
   test('401 on the consent screen in resume → session-expired, the unsent message kept', () => {
     const { model } = failTurn(apiError(403, 'consent_required', { missing: [...KINDS] }))
     const r = run(model, { type: 'consents/fail', purpose: 'fresh', error: apiError(401, 'unauthenticated') })
@@ -1328,6 +1481,21 @@ test.describe('state: revisit', () => {
     expect(chatOf(chosen).session.revisitIds).toEqual(['a', 'b', 'c', 'd', 'e'])
     const sent = run(chosen, { type: 'chat/send', text: 'Повертаюся' })
     expect(turnEffect(sent.effects).body.revisit_summary_ids).toEqual(['a', 'b', 'c', 'd', 'e'])
+  })
+
+  test('the picker search sends what the server takes: ≤ 200 code points, no NUL', () => {
+    const opened = run(revisitChat(), { type: 'revisit/open' }).model
+    const long = run(opened, { type: 'revisit/search', q: `  сон\u0000${'😀'.repeat(250)}  ` })
+    const fx = long.effects[0] as Extract<Effect, { type: 'pick-list' }>
+    expect(fx.type).toBe('pick-list')
+    expect(fx.q.includes('\u0000')).toBe(false)
+    expect(codePoints(fx.q)).toBe(MAX_QUERY)
+    expect(fx.q.startsWith('сон😀')).toBe(true)
+    expect(long.model.overlay[0]).toMatchObject({ o: 'revisit-pick', q: fx.q, loading: true })
+    // The answer for that query still lands.
+    const ok = run(long.model, { type: 'revisit/list-ok', purpose: 'pick', q: fx.q, cursor: null, diary: DIARY }).model
+    expect(ok.overlay[0]).toMatchObject({ loading: false, list: DIARY })
+    expect((run(opened, { type: 'revisit/search', q: ' сон ' }).effects[0] as Extract<Effect, { type: 'pick-list' }>).q).toBe('сон')
   })
 
   test('404 on a revisit turn → the picker again with the banner; a new choice repeats the same turn', () => {
@@ -1385,7 +1553,8 @@ test.describe('state: theses', () => {
     const b1 = run(model, { type: 'summarize/fail', id, now: NOW, error: busy })
     const fx1 = summarizeFx(b1.effects)
     expect(fx1.delayMs).toBe(5000)
-    expect(b1.model.state).toMatchObject({ s: 'summarizing', busy: 1, until: NOW + 5000 })
+    // The countdown is not an error: the request still counts as in flight (I2).
+    expect(b1.model.state).toMatchObject({ s: 'summarizing', busy: 1, until: NOW + 5000, error: null })
     const b2 = run(b1.model, { type: 'summarize/fail', id: fx1.id, now: NOW, error: busy })
     const fx2 = summarizeFx(b2.effects)
     const b3 = run(b2.model, { type: 'summarize/fail', id: fx2.id, now: NOW, error: busy })
@@ -1396,6 +1565,30 @@ test.describe('state: theses', () => {
     }
   })
 
+  test('I2: no second summarize beside the scheduled llm_busy retry; after a 429 only once the countdown is over', () => {
+    const { model, effects } = summarizing()
+    const { id } = summarizeFx(effects)
+    const busy = apiError(503, 'llm_busy', { retryAfterMs: 5000 })
+    const b1 = run(model, { type: 'summarize/fail', id, now: NOW, error: busy })
+    expect(llmInFlight(b1.model.state)).toBe(true)
+    const early = run(b1.model, { type: 'summarize/retry', now: NOW + 1000 })
+    expect(early.effects).toEqual([])
+    expect(early.model).toBe(b1.model)
+    // After the two automatic retries the error is final, and «Скласти ще раз» goes at once.
+    const b2 = run(b1.model, { type: 'summarize/fail', id: summarizeFx(b1.effects).id, now: NOW, error: busy })
+    const b3 = run(b2.model, { type: 'summarize/fail', id: summarizeFx(b2.effects).id, now: NOW, error: busy })
+    expect(llmInFlight(b3.model.state)).toBe(false)
+    const manual = run(b3.model, { type: 'summarize/retry', now: NOW })
+    expect(types(manual.effects)).toEqual(['summarize'])
+    expect(summarizeFx(manual.effects).delayMs).toBe(0)
+    expect(manual.model.state).toMatchObject({ s: 'summarizing', busy: 0, error: null })
+
+    const limited = run(model, { type: 'summarize/fail', id, now: NOW, error: apiError(429, 'rate_limited', { retryAfterMs: 12_000 }) }).model
+    expect(limited.state).toMatchObject({ s: 'summarizing', until: NOW + 12_000, error: { code: 'rate_limited' } })
+    expect(run(limited, { type: 'summarize/retry', now: NOW + 11_999 }).effects).toEqual([])
+    expect(types(run(limited, { type: 'summarize/retry', now: NOW + 12_000 }).effects)).toEqual(['summarize'])
+  })
+
   test('«Скасувати» → back to the same conversation and an abort; a late answer is ignored', () => {
     const { model, effects } = summarizing()
     const { id } = summarizeFx(effects)
@@ -1403,6 +1596,66 @@ test.describe('state: theses', () => {
     expect(back.effects).toEqual([{ type: 'abort', target: 'summarize' }])
     expect(chatOf(back.model).session).toBe(model.state.s === 'summarizing' ? model.state.session : null)
     expect(run(back.model, { type: 'summarize/ok', id, draft: { title: 't', bullets: ['a'], tags: [] } }).model).toEqual(back.model)
+  })
+
+  /** A conversation with an AI reply and a second message that did not go (network). */
+  function withUnsent(error: TurnOutcome = { kind: 'network' }) {
+    const sent = run(answered(booted()), { type: 'chat/send', text: 'ДРУГЕ НЕПОДАНЕ' })
+    const m = run(sent.model, { type: 'turn/outcome', id: turnEffect(sent.effects).id, now: NOW, outcome: error }).model
+    expect(chatOf(m).pending).toMatchObject({ text: 'ДРУГЕ НЕПОДАНЕ', status: 'failed' })
+    return m
+  }
+
+  test('an unsent message survives the theses: back from summarizing and from review, and into every screen that keeps it', () => {
+    const m = withUnsent()
+    const s = run(m, { type: 'confirm/open', kind: 'end' }, { type: 'confirm/accept' })
+    expect(s.model.state).toMatchObject({ s: 'summarizing', pending: { text: 'ДРУГЕ НЕПОДАНЕ' } })
+    // The theses are of the confirmed messages only.
+    expect(JSON.stringify(summarizeFx(s.effects).body)).not.toContain('ДРУГЕ НЕПОДАНЕ')
+    expect(leaveGuard(s.model.state)).toBe(true)
+    const cancelled = chatOf(run(s.model, { type: 'summarize/cancel' }).model)
+    expect(cancelled.pending).toMatchObject({ text: 'ДРУГЕ НЕПОДАНЕ', status: 'failed' })
+    expect(cancelled.notice).toBeNull()
+
+    const { id } = summarizeFx(s.effects)
+    const review = run(s.model, { type: 'summarize/ok', id, draft: { title: 'Розмова про день', bullets: ['a'], tags: [] } }).model
+    expect(review.state).toMatchObject({ s: 'review', pending: { text: 'ДРУГЕ НЕПОДАНЕ' } })
+    expect(chatOf(run(review, { type: 'review/back' }).model).pending).toMatchObject({ text: 'ДРУГЕ НЕПОДАНЕ' })
+    // «Скласти заново» keeps it too.
+    const again = run(review, { type: 'confirm/open', kind: 'regenerate' }, { type: 'confirm/accept' }).model
+    expect(again.state).toMatchObject({ s: 'summarizing', pending: { text: 'ДРУГЕ НЕПОДАНЕ' } })
+
+    // 401 / 403 on summarize or save: the read-only copy carries it.
+    expect(run(s.model, { type: 'summarize/fail', id, now: NOW, error: apiError(401, 'unauthenticated') }).model.state).toMatchObject({
+      s: 'session-expired',
+      pending: { text: 'ДРУГЕ НЕПОДАНЕ' },
+    })
+    const save = run(review, { type: 'review/save' })
+    const saveId = (save.effects[0] as Extract<Effect, { type: 'save' }>).id
+    expect(run(save.model, { type: 'save/fail', id: saveId, error: apiError(403, 'not_invited') }).model.state).toMatchObject({
+      s: 'not-invited',
+      pending: { text: 'ДРУГЕ НЕПОДАНЕ' },
+    })
+    // consent_required on summarize → consent(resume) with it → the summarize repeats, still with it.
+    const resume = run(s.model, { type: 'summarize/fail', id, now: NOW, error: apiError(403, 'consent_required', { missing: ['llm_transfer'] }) }).model
+    expect(resume.state).toMatchObject({ s: 'consent', mode: 'resume', pending: { text: 'ДРУГЕ НЕПОДАНЕ' } })
+    const resumed = run(resume, { type: 'consents/ok', purpose: 'fresh', consents: CONSENTS_OK })
+    expect(resumed.model.state).toMatchObject({ s: 'summarizing', pending: { text: 'ДРУГЕ НЕПОДАНЕ' } })
+    // A 401 on GET /summaries while on review keeps it as well.
+    expect(run(review, { type: 'diary/fail', error: apiError(401, 'unauthenticated') }).model.state).toMatchObject({
+      s: 'session-expired',
+      pending: { text: 'ДРУГЕ НЕПОДАНЕ' },
+    })
+  })
+
+  test('413: «Підсумувати» from the block still works, and «Скасувати» brings the block back', () => {
+    const m = withUnsent({ kind: 'http', error: apiError(413, 'payload_too_large') })
+    expect(chatOf(m).notice).toEqual({ kind: 'too-large' })
+    const s = run(m, { type: 'chat/summarize' })
+    expect(types(s.effects)).toEqual(['summarize'])
+    const back = chatOf(run(s.model, { type: 'summarize/cancel' }).model)
+    expect(back.notice).toEqual({ kind: 'too-large' })
+    expect(back.pending).toMatchObject({ text: 'ДРУГЕ НЕПОДАНЕ', error: { code: 'payload_too_large' } })
   })
 
   function reviewModel(noSave = false) {
@@ -1444,6 +1697,73 @@ test.describe('state: theses', () => {
     // Too old by the server's own clock → not ours.
     expect(matchesSaved(fx.body, record, 'Wed, 07 Oct 2026 12:10:00 GMT')).toBe(false)
     expect(matchesSaved(fx.body, record, null)).toBe(true)
+  })
+
+  test('after an unknown save result the draft is locked, so the check compares with the body that went out', () => {
+    const save = run(reviewModel(), { type: 'review/save' })
+    const fx = save.effects[0] as Extract<Effect, { type: 'save' }>
+    const unknown = run(save.model, { type: 'save/fail', id: fx.id, error: apiError(0, 'network') }).model
+    expect(unknown.state).toMatchObject({ s: 'review', saving: 'unknown' })
+    if (unknown.state.s !== 'review') return
+    const edit = run(unknown, { type: 'review/update', draft: { ...unknown.state.draft, title: 'Розмова про день (правка)' } })
+    expect(edit.model).toBe(unknown)
+    const retry = run(edit.model, { type: 'review/save' })
+    expect(types(retry.effects)).toEqual(['save-check'])
+    const checkId = (retry.effects[0] as Extract<Effect, { type: 'save-check' }>).id
+    // The first POST did land: its record is the newest one → saved, no second POST.
+    const landed: SummaryOut = { ...SUMMARY, scenario: fx.body.scenario, title: fx.body.title, bullets: [...fx.body.bullets], tags: [{ id: 'x', name: 'день', source: 'ai' }] }
+    const match = run(retry.model, { type: 'save/check', id: checkId, list: { items: [landed], next_cursor: null }, date: null })
+    expect(match.model.state.s).toBe('saved')
+    expect(types(match.effects)).not.toContain('save')
+    // Once a retry has settled it (saving idle again after a known failure), editing works.
+    const known = run(save.model, { type: 'save/fail', id: fx.id, error: apiError(500, 'internal') }).model
+    if (known.state.s !== 'review') throw new Error('review expected')
+    expect(run(known, { type: 'review/update', draft: { ...known.state.draft, title: 'Інша назва' } }).model.state).toMatchObject({ draft: { title: 'Інша назва' } })
+  })
+
+  test('a 201 whose body broke off is an unknown result: the retry checks first instead of POSTing again', async () => {
+    const api = createApi({
+      fetch: async () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(c) {
+              c.enqueue(enc.encode('{"id":'))
+              c.error(new TypeError('network reset'))
+            },
+          }),
+          { status: 201, headers: { 'content-type': 'application/json' } },
+        ),
+    })
+    const r = await api.saveSummary({ scenario: 'free', title: 't', bullets: ['b'], tags: [] })
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.error).toMatchObject({ status: 201, code: 'network' })
+    expect(outcomeUnknown(r.error)).toBe(true)
+    expect(outcomeUnknown(apiError(200, 'internal'))).toBe(true)
+    expect(outcomeUnknown(apiError(404, 'not_found'))).toBe(false)
+    expect(outcomeUnknown(apiError(500, 'internal'))).toBe(false)
+    const save = run(reviewModel(), { type: 'review/save' })
+    const fx = save.effects[0] as Extract<Effect, { type: 'save' }>
+    const failed = run(save.model, { type: 'save/fail', id: fx.id, error: r.error }).model
+    expect(failed.state).toMatchObject({ s: 'review', saving: 'unknown', error: { code: 'save_unknown' } })
+    expect(types(run(failed, { type: 'review/save' }).effects)).toEqual(['save-check'])
+  })
+
+  test('the save-check matches tag names the way the server de-duplicates them', () => {
+    const body: SummaryCreate = { scenario: 'day', title: 'Розмова про день', bullets: ['перша'], tags: [
+      { name: 'Робота', source: 'user' as const },
+      { name: 'памʼять', source: 'ai' as const },
+      { name: 'нова  тема', source: 'user' as const },
+    ] }
+    // The server answers with the names already stored for the same normal form.
+    const stored: SummaryOut = { ...SUMMARY, scenario: 'day', title: 'Розмова про день', bullets: ['перша'], tags: [
+      { id: 'a', name: 'робота', source: 'user' },
+      { id: 'b', name: "пам'ять", source: 'ai' },
+      { id: 'c', name: 'Нова тема', source: 'user' },
+    ] }
+    expect(matchesSaved(body, stored, null)).toBe(true)
+    expect(matchesSaved(body, { ...stored, tags: [...stored.tags.slice(0, 2), { id: 'd', name: 'інша тема', source: 'user' }] }, null)).toBe(false)
+    expect(matchesSaved(body, { ...stored, tags: stored.tags.slice(0, 2) }, null)).toBe(false)
   })
 
   test('save errors: 422 lands on the right field through the index table; 403 consent_required resumes the save', () => {
