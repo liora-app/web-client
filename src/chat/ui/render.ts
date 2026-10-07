@@ -103,6 +103,12 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky 
       if (prev !== null) screens[prev.state.s].leave?.(model)
       for (const [name, section] of sections) show(section, name === s)
       html.dataset.screen = s
+      // A screen starts at its top. The document scrolls, and the offset the last screen left (the
+      // send anchor moves the conversation up, smoothly while motion is on) would otherwise carry
+      // over: the crisis numbers could open below the fold on a phone (§6.4). An instant scroll
+      // also stops a smooth one still running. Whatever the new screen scrolls to — its focus, the
+      // send anchor of a repeated turn — comes after this.
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
       setAttr(main, 'aria-busy', s === 'booting' ? 'true' : 'false')
       // The help contacts always stand on the night sky (§9.2).
       sky?.setSuppressed(s === 'crisis')
