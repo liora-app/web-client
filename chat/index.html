@@ -117,7 +117,7 @@
             <div class="screen__part" data-el="ni-guest">
               <h1 class="display-2 screen__title" tabindex="-1">Поки що вхід — за запрошеннями</h1>
               <div class="prose">
-                <p>Цієї адреси Google немає в списку тестувальників, або Google не підтвердив її. Ви нічого не зробили не так. Акаунт не створено, і вашої адреси ми не зберегли.</p>
+                <p>Цієї адреси Google немає в списку тестувальників, або Google не підтвердив її. Ви нічого не зробили не так. Новий акаунт не створено, і під час цього входу вашої адреси ми не записали.</p>
                 <p>Коли доступ відкриється ширше, про це буде написано на головній сторінці.</p>
               </div>
               <p class="screen__actions">
@@ -273,8 +273,8 @@
             <div class="session" data-el="session" hidden>
               <span class="orb orb--mini" aria-hidden="true"></span>
               <div class="session__who">
-                <p class="session__label">AI · <span data-el="session-title"></span><span data-el="session-nosave" hidden> · Не зберігати</span></p>
-                <p class="session__sub">Не людина · не терапія</p>
+                <p class="session__label">AI · <span data-el="session-title"></span><span data-el="session-nosave" hidden>&nbsp;· <span class="keep">Не зберігати</span></span></p>
+                <p class="session__sub"><span class="keep">Не людина</span>&nbsp;· <span class="keep">не терапія</span></p>
               </div>
               <button class="button button--secondary button--small session__end" type="button" data-act="end" aria-haspopup="dialog" data-el="session-end" hidden>
                 <span class="wide-only">Завершити розмову</span><span class="narrow-only">Завершити</span>
@@ -318,7 +318,7 @@
               <p class="nosave__hint" id="nosave-hint">Тези наприкінці можна буде переглянути, але не зберегти. Повного тексту розмови сервер Liora не зберігає в жодному разі.</p>
             </div>
 
-            <p class="chat-line" data-el="chat-line" role="status" hidden></p>
+            <p class="chat-line" data-el="chat-line" role="status"></p>
 
             <div class="block" data-el="chat-block" hidden>
               <p class="block__text" data-el="chat-block-text"></p>
@@ -424,8 +424,10 @@
               <li>02 —</li>
               <li>03 —</li>
             </ol>
-            <!-- The live part says what happened, once; the seconds beside it are aria-hidden (§5.7). -->
-            <p class="status-line" data-el="sum-line" hidden><span data-el="sum-status" role="status"></span> <span data-el="sum-countdown" aria-hidden="true"></span></p>
+            <!-- The live part says what happened, once; the seconds beside it stand outside it: readable,
+                 never announced (§5.7). Empty, the line is only visually hidden, so the region stays in the
+                 accessibility tree before its text comes. -->
+            <p class="status-line status-line--quiet" data-el="sum-line"><span data-el="sum-status" role="status"></span> <span data-el="sum-countdown"></span></p>
             <p class="small" data-el="sum-request-id" hidden></p>
             <p class="screen__actions" data-el="sum-retry-actions" hidden>
               <button class="button button--primary" type="button" data-act="summarize-retry" data-el="sum-retry">Скласти ще раз</button>
@@ -766,7 +768,7 @@
         <span class="thesis__index" aria-hidden="true"></span>
         <div class="thesis__field">
           <label class="visually-hidden"></label>
-          <textarea class="field__input thesis__input" rows="2"></textarea>
+          <textarea class="field__input thesis__input" rows="2" autocomplete="off"></textarea>
           <p class="field__count" aria-hidden="true"></p>
           <p class="field-error"></p>
         </div>
@@ -816,7 +818,7 @@
     <template data-confirm="end-no-theses">
       <h2 class="confirm__title" id="confirm-title">Завершити без тез?</h2>
       <p data-if="not-maybe-saved">Текст розмови зникне з цієї сторінки. Ні тексту, ні тез у Liora не залишиться — лише технічні записи без тексту, про які сказано на екрані згоди. Скасувати це не можна.</p>
-      <p data-if="maybe-saved">Текст розмови зникне з цієї сторінки. Збереження тез не підтвердилося: можливо, вони вже є у вашому щоденнику — це видно у файлі щоденника в меню «Акаунт». Скасувати це не можна.</p>
+      <p data-if="maybe-saved">Текст розмови зникне з цієї сторінки. Збереження тез не підтвердилося: можливо, тези з цієї розмови вже є у вашому щоденнику — це видно у файлі щоденника в меню «Акаунт». Скасувати це не можна.</p>
       <div class="confirm__actions">
         <button class="button button--danger" type="button" data-act="accept">Завершити</button>
         <button class="button button--secondary" type="button" data-act="back" data-focus>Назад</button>
@@ -826,7 +828,7 @@
     <template data-confirm="discard">
       <h2 class="confirm__title" id="confirm-title">Видалити тези?</h2>
       <p data-if="not-maybe-saved">Liora їх не зберігала, тож повернути їх не вийде. Текст розмови теж зникне з цієї сторінки.</p>
-      <p data-if="maybe-saved">Збереження не підтвердилося: можливо, ці тези вже є у вашому щоденнику — це видно у файлі щоденника в меню «Акаунт». Чернетка й текст розмови зникнуть з цієї сторінки.</p>
+      <p data-if="maybe-saved">Збереження не підтвердилося: можливо, тези з цієї розмови вже є у вашому щоденнику — це видно у файлі щоденника в меню «Акаунт». Чернетка й текст розмови зникнуть з цієї сторінки.</p>
       <div class="confirm__actions">
         <button class="button button--danger" type="button" data-act="accept">Видалити</button>
         <button class="button button--secondary" type="button" data-act="close" data-focus>Залишити</button>
@@ -844,7 +846,9 @@
 
     <template data-confirm="leave">
       <h2 class="confirm__title" id="confirm-title">Піти з розмови?</h2>
-      <p>Liora не зберігає текст цієї розмови. Якщо підете, на цій сторінці його вже не буде. Хочете залишити тези — спершу підсумуйте розмову.</p>
+      <p>Liora не зберігає текст цієї розмови. Якщо підете, на цій сторінці його вже не буде.</p>
+      <p data-if="can-summarize">Хочете залишити тези — спершу підсумуйте розмову.</p>
+      <p data-if="review-save">Чернетка тез теж зникне — щоб залишити тези, збережіть їх у щоденник.</p>
       <div class="confirm__actions">
         <button class="button button--secondary" type="button" data-act="close" data-focus>Залишитися</button>
         <button class="button button--primary" type="button" data-act="accept-summarize" data-if="can-summarize">Підсумувати</button>
@@ -884,7 +888,7 @@
       <h2 class="confirm__title" id="confirm-title">Видалити акаунт назавжди?</h2>
       <p>Одразу видалимо: усі записи щоденника — назви, тези, теги; ваші згоди; входи на всіх пристроях; ваш email та ідентифікатор Google.</p>
       <p>Що лишиться: службовий запис — номер акаунта й дата видалення, щоб видалення не скасувалося при відновленні даних із резервної копії. Технічні журнали сервера без тексту розмов, з псевдонімом замість акаунта; вони з часом перезаписуються.</p>
-      <p>Те, що під час розмов отримав постачальник AI (<span data-el="provider"></span>), зберігається за його умовами — Liora видалити це не може.</p>
+      <p>Те, що під час розмов отримав постачальник AI, <span data-el="provider"></span>, зберігається за його умовами — Liora видалити це не може.</p>
       <p>Відновити акаунт не вийде. Якщо захочете повернутися, можна увійти знову — це буде новий, порожній акаунт.</p>
       <p>Хочете зберегти щоденник? Спершу завантажте його:</p>
       <ul class="arrows arrows--row" role="list">

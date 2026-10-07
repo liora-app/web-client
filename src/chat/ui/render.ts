@@ -8,7 +8,7 @@ import type { GlControl } from '../../gl/core/boot'
 import type { PresenceHandle } from '../../gl/presence'
 import type { SkyControl } from '../../ui/sky'
 import type { SoundControl } from '../../ui/sound'
-import { hasUserMessage, type Action, type Model, type State } from '../core/state'
+import { hasUserMessage, sessionOf, type Action, type Model, type State } from '../core/state'
 import { createDialogs, type Dialogs } from './dialogs'
 import { finePointer, headingOf, setAttr, show } from './dom'
 import { createPresence, type PresenceView } from './presence'
@@ -131,6 +131,11 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky 
       // The screen being left lets go of the conversation first — the answer in progress and its
       // scheduled write before anything else (I3, §5.7) — then the new one shows.
       if (prev !== null) screens[prev.state.s].leave?.(model)
+      // The conversation is over (saved, ended, crisis, signed out, wiped at pagehide…): so is what
+      // was typed for it, whichever screen the page was on — the theses, a consent, session-expired.
+      // The field itself is out of the DOM there, so the text would come back with it. Not
+      // through the `composer` effect: that one focuses the field and pops a phone's keyboard.
+      if (sessionOf(model.state) === null) chat.composer.clear()
       for (const [name, section] of sections) show(section, name === s)
       html.dataset.screen = s
       // A screen starts at its top. The document scrolls, and the offset the last screen left (the
@@ -164,7 +169,9 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky 
     if (changed && (s !== 'booting' || prev !== null)) {
       const section = sections.get(s)!
       const target = screens[s].focusTarget?.(model) ?? headingOf(section) ?? main
-      target.focus()
+      // The message field sits in the sticky composer, always in view: focusing it must not scroll
+      // the page away from the top it was just put at (§3.6).
+      target.focus(target instanceof HTMLTextAreaElement ? { preventScroll: true } : undefined)
     } else if (!changed) {
       keepFocus(focused)
     }

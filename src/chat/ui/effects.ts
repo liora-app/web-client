@@ -93,7 +93,10 @@ export function createEffects(deps: EffectDeps): Effects {
       default: {
         const state = model.state
         if (state.s === 'chat' && state.pending?.status === 'failed' && state.pending.error !== null) {
-          announcer.final(`Не надіслано. ${turnError(state.pending.error, model.ctx.csrfFailures, null, state.session.scenario === 'revisit').why}`)
+          // After a 429 the countdown has just started: say how long it is, as the line under the
+          // message does. «Можна надіслати ще раз» comes once, at its end (COOLDOWN_OVER).
+          const left = state.turn.p === 'cooldown' ? Math.max(1, Math.ceil((state.turn.until - Date.now()) / 1000)) : null
+          announcer.final(`Не надіслано. ${turnError(state.pending.error, model.ctx.csrfFailures, left, state.session.scenario === 'revisit').why}`)
         }
       }
     }
@@ -173,7 +176,8 @@ export function createEffects(deps: EffectDeps): Effects {
       })
     }
     if (effect.delayMs > 0) {
-      // The llm_busy countdown: said once at its start; the seconds on the screen are aria-hidden.
+      // The llm_busy countdown: said once at its start; the seconds on the screen stand outside
+      // the live region, so they are never announced.
       if (deps.model().state.s === 'summarizing') announcer.say(sayRetry(Math.max(1, Math.round(effect.delayMs / 1000))))
       const pageSignal = page.signal
       const stop = (): void => {

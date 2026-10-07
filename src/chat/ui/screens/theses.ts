@@ -36,11 +36,14 @@ export function summarizingScreen(): Screen {
     const text = error !== null ? summarizeError(error, last.ctx.csrfFailures, code === 'rate_limited' ? left : null) : null
     // The live part changes only with what happened (no per-second announcements, §5.7): the
     // countdown is said once at its start (effects.ts) and, after a 429, its end changes the line.
+    // The seconds stand beside the live part, not in it: readable in browse mode, never announced.
     const status = text !== null ? text.why : waitingBusy ? BUSY_NOW : ''
     const countdown = waitingBusy ? busyRetryIn(left ?? 0) : cooling ? summarizeRetryIn(left) : ''
     setText(el('sum-status'), status)
     setText(el('sum-countdown'), countdown)
-    show(el('sum-line'), status !== '' || countdown !== '')
+    // Empty, the line is only visually hidden: its live region stays in the accessibility tree,
+    // so the text that comes later is read (a region shown together with its text may not be).
+    el('sum-line').classList.toggle('status-line--quiet', status === '' && countdown === '')
     const id = text?.showId === true ? requestIdLine(error!.requestId) : null
     setText(el('sum-request-id'), id ?? '')
     show(el('sum-request-id'), id !== null)
@@ -92,6 +95,8 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
   let seq = 0
   let focusId: string | null = null
   let lastIssues: Review['issues'] = []
+  /** The line under the tag field says what a check of the draft found (not a hint of the field). */
+  let tagErrorFromIssue = false
 
   const current = (): Review | null => (last !== null && last.state.s === 'review' ? (last.state as Review) : null)
   const update = (draft: Draft): void => dispatch({ type: 'review/update', draft })
@@ -120,6 +125,7 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
     if (!state || state.saving !== 'idle') return
     const name = tagInput.value.replace(/,/g, ' ').trim()
     const issue = newTagIssue(name, state.draft.tags)
+    tagErrorFromIssue = false
     if (issue !== null) {
       setText(tagError, issue === 'tag-empty' ? '' : (DRAFT_TEXT[issue] ?? ''))
       return
@@ -189,22 +195,43 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
     show(el('review-add-wrap'), active < MAX_BULLETS && state.saving === 'idle')
   }
 
+  /** The pills are keyed by the tag's id, like the theses: a render keeps the node (and the focus
+   *  on its «×») in place. A wrong tag says so in text, not only by its border (SC 1.4.1, 3.3.1):
+   *  the line under the field names it, and its «×» is described by that line. */
   const renderTags = (state: Review): void => {
-    tags.replaceChildren()
+    const pills = new Map(Array.from(tags.querySelectorAll<HTMLLIElement>('li[data-id]')).map((li) => [li.dataset.id!, li]))
+    let previous: HTMLLIElement | null = null
     for (const tag of state.draft.tags) {
-      const li = fromTemplate<HTMLLIElement>('tag')
+      let li = pills.get(tag.id)
+      if (li === undefined) {
+        li = fromTemplate<HTMLLIElement>('tag')
+        li.dataset.id = tag.id
+        li.querySelector<HTMLElement>('.tagpill__remove')!.dataset.id = tag.id
+      }
+      pills.delete(tag.id)
+      const next: ChildNode | null = previous === null ? tags.firstChild : previous.nextSibling
+      if (next !== li) tags.insertBefore(li, next)
+      previous = li
       setText(li.querySelector('.tagpill__name')!, `#${tag.name}`)
       const remove = li.querySelector<HTMLElement>('.tagpill__remove')!
-      remove.dataset.id = tag.id
-      remove.setAttribute('aria-label', `Прибрати тег «${tag.name}»`)
+      setAttr(remove, 'aria-label', `Прибрати тег «${tag.name}»`)
       setAttr(remove, 'aria-disabled', state.saving !== 'idle' ? 'true' : null)
-      const issue = state.issues.find((i) => i.field === tag.id)
-      if (issue) li.classList.add('tagpill--invalid')
-      tags.append(li)
+      const invalid = state.issues.some((i) => i.field === tag.id)
+      li.classList.toggle('tagpill--invalid', invalid)
+      setAttr(remove, 'aria-describedby', invalid ? 'review-tag-error' : null)
     }
+    for (const stale of pills.values()) stale.remove()
     show(el('review-tags-none'), state.draft.tags.length === 0)
     const tagIssue = state.issues.find((i) => state.draft.tags.some((t) => t.id === i.field))
-    if (tagIssue) setText(tagError, DRAFT_TEXT[tagIssue.reason] ?? '')
+    const wrong = tagIssue === undefined ? undefined : state.draft.tags.find((t) => t.id === tagIssue.field)
+    if (tagIssue !== undefined && wrong !== undefined) {
+      setText(tagError, `«#${wrong.name}»: ${DRAFT_TEXT[tagIssue.reason] ?? ''}`)
+      tagErrorFromIssue = true
+    } else if (tagErrorFromIssue) {
+      // The edit that cleared the issues clears its line too (the field's own hint stays).
+      setText(tagError, '')
+      tagErrorFromIssue = false
+    }
   }
 
   return {
@@ -254,6 +281,7 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
       if (entered) {
         lastIssues = []
         setText(tagError, '')
+        tagErrorFromIssue = false
         tagInput.value = ''
       }
       if (title.value !== draft.title) title.value = draft.title
@@ -288,13 +316,17 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
       show(el('review-reload-row'), text?.reload === true)
       setAttr(el('review-discard'), 'aria-disabled', state.saving === 'saving' ? 'true' : null)
 
-      // A failed check or a 422: focus the first field that is wrong (§7.2).
+      // A failed check or a 422: focus the first field that is wrong (§7.2). A wrong tag: its «×»,
+      // which the line naming the tag describes — not the «Новий тег» field, which is fine.
       if (state.issues !== lastIssues && state.issues.length > 0) {
         const first = state.issues[0]!
         const target =
           first.field === 'title'
             ? title
-            : (root.querySelector<HTMLElement>(`#thesis-${first.field}`) ?? (first.reason === 'bullets-none' ? root.querySelector<HTMLElement>('.thesis:not(.thesis--removed) .thesis__input') : tagInput))
+            : (root.querySelector<HTMLElement>(`#thesis-${first.field}`) ??
+              (first.reason === 'bullets-none'
+                ? root.querySelector<HTMLElement>('.thesis:not(.thesis--removed) .thesis__input')
+                : (tags.querySelector<HTMLElement>(`li[data-id="${first.field}"] .tagpill__remove`) ?? tagInput)))
         target?.focus()
       }
       lastIssues = state.issues

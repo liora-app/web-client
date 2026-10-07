@@ -13,7 +13,7 @@ import { hasUserMessage } from '../../core/state'
 import { CONSENT_KINDS, type ConsentKind, type ConsentState } from '../../core/types'
 import { CONSENT_UNCHECKED, accountOpError, consentError, policyVersion, shortDate } from '../copy'
 import { allEl, byEl, screenOf, setAttr, setText, show } from '../dom'
-import { authBanner, type Screen } from './text'
+import { authBanner, clearBanner, type Screen } from './text'
 
 type ConsentScreen = Extract<State, { s: 'consent' }>
 
@@ -122,6 +122,10 @@ export function consentScreen(): Screen & { checked(): ConsentKind[]; toggleLate
       const op = model.ctx.op
       const opText = op !== null && op.error !== null && op.name === 'logout' && model.overlay.length === 0 ? accountOpError(op.name, op.error).why : ''
       setText(byEl('consent-op-error', root), opText)
+    },
+    // The banner names the account's email: it does not stay in the hidden section.
+    leave() {
+      clearBanner(byEl('consent-auth', root), byEl('consent-auth-text', root))
     },
     focusTarget(model) {
       const state = model.state as ConsentScreen

@@ -43,16 +43,23 @@ export function signInScreen(): Screen {
   }
 }
 
-/** «Новий вхід не відбувся…» over the first screen after boot (§3.3). */
+/** «Новий вхід не відбувся…» over the first screen after boot (§3.3). Without a notice the banner
+ *  keeps no text either: it names the account's email. */
 export function authBanner(model: Model, banner: HTMLElement, text: HTMLElement): boolean {
   const notice = model.ctx.authNotice
   if (notice === null) {
-    show(banner, false)
+    clearBanner(banner, text)
     return false
   }
   setText(text, stillSignedIn(notice.code, notice.email))
   show(banner, true)
   return true
+}
+
+/** A screen with the banner is left: the email goes with it (render() writes it again on return). */
+export function clearBanner(banner: HTMLElement, text: HTMLElement): void {
+  setText(text, '')
+  show(banner, false)
 }
 
 // ── not-invited ──
@@ -64,12 +71,13 @@ export function notInvitedScreen(): Screen {
   const kept = byEl('ni-kept', root)
   const talk = byEl<HTMLOListElement>('ni-talk', root)
   const copy = byEl('ni-copy', root)
+  const email = byEl('ni-email', root)
   return {
     render(model, entered) {
       const state = model.state as On<'not-invited'>
       show(guest, !state.hasSession)
       show(member, state.hasSession)
-      setText(byEl('ni-email', root), model.ctx.me?.email ?? '')
+      setText(email, model.ctx.me?.email ?? '')
       const hasTalk = hasUserMessage(state.stale, state.pending)
       show(kept, hasTalk || state.draft !== null)
       setText(copy, state.draft !== null ? 'Скопіювати тези' : 'Скопіювати текст розмови')
@@ -83,7 +91,12 @@ export function notInvitedScreen(): Screen {
       const opText = op !== null && op.error !== null && op.name === 'logout' && model.overlay.length === 0 ? accountOpError(op.name, op.error).why : ''
       setText(byEl('ni-op-error', root), opText)
     },
-    leave: () => talk.replaceChildren(),
+    // Signed out, the account deleted…: neither the conversation nor the email stays in the
+    // hidden section.
+    leave() {
+      talk.replaceChildren()
+      setText(email, '')
+    },
   }
 }
 

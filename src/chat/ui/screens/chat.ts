@@ -5,10 +5,15 @@
 // scheduled write first (I3) — and takes the composer and the session row out of the DOM, not just
 // out of sight (§6.2: in the crisis there is no field to type into). They come back, the same
 // nodes, when the screen is entered again; the typed text survives only while the conversation
-// does (theses and back, a consent), not its end.
+// does (theses and back, a consent), not its end — render.ts empties the field on any screen
+// change that ends the conversation, from whichever screen.
+//
+// The lines above the composer are live regions that stay rendered while empty (visually hidden
+// by CSS, never [hidden]): a region that appears together with its text is not reliably read
+// (§5.7).
 
 import type { Action, ChatState, Model } from '../../core/state'
-import { canSendNow, hasReply, hasUserMessage, scenariosOf, sessionOf } from '../../core/state'
+import { canSendNow, hasReply, hasUserMessage, scenariosOf } from '../../core/state'
 import { LONG_CONVERSATION_MESSAGES, SERVER_TRIM_CODE_POINTS, canSend, totalCodePoints } from '../../core/limits'
 import type { ScenarioOut } from '../../core/types'
 import {
@@ -30,7 +35,7 @@ import { REPEAT_GAP_MS } from '../announcer'
 import { createComposer, type Composer } from '../composer'
 import { createScrollAnchor } from '../scroll-anchor'
 import { Transcript, type StreamView } from '../transcript'
-import { authBanner, type Screen } from './text'
+import { authBanner, clearBanner, type Screen } from './text'
 import { fillProvider } from './consent'
 
 export type ChatScreen = Screen &
@@ -136,7 +141,7 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
     jumpToEnd() {
       anchor.jumpToEnd()
     },
-    leave(next) {
+    leave() {
       // On a phone the field may hold the keyboard open: let it close before the field goes.
       const active = document.activeElement
       if (active instanceof HTMLElement && root.contains(active)) active.blur()
@@ -144,8 +149,10 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       anchor.reset()
       sessionSlot.detach()
       composerSlot.detach()
-      // The conversation is over (saved, ended, crisis, signed out…): so is what was typed for it.
-      if (sessionOf(next.state) === null) composer.clear()
+      // The names of the chosen diary records and the email in «Новий вхід не відбувся…»: render()
+      // writes them again on the way back.
+      setText(el('revisit-names'), '')
+      clearBanner(el('chat-auth'), el('chat-auth-text'))
       lastModel = null
     },
     render(model, entered) {
@@ -222,8 +229,7 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       // Lines above the composer and the blocks that replace it (§3.7.7, §4.2).
       const n = s.messages.length
       const lineText = n >= LONG_CONVERSATION_MESSAGES ? LONG_CONVERSATION : totalCodePoints(s.messages) > SERVER_TRIM_CODE_POINTS ? SERVER_TRIM : ''
-      setText(line, lineText)
-      show(line, lineText !== '' && started)
+      setText(line, started ? lineText : '')
 
       const notice = state.notice
       let blockText = ''
@@ -256,7 +262,6 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       } else {
         setText(status, statusText)
       }
-      show(status, statusText !== '')
 
       // The «↓» pill: only once the person has written something (§3.7.6).
       anchor.context({ shown: started, streaming: state.turn.p === 'streaming' })

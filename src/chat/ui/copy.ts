@@ -199,7 +199,8 @@ const RATE_LIMIT_NOTE = 'За хвилину можна надіслати до 
 
 /** The line on `summarizing` (§7.1, §4.3). `retryInSeconds`: what is left of a 429 countdown.
  *  The line is a live region, so the seconds never go into it: while the countdown runs it says
- *  only what happened, and summarizeRetryIn() writes the seconds beside it, aria-hidden (§5.7). */
+ *  only what happened, and summarizeRetryIn() writes the seconds beside it, outside the region —
+ *  readable, never announced (§5.7). */
 export function summarizeError(error: UiError, csrfFailures: number, retryInSeconds: number | null): ErrorText {
   switch (error.code) {
     case 'llm_busy':
@@ -227,7 +228,7 @@ export function summarizeError(error: UiError, csrfFailures: number, retryInSeco
   }
 }
 
-/** Beside the line on `summarizing`, aria-hidden: the seconds left of a 429 countdown. */
+/** Beside the live line on `summarizing`, outside it: the seconds left of a 429 countdown. */
 export function summarizeRetryIn(seconds: number): string {
   return `Скласти тези знову можна через ${seconds} с.`
 }
@@ -337,7 +338,13 @@ export const PRESENCE_LABEL: Readonly<Record<Presence, string>> = {
 export const SAY_THINKING = 'AI думає над відповіддю'
 export const SAY_STOPPED = 'Відповідь зупинено'
 export const sayAnswer = (text: string): string => `Відповідь AI: ${text}`
-export const sayRetry = (seconds: number): string => `Пробуємо ще раз через ${seconds} секунд`
+const plural = new Intl.PluralRules('uk')
+const SECONDS: Readonly<Record<string, string>> = { one: 'секунду', few: 'секунди', many: 'секунд', other: 'секунди' }
+/** «через 1 секунду», «через 3 секунди», «через 5 секунд», «через 22 секунди». */
+export function secondsWord(n: number): string {
+  return SECONDS[plural.select(n)] ?? 'секунд'
+}
+export const sayRetry = (seconds: number): string => `Пробуємо ще раз через ${seconds} ${secondsWord(seconds)}`
 export const sayTheses = (n: number): string => `Тези готові: ${n}`
 export const SAY_SAVED = 'Збережено в щоденник'
 

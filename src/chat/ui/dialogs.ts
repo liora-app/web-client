@@ -37,6 +37,9 @@ export type Dialogs = Readonly<{
 /** Debounce of the search in the record picker (§3.6). */
 const SEARCH_DEBOUNCE_MS = 300
 
+/** The confirms of an account operation (core/state.ts: one at a time). */
+const ACCOUNT_CONFIRMS: ReadonlySet<string> = new Set(['logout', 'delete-account', 'revoke'])
+
 export function fillLines(list: HTMLElement, block: HTMLElement, lines: readonly SafeLine[]): void {
   list.replaceChildren()
   for (const line of lines) {
@@ -125,7 +128,10 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
       nosave: session?.noSave === true,
       // «Поточна розмова теж зникне» / «…закриється»: there is something to lose (I7).
       talk: leaveGuard(state),
+      // «Хочете залишити тези — спершу підсумуйте» only where «Підсумувати» is offered beside it;
+      // on the theses the way to keep them is the save (§3.12). Neither in «не зберігати».
       'can-summarize': state.s === 'chat' && hasReply(state.session) && !state.session.noSave,
+      'review-save': state.s === 'review' && !state.session.noSave,
       // An unconfirmed save may have reached the diary: no «Liora їх не зберігала» (§7.3).
       'maybe-saved': ctx.maybeSaved,
       'not-maybe-saved': !ctx.maybeSaved,
@@ -145,10 +151,11 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
       setText(opId, id ?? '')
       show(opId, id !== null)
     }
-    // Busy only in the confirm of the operation that runs: a revoke stuck elsewhere must not
-    // silence «Увійти» or «Завершити».
+    // While an account operation runs, every account confirm (logout, delete-account, revoke) is
+    // busy: the core takes one operation at a time and ignores the press. A revoke stuck elsewhere
+    // must not silence «Увійти» or «Завершити», which are not account operations.
     const top = m.overlay[m.overlay.length - 1]
-    const busy = ctx.op?.busy === true && top?.o === 'confirm' && top.kind === ctx.op.name
+    const busy = ctx.op?.busy === true && top?.o === 'confirm' && ACCOUNT_CONFIRMS.has(top.kind)
     for (const button of Array.from(confirmBody.querySelectorAll<HTMLButtonElement>('[data-act="accept"]'))) {
       setAttr(button, 'aria-busy', busy ? 'true' : null)
     }
@@ -171,8 +178,27 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
     // «Вийти» without a confirm (nothing to lose) reports here; a stacked confirm reports itself.
     const own = op !== null && op.error !== null && op.name === 'logout' && m.overlay.length === 1
     setText(byEl('account-op-error', root), own && op?.error ? accountOpError(op.name, op.error).why : '')
+    // «Вийти» waits for any account operation still running, not only its own.
     const logout = root.querySelector<HTMLElement>('[data-act="logout"]')
-    if (logout) setAttr(logout, 'aria-busy', op?.name === 'logout' && op.busy ? 'true' : null)
+    if (logout) setAttr(logout, 'aria-busy', op?.busy === true ? 'true' : null)
+  }
+
+  /** No session any more (signed out, the account deleted, wiped): the closed sheet keeps neither
+   *  the email nor the dates of the consents. */
+  function clearAccount(): void {
+    const root = elements.account
+    setText(byEl('account-email', root), '')
+    for (const node of Array.from(root.querySelectorAll<HTMLElement>('[data-grant-date]'))) setText(node, '')
+  }
+
+  /** The picker closed: its records (titles, tags, first theses) and the query leave the page with
+   *  it — after a revoke of data_processing the server has erased them. It is filled again on
+   *  the next open. */
+  function clearPick(): void {
+    window.clearTimeout(searchTimer)
+    byEl('pick-list', pickRoot).replaceChildren()
+    setText(byEl('pick-status', pickRoot), '')
+    search.value = ''
   }
 
   function refreshHelp(m: Model): void {
@@ -308,7 +334,7 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
       while (stack.length > keep) {
         const top = stack.pop()!
         if (top.el.open) top.el.close()
-        if (top.kind === 'revisit-pick') window.clearTimeout(searchTimer)
+        if (top.kind === 'revisit-pick') clearPick()
         if (!screenChanged) returnFocus(top.opener)
       }
       if (wanted.every((o) => o.o !== 'revisit-pick')) pickTried = false
@@ -350,6 +376,7 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
       if (stack.some((o) => o.kind === 'account')) refreshAccount(next)
       if (stack.some((o) => o.kind === 'help')) refreshHelp(next)
       if (stack.some((o) => o.kind === 'revisit-pick')) refreshPick(next)
+      if (next.ctx.me === null) clearAccount()
       placeRegion()
     },
   }
