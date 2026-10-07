@@ -55,8 +55,9 @@ export interface GlControl<H extends SceneHandle = SceneHandle> {
    *  Read it each time instead of keeping the onReady argument. */
   handle(): H | null
   /** false pauses the scene and keeps it paused through every later sync (motion toggle,
-   *  forced colors, a restored context) until true. Not a reason to stay static: data-gl and
-   *  data-gl-reason do not change. */
+   *  forced colors, a restored context) until true. Before the scene has started, false also
+   *  holds back loading its chunk; true starts it then. Not a reason to stay static: data-gl
+   *  and data-gl-reason do not change. */
   setActive(active: boolean): void
 }
 
@@ -153,6 +154,10 @@ export function bootGL<H extends SceneHandle = SceneHandle>(
       if (suspended) handle.pause()
       else handle.resume()
       setGlStatus(drawn ? 'on' : 'loading')
+    } else if (suspended) {
+      // Put away before it ever started (the chat on a phone, a conversation already running):
+      // nothing to load until the page wants the light again; setActive(true) starts it then.
+      setGlStatus('loading')
     } else if (!starting) {
       starting = true
       setGlStatus('loading')
@@ -185,8 +190,9 @@ export function bootGL<H extends SceneHandle = SceneHandle>(
   }
 
   const start = async (): Promise<void> => {
-    // The facts may have changed while waiting for an idle moment.
-    if (offReason()) {
+    // The facts may have changed while waiting for an idle moment: a reason to stay static, or
+    // the page put the scene away (then the chunk is not loaded until it is wanted).
+    if (offReason() || suspended) {
       starting = false
       sync()
       return
