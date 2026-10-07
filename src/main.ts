@@ -16,15 +16,26 @@ import { initReveal } from './ui/reveal'
 import { initSound } from './ui/sound'
 import { initSteps } from './ui/steps'
 
-initHeroLight()
-initMotionToggle(document.querySelector<HTMLButtonElement>('[data-motion-toggle]'))
-initNav()
-initMenu()
-initSound()
-initReveal()
-initSteps()
-initDecode()
+// A sign-in error that came back to "/" belongs to the chat (ADR-007): without the flow cookie the
+// server does not know `next` yet and sends the person here. Only known codes travel on (the same
+// list as AUTH_CODES in src/chat/core/state.ts, kept here so the landing loads no chat code); the
+// chat shows the message. Nothing is asked of the API.
+const AUTH_ERRORS = new Set(['access_denied', 'state_mismatch', 'expired', 'not_invited', 'server_error', 'auth_unavailable'])
+const authError = new URLSearchParams(location.search).get('auth_error')
 
-const canvas = document.querySelector<HTMLCanvasElement>('[data-gl-canvas]')
-// The scene is its own lazy chunk (with three.js), requested only after the page has painted.
-if (canvas) bootGL(canvas, { load: () => import('./gl/scene') })
+if (authError !== null) {
+  location.replace(`/chat/?auth_error=${AUTH_ERRORS.has(authError) ? authError : 'unknown'}`)
+} else {
+  initHeroLight()
+  initMotionToggle(document.querySelector<HTMLButtonElement>('[data-motion-toggle]'))
+  initNav()
+  initMenu()
+  initSound()
+  initReveal()
+  initSteps()
+  initDecode()
+
+  const canvas = document.querySelector<HTMLCanvasElement>('[data-gl-canvas]')
+  // The scene is its own lazy chunk (with three.js), requested only after the page has painted.
+  if (canvas) bootGL(canvas, { load: () => import('./gl/scene') })
+}

@@ -228,6 +228,21 @@ html[data-gl='on'] .hero__orb {
   opacity: 0;
 }
 
+/* The light is a link to /chat/: a round hit area on the same spot as the light, whichever draws
+   it (CSS or WebGL; the canvas lets clicks through). Over the stretched title (z-behind) so the
+   light takes the click; before the frame in the DOM, so the lead and links win where they meet. */
+.hero__orb-link {
+  position: absolute;
+  z-index: var(--z-text);
+  left: var(--light-x, 50%);
+  top: var(--light-y, 24svh);
+  width: var(--light-d, min(48vw, 17rem));
+  aspect-ratio: 1;
+  border-radius: 50%;
+  translate: -50% -50%;
+  cursor: pointer;
+}
+
 @media (min-width: 64em) {
   .hero {
     justify-content: center;
@@ -246,7 +261,8 @@ html[data-gl='on'] .hero__orb {
     gap: 0.5rem 2.5rem;
   }
 
-  .hero__orb {
+  .hero__orb,
+  .hero__orb-link {
     left: var(--light-x, 72.5%);
     top: var(--light-y, 49%);
     width: var(--light-d, min(45.6vh, 29.6vw));
@@ -904,6 +920,7 @@ html[data-gl='on'] .final::before {
 
 @media (forced-colors: active) {
   .hero__orb,
+  .hero__orb-link,
   .diary__sky,
   .final::before {
     display: none;

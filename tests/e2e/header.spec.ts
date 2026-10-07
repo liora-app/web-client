@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
-import { centre } from './helpers'
+import { centre, cutOffAtEdges } from './helpers'
 
 // Counts AudioContexts the page creates: «Звук» must not touch audio before it is pressed.
 const COUNT_AUDIO = `(() => {
@@ -26,6 +26,43 @@ test.describe('header', () => {
     await page.goto('/')
     await expect(page.locator('.site-nav')).toBeVisible()
     await expect(page.locator('[data-menu-open]')).toBeHidden()
+  })
+
+  test('wide screens lead to the chat: «Розмова з AI» after the motion and sound control', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', 'the 1440 px layout')
+    await page.goto('/')
+    const cta = page.getByRole('banner').getByRole('link', { name: 'Розмова з AI', exact: true })
+    await expect(cta).toBeVisible()
+    await expect(cta).toHaveAttribute('href', '/chat/')
+    const [media, link] = await Promise.all([page.locator('.site-header .media').boundingBox(), cta.boundingBox()])
+    expect(link!.x).toBeGreaterThan(media!.x + media!.width)
+    expect(Math.round(link!.height)).toBe(40)
+  })
+
+  test('the header holds the chat link at 1024 px: nothing cut off, nothing overlapping', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', 'the narrowest wide layout; one engine is enough')
+    await page.setViewportSize({ width: 1024, height: 768 })
+    await page.goto('/')
+    await page.evaluate(() => document.fonts.ready)
+    await expect(page.locator('.site-header__cta')).toBeVisible()
+    expect(await cutOffAtEdges(page)).toEqual([])
+    // Left to right without overlaps: wordmark, sections, «Якщо важко», motion and sound, the chat.
+    const boxes = await page
+      .locator('.site-header .brand, .site-nav, .site-header .help-link, .site-header .media, .site-header__cta')
+      .evaluateAll((items) => items.map((item) => item.getBoundingClientRect()).map(({ left, right }) => ({ left, right })))
+    expect(boxes).toHaveLength(5)
+    for (let i = 1; i < boxes.length; i++) expect(boxes[i]!.left, `item ${i}`).toBeGreaterThanOrEqual(boxes[i - 1]!.right)
+  })
+
+  test('narrow screens put the chat first in the menu, as a full-width button', async ({ page, isMobile }) => {
+    await withMenu(page, isMobile)
+    await expect(page.locator('.site-header__cta')).toBeHidden()
+    await page.locator('[data-menu-open]').click()
+    const first = page.locator('[data-menu]').getByRole('link').first()
+    await expect(first).toHaveAccessibleName('Розмова з AI')
+    await expect(first).toHaveAttribute('href', '/chat/')
+    const [link, list] = await Promise.all([first.boundingBox(), page.locator('.site-menu__list').boundingBox()])
+    expect(Math.round(link!.width)).toBe(Math.round(list!.width))
   })
 
   test('motion and sound share one control, each button named and explained on hover', async ({ page, browserName }) => {
@@ -54,6 +91,7 @@ test.describe('header', () => {
     await expect(menu).toBeVisible()
     await expect(opener).toHaveAttribute('aria-expanded', 'true')
     await expect(menu.getByRole('link')).toHaveText([
+      /Розмова з AI/,
       /Як це працює/,
       /Сценарії/,
       /Щоденник/,

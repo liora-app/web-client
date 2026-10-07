@@ -4,14 +4,27 @@
 // the visitor has paused the page and in a hidden tab — and only those: the OS reduced-motion
 // setting alone does not mute it, the visitor asked for sound.
 // <html data-sound="off|on|muted"> shows the state (tests, CSS).
+// follow: 'chapters' (the landing, default) takes the chord and the crisis silence from the chapter
+// in the middle of the screen; 'manual' (the chat) leaves both to the page through SoundControl.
 
 import { onMotionChange, userPaused } from './motion'
 import type { Pad } from './sound-engine'
 
-export function initSound(): void {
+export interface SoundControl {
+  /** The chord: the scene state number the pad follows (0 = the light). */
+  setMood(mood: number): void
+  /** Silence that is not the visitor's choice: the crisis screen, the help dialog. */
+  setQuiet(quiet: boolean): void
+}
+
+export interface SoundOptions {
+  follow?: 'chapters' | 'manual'
+}
+
+export function initSound({ follow = 'chapters' }: SoundOptions = {}): SoundControl | null {
   const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-sound-toggle]'))
   const AudioContextClass = window.AudioContext as typeof AudioContext | undefined
-  if (buttons.length === 0 || !AudioContextClass) return
+  if (buttons.length === 0 || !AudioContextClass) return null
 
   const root = document.documentElement
   let context: AudioContext | null = null
@@ -46,7 +59,7 @@ export function initSound(): void {
 
   // Which chapter holds the middle of the viewport: its scene state sets the chord, and the crisis
   // chapter (data-gl-quiet) silences the pad. Plain DOM, so it works with the scene off too.
-  const watched = Array.from(document.querySelectorAll<HTMLElement>('[data-gl-state], [data-gl-quiet]'))
+  const watched = follow === 'chapters' ? Array.from(document.querySelectorAll<HTMLElement>('[data-gl-state], [data-gl-quiet]')) : []
   if (watched.length > 0 && 'IntersectionObserver' in window) {
     const inMiddle = new Set<HTMLElement>()
     const observer = new IntersectionObserver(
@@ -69,4 +82,17 @@ export function initSound(): void {
   onMotionChange(() => render())
   document.addEventListener('visibilitychange', render)
   render()
+
+  return {
+    setMood: (next) => {
+      if (next === mood) return
+      mood = next
+      render()
+    },
+    setQuiet: (quiet) => {
+      if (quiet === crisis) return
+      crisis = quiet
+      render()
+    },
+  }
 }

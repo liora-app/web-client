@@ -39,6 +39,10 @@
      baseline. Below ~1.1 they touch the next line, and Cyrillic display lines run together. */
   --leading-display: 1.12;
 
+  /* Shape (the chat's fields and dialogs; colour still comes only from light) */
+  --radius-field: 0.875rem;
+  --radius-dialog: 1rem;
+
   /* Space */
   --gutter: clamp(1rem, 4vw, 3.5rem);
   --frame: 90rem;

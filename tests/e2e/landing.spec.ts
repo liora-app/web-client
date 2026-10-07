@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
+import { FORBIDDEN, clinicalOffenders } from './chat-fixtures'
 import { SECTION_IDS, centre, cutOffAtEdges, watchConsole } from './helpers'
 
 test.describe('content and structure', () => {
@@ -75,36 +76,10 @@ test.describe('content and structure', () => {
       .join('\n')
       .toLowerCase()
 
-    // Never acceptable, in any context. \w is ASCII-only in JS: Cyrillic endings need \S*.
-    const forbidden = [
-      /№\s?1/,
-      /перш\S* у світі/,
-      /military/,
-      /навчанн\S* (ші|ai|моделей)/,
-      /ніхто,? навіть ми/,
-      /наскрізн\S* шифруван/,
-      /7333/,
-      /zero retention/,
-      /нульов\S* (зберіган|утриман)/,
-      /анонімн/,
-      // Promises about the AI provider ("постачальник не логує", "навіть постачальник не бачить").
-      /(постачальник|провайдер)[^.\n]{0,60}не (логу|зберіга|бач)/,
-      /(ні|навіть)\s+(постачальник|провайдер)/,
-    ]
-    for (const pattern of forbidden) expect(text, `forbidden phrase ${pattern}`).not.toMatch(pattern)
-
-    // A sieve, not a proof: clinical words may only appear negated in the same sentence ("не терапія",
-    // "не призначена для діагностики") or inside a question the page then answers ("Liora — це психолог?").
-    const clinical = /терапі|терапевт|психолог|психіатр|лікув|лікує|діагно[зс]|депрес|тривог|тривожн/g
-    const offenders: string[] = []
-    for (const match of text.matchAll(clinical)) {
-      const at = match.index ?? 0
-      const clause = text.slice(Math.max(0, at - 160), at).split(/[.!?\n]/).pop() ?? ''
-      const sentenceEnd = text.slice(at).search(/[.!?\n]/)
-      const isQuestion = sentenceEnd >= 0 && text[at + sentenceEnd] === '?'
-      if (!/(^|[\s(«])(не|ні)\s/.test(clause) && !isQuestion) offenders.push(text.slice(Math.max(0, at - 40), at + 30))
-    }
-    expect(offenders).toEqual([])
+    // One list for the landing and the chat (chat-fixtures.ts, spec §11.6).
+    for (const pattern of FORBIDDEN) expect(text, `forbidden phrase ${pattern}`).not.toMatch(pattern)
+    // Clinical words only negated or inside a question the page then answers.
+    expect(clinicalOffenders(text)).toEqual([])
     // Age goes to the FAQ and the consent wording, never to a hero badge. Web-first: it waits out the decode.
     await expect(page.locator('#hero')).not.toContainText(/\b18\b|18\s*\+/)
   })
@@ -123,6 +98,53 @@ test.describe('content and structure', () => {
     const own = new URL(baseURL ?? 'http://localhost:4173').origin
     const foreign = [...origins].filter((origin) => origin !== own && !origin.startsWith('data:'))
     expect(foreign).toEqual([])
+  })
+
+  test('the footer says which cookies exist once the chat signs in', async ({ page }) => {
+    await page.goto('/')
+    const note = page.locator('.site-footer__note')
+    await expect(note).toContainText('Лендінг сам не ставить файли cookie і не має аналітики.')
+    await expect(note).toContainText('браузер тримає файл cookie сесії, недоступний скриптам сторінки')
+    await expect(note).toContainText('тимчасовий файл cookie входу')
+    await expect(note).not.toContainText('не використовує файли cookie')
+  })
+
+  test('runs under the site CSP without a single violation', async ({ page }) => {
+    await page.addInitScript(() => {
+      const seen: string[] = []
+      ;(window as unknown as { __csp: string[] }).__csp = seen
+      document.addEventListener('securitypolicyviolation', (event) => seen.push(`${event.violatedDirective} ${event.blockedURI}`))
+    })
+    const response = await page.goto('/')
+    // The same string as deploy/Caddyfile and vite.config.ts (ADR-007); without it this test proves nothing.
+    expect(response?.headers()['content-security-policy']).toBe(
+      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    )
+    await page.waitForLoadState('networkidle')
+    // Everything lazy (the scene chunk, fonts used further down) gets its chance.
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+    await page.waitForTimeout(1200)
+    expect(await page.evaluate(() => (window as unknown as { __csp: string[] }).__csp)).toEqual([])
+  })
+
+  test('a sign-in error that lands on "/" moves to the chat, with a known code only', async ({ page }) => {
+    // The chat page asks the API on load; keep it offline: this test is about the landing's hop.
+    await page.route('**/api/**', (route) => route.abort())
+    const pages: string[] = []
+    page.on('request', (request) => {
+      if (!request.isNavigationRequest() || request.frame() !== page.mainFrame()) return
+      const url = new URL(request.url())
+      pages.push(url.pathname + url.search)
+    })
+    // Resolve on commit: the landing replaces itself while it is still loading.
+    await page.goto('/?auth_error=expired', { waitUntil: 'commit' })
+    await expect(page).toHaveURL(/\/chat\/(\?|$)/) // the chat then drops the query itself
+    expect(pages).toEqual(['/?auth_error=expired', '/chat/?auth_error=expired'])
+
+    pages.length = 0
+    await page.goto('/?auth_error=%3Cscript%3E', { waitUntil: 'commit' })
+    await expect(page).toHaveURL(/\/chat\/(\?|$)/)
+    expect(pages).toEqual(['/?auth_error=%3Cscript%3E', '/chat/?auth_error=unknown'])
   })
 
   test('external links open safely', async ({ page }) => {
@@ -291,6 +313,33 @@ test.describe('layout', () => {
     }
   })
 
+  test('the light opens the chat, out of the tab order and the accessibility tree', async ({ page }, testInfo) => {
+    await page.goto('/')
+    const link = page.locator('.hero a.hero__orb-link')
+    await expect(link).toHaveCount(1)
+    await expect(link).toHaveAttribute('href', '/chat/')
+    await expect(link).toHaveAttribute('tabindex', '-1')
+    await expect(link).toHaveAttribute('aria-hidden', 'true')
+    // The same circle as the light (both read --light-x/-y/-d).
+    await page.evaluate(() => document.fonts.ready)
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const light = document.querySelector('.hero__orb')!.getBoundingClientRect()
+          const hit = document.querySelector('.hero__orb-link')!.getBoundingClientRect()
+          return Math.max(...(['left', 'top', 'width', 'height'] as const).map((side) => Math.abs(light[side] - hit[side])))
+        }),
+      )
+      .toBeLessThanOrEqual(1)
+    // On the wide layout the light stands clear of the text: its centre takes the click.
+    if (testInfo.project.name !== 'desktop') return
+    const target = await link.evaluate((node) => {
+      const box = node.getBoundingClientRect()
+      return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest('a')?.className ?? null
+    })
+    expect(target).toBe('hero__orb-link')
+  })
+
   test('largest contentful paint is text, not the scene', async ({ page, browserName }) => {
     test.skip(browserName !== 'chromium', 'LCP entries are Chromium-only')
     await page.goto('/')
@@ -343,7 +392,10 @@ test.describe('layers', () => {
     expect(fadeIsClickThrough).toBe(true)
 
     // elementsFromPoint skips pointer-events: none; let the decorative layers be hit in this test only.
-    await page.addStyleTag({ content: '.scene, .vignette { pointer-events: auto !important; }' })
+    // Through CSSOM, not a <style> tag: the site CSP (style-src 'self') blocks inline style elements.
+    await page
+      .locator('.scene, .vignette')
+      .evaluateAll((layers) => layers.forEach((layer) => (layer as HTMLElement).style.setProperty('pointer-events', 'auto', 'important')))
     const stackAt = (selector: string): Promise<{ target: number; canvas: number; vignette: number }> =>
       page
         .locator(selector)
