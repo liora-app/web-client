@@ -85,8 +85,11 @@
 > - **«Зашифроване сховище» у FAQ.** Runbook каже, що диск сервера gp3 зашифрований ключем `aws/ebs`
 >   (`devops/docs/runbooks/deploy.md:25`). Рядок FAQ уточнити до «на зашифрованому диску сервера
 >   Liora» і в PR позначити `[unverified: стан тому в AWS не перевірявся]`.
-> - **CI web-client** (`.github/workflows/ci.yml`) запускається лише на PR у `main`. Тому PR не
->   стекуємо: PR зі сценою (seams) зливається першим, PR з чатом відкривається від свіжого `main`.
+> - **CI web-client** (`.github/workflows/ci.yml`) запускається на кожен `pull_request` без фільтра
+>   гілок, тож стековані PR теж отримують CI: PR з чатом можна відкрити від гілки PR зі сценою (seams), а
+>   після її злиття — перенацілити на `main`. На `push` CI іде лише в `main` і лише коли змінилися
+>   `.pre-commit-config.yaml` чи сам `ci.yml`.
+>   `[verified: cat .github/workflows/ci.yml → «on: pull_request:» без «branches»; «push: branches: [main], paths: …»]`
 
 Вони блокують реліз, але не цей PR.
 
