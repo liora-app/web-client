@@ -1034,7 +1034,13 @@ function onConfirmAccept(model: Model, choice: 'summarize' | undefined): Step {
     case 'logout':
       return beginLogout(model)
     case 'new-after-crisis':
-      return state.s === 'crisis' ? startChat(model, { afterCrisis: true, wipe: true }) : [model, NONE]
+      if (state.s !== 'crisis') return [model, NONE]
+      // A consent withdrawn while the contacts were on the screen (a late revoke/ok keeps them):
+      // the consent first, then the new conversation with its line about the crisis.
+      if (ctx.consents !== null && ctx.consents.missing.length > 0) {
+        return [{ ...popped, ctx: { ...ctx, afterCrisis: true }, state: consent('first', { fresh: true }) }, [{ type: 'announcer/clear' }]]
+      }
+      return startChat(model, { afterCrisis: true, wipe: true })
     case 'delete-account':
       return [
         { ...model, ctx: { ...ctx, op: { name: 'delete-account', busy: true, error: null } } },
@@ -1516,9 +1522,17 @@ function step(model: Model, action: Action): Step {
       const me = ctx.me === null ? null : { ...ctx.me, consents_ok: false }
       // The revoke is over; an operation of another name is not this answer's to end.
       const op = ctx.op?.name === 'revoke' ? null : ctx.op
+      const account: Ctx = { ...ctx, consents: action.consents, diary, me, op }
+      if (state.s === 'crisis') {
+        // I5: the contacts stay. Only the account data changes, and the revoke's own confirm (if
+        // it is still on top) closes; the consent comes with «Почати нову розмову».
+        const top = topOverlay(model)
+        const overlay = top?.o === 'confirm' && top.kind === 'revoke' ? model.overlay.slice(0, -1) : model.overlay
+        return [{ ...model, overlay, ctx: account }, NONE]
+      }
       // Closed explicitly: revoking from the consent screen keeps `s`, so reduce() would not.
       return [
-        { state: consent('first', { fresh: true }), overlay: [], ctx: { ...ctx, consents: action.consents, diary, me, op } },
+        { state: consent('first', { fresh: true }), overlay: [], ctx: account },
         [{ type: 'abort', target: 'all' }, { type: 'announcer/clear' }],
       ]
     }

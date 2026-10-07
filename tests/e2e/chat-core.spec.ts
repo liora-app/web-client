@@ -2495,6 +2495,47 @@ test.describe('state: one account operation at a time, late answers, a boot cut 
     expect(back.ctx.op).toBeNull()
   })
 
+  test('I5: a late revoke answer on the crisis screen keeps the contacts; the withdrawn consent comes with the new conversation', () => {
+    const toCrisis = (m: Model): Model => {
+      const sent = run(m, { type: 'chat/send', text: 'Синтетична кризова фраза' })
+      return run(sent.model, { type: 'turn/outcome', id: turnEffect(sent.effects).id, now: NOW, outcome: { kind: 'crisis', source: 'keyword', helplines: FALLBACK } }).model
+    }
+    const consents: ConsentState = { ...CONSENTS_OK, missing: ['data_processing'] }
+    // Revoke confirmed, its confirm and the sheet closed with Esc, then the crisis.
+    const crisis = toCrisis(run(revoking(), { type: 'overlay/close' }, { type: 'overlay/close' }).model)
+    expect(crisis.state.s).toBe('crisis')
+    expect(crisis.ctx.op).toMatchObject({ name: 'revoke', busy: true })
+    const late = run(crisis, { type: 'revoke/ok', kind: 'data_processing', consents })
+    expect(late.model.state).toEqual(crisis.state)
+    expect(late.effects).toEqual([])
+    expect(late.model.ctx.op).toBeNull()
+    expect(late.model.ctx.consents).toEqual(consents)
+    expect(late.model.ctx.me?.consents_ok).toBe(false)
+    expect(late.model.ctx.diary).toEqual({ status: 'ok', value: { items: [], nextCursor: null } })
+    // «Почати нову розмову»: the consent withdrawn meanwhile comes first, the crisis line after it.
+    const next = run(late.model, { type: 'confirm/open', kind: 'new-after-crisis' }, { type: 'confirm/accept' })
+    expect(next.model.state).toMatchObject({ s: 'consent', mode: 'first', fresh: true })
+    expect(next.model.ctx.afterCrisis).toBe(true)
+    expect(types(next.effects)).toEqual(['announcer/clear'])
+
+    // A revoke started on the crisis screen itself: its answer closes its own confirm, the sheet
+    // stays open over the contacts.
+    const onCrisis = run(
+      toCrisis(answered(booted())),
+      { type: 'overlay/open', overlay: 'account' },
+      { type: 'confirm/open', kind: 'revoke', revoke: 'age_18' },
+      { type: 'confirm/accept' },
+    ).model
+    expect(onCrisis.overlay.map((o) => o.o)).toEqual(['account', 'confirm'])
+    const answer = run(onCrisis, { type: 'revoke/ok', kind: 'age_18', consents: { ...CONSENTS_OK, missing: ['age_18'] } }).model
+    expect(answer.state).toEqual(onCrisis.state)
+    expect(answer.overlay.map((o) => o.o)).toEqual(['account'])
+    expect(answer.ctx.op).toBeNull()
+    // With every consent in place, «Почати нову розмову» opens the conversation as before.
+    const restart = run(toCrisis(answered(booted())), { type: 'confirm/open', kind: 'new-after-crisis' }, { type: 'confirm/accept' }).model
+    expect(restart.state.s).toBe('chat')
+  })
+
   test('signing out and a deleted account let go of a busy operation themselves', () => {
     for (const end of [{ type: 'logout/ok' }, { type: 'delete/ok' }] as const) {
       const after = run(revoking(), end).model
