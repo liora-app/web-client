@@ -693,8 +693,9 @@ export const FORBIDDEN: readonly RegExp[] = [
   new RegExp(PAUSED),
   /zero retention/,
   /нульов\S* (зберіган|утриман)/,
-  // «у Liora нічого не залишиться» is the same zero-retention promise (spec §3.7.8, §11.6).
-  /нічого не залиш/,
+  // «у Liora нічого не залишиться» / «ми нічого не зберегли» are the same zero-retention promise:
+  // the server writes technical records on every request (spec §3.4, §3.7.8, §11.6).
+  /нічого не (залиш|зберег|зберіга)/,
   /анонімн/,
   // Promises about the AI provider ("постачальник не логує", "навіть постачальник не бачить").
   /(постачальник|провайдер)[^.\n]{0,60}не (логу|зберіга|бач)/,

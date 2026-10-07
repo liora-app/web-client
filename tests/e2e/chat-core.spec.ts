@@ -1645,8 +1645,8 @@ test.describe('state: theses', () => {
     expect(resume.state).toMatchObject({ s: 'consent', mode: 'resume', pending: { text: 'ДРУГЕ НЕПОДАНЕ' } })
     const resumed = run(resume, { type: 'consents/ok', purpose: 'fresh', consents: CONSENTS_OK })
     expect(resumed.model.state).toMatchObject({ s: 'summarizing', pending: { text: 'ДРУГЕ НЕПОДАНЕ' } })
-    // A 401 on GET /summaries while on review keeps it as well.
-    expect(run(review, { type: 'diary/fail', error: apiError(401, 'unauthenticated') }).model.state).toMatchObject({
+    // A 401 on GET /summaries (a refresh in flight) while on review keeps it as well.
+    expect(run(review, { type: 'diary/retry' }, { type: 'diary/fail', error: apiError(401, 'unauthenticated') }).model.state).toMatchObject({
       s: 'session-expired',
       pending: { text: 'ДРУГЕ НЕПОДАНЕ' },
     })
@@ -1852,6 +1852,7 @@ test.describe('state: crisis and invariants', () => {
       { type: 'overlay/close' },
       { type: 'revisit/open' },
       { type: 'page/show', persisted: false },
+      { type: 'page/left' },
     ]
     for (const action of actions) {
       const [next] = reduce(crisis, action)
@@ -1988,7 +1989,7 @@ test.describe('state: account and page life', () => {
     expect(diary.model.state).toMatchObject({ s: 'session-expired', pending: null, draft: null })
     expect(types(diary.effects)).toEqual(['diary', 'abort'])
     // Any other failure only marks the diary.
-    const down = run(m, { type: 'diary/fail', error: apiError(502, 'upstream_unavailable') }).model
+    const down = run(m, { type: 'diary/retry' }, { type: 'diary/fail', error: apiError(502, 'upstream_unavailable') }).model
     expect(down.state.s).toBe('chat')
     expect(down.ctx.diary).toEqual({ status: 'failed' })
     // After «Збережено» nothing is left to keep: signed out.
@@ -2013,6 +2014,153 @@ test.describe('state: account and page life', () => {
     expect(m.effects).toEqual([{ type: 'helplines' }])
     const loaded = run(m.model, { type: 'helplines/ok', helplines: FALLBACK }, { type: 'overlay/close' }, { type: 'overlay/open', overlay: 'help' })
     expect(loaded.effects).toEqual([])
+  })
+})
+
+test.describe('state: leaving the page, the account after a 401, countdowns, unconfirmed saves', () => {
+  const OTHER = { ...ME, id: 'u-2', email: 'other@example.com' }
+  const TEXT = 'Синтетичне перше повідомлення.'
+
+  /** review with a draft of the answered conversation. */
+  function review(): Model {
+    const s = run(answered(booted()), { type: 'chat/summarize' })
+    const fx = s.effects.find((e): e is Extract<Effect, { type: 'summarize' }> => e.type === 'summarize')!
+    return run(s.model, { type: 'summarize/ok', id: fx.id, draft: { title: 'Розмова про день', bullets: ['перша'], tags: [] } }).model
+  }
+
+  /** review whose POST /summaries ended without an answer (§7.3). */
+  function unconfirmed(): Model {
+    const save = run(review(), { type: 'review/save' })
+    const fx = save.effects[0] as Extract<Effect, { type: 'save' }>
+    return run(save.model, { type: 'save/fail', id: fx.id, error: apiError(0, 'network') }).model
+  }
+
+  test('«Піти» and «Увійти знову» wipe the conversation at pagehide; a restored page boots again', () => {
+    const m = answered(booted())
+    // Nothing was promised: a plain pagehide keeps the page as it is.
+    expect(run(m, { type: 'page/left' }).model).toEqual(m)
+    const left = run(m, { type: 'confirm/open', kind: 'leave', leaveTo: 'home' }, { type: 'confirm/accept' })
+    expect(left.effects).toEqual([{ type: 'navigate', href: '/' }])
+    const hidden = run(left.model, { type: 'page/left' })
+    expect(hidden.model.state).toEqual({ s: 'booting' })
+    expect(hidden.model.ctx.me).toBeNull()
+    expect(hidden.model.overlay).toEqual([])
+    expect(types(hidden.effects)).toEqual(['abort', 'announcer/clear'])
+    expect(JSON.stringify(hidden.model)).not.toContain(TEXT)
+    const shown = run(hidden.model, { type: 'page/show', persisted: true })
+    expect(shown.effects).toEqual([{ type: 'url/clean' }, { type: 'me', purpose: 'boot', timeoutMs: BOOT_TIMEOUT }])
+
+    const expired = run(m, { type: 'chat/send', text: 'Друге' })
+    const ended = run(expired.model, { type: 'turn/outcome', id: turnEffect(expired.effects).id, now: NOW, outcome: { kind: 'http', error: apiError(401, 'unauthenticated') } }).model
+    const relogin = run(ended, { type: 'confirm/open', kind: 'relogin' }, { type: 'confirm/accept' }, { type: 'page/left' })
+    expect(relogin.model.state).toEqual({ s: 'booting' })
+    expect(JSON.stringify(relogin.model)).not.toContain('Друге')
+  })
+
+  test('pagehide in the crisis empties the conversation under <details> and keeps the contacts', () => {
+    const sent = run(booted(), { type: 'chat/send', text: 'Синтетична кризова фраза' })
+    const crisis = run(sent.model, { type: 'turn/outcome', id: turnEffect(sent.effects).id, now: NOW, outcome: { kind: 'crisis', source: 'keyword', helplines: FALLBACK } }).model
+    const hidden = run(crisis, { type: 'page/left' }).model
+    expect(hidden.state).toMatchObject({ s: 'crisis', helplines: FALLBACK, stale: [] })
+    expect(JSON.stringify(hidden)).not.toContain('Синтетична кризова фраза')
+  })
+
+  test('pageshow: GET /me answers for another account → wiped and booted again as that account', () => {
+    const m = answered(booted())
+    const same = run(m, { type: 'me/ok', purpose: 'pageshow', me: { ...ME, consents_ok: true } })
+    expect(chatOf(same.model).session.messages).toHaveLength(3)
+    const other = run(m, { type: 'me/ok', purpose: 'pageshow', me: OTHER })
+    expect(other.model.state).toEqual({ s: 'booting' })
+    expect(other.model.ctx.me).toBeNull()
+    expect(JSON.stringify(other.model)).not.toContain(TEXT)
+    expect(types(other.effects)).toEqual(['abort', 'announcer/clear', 'url/clean', 'me'])
+  })
+
+  test('session-expired: no account menu; a 401 on a revoke leaves no busy operation behind', () => {
+    const m = answered(booted())
+    const revoking = run(m, { type: 'overlay/open', overlay: 'account' }, { type: 'confirm/open', kind: 'revoke', revoke: 'llm_transfer' }, { type: 'confirm/accept' }).model
+    expect(revoking.ctx.op).toMatchObject({ name: 'revoke', busy: true })
+    const expired = run(revoking, { type: 'revoke/fail', kind: 'llm_transfer', error: apiError(401, 'unauthenticated') }).model
+    expect(expired.state.s).toBe('session-expired')
+    expect(expired.ctx.op).toBeNull()
+    // The same 401 while already on session-expired (the screen does not change): still no op.
+    const stuck: Model = { ...expired, ctx: { ...expired.ctx, op: { name: 'revoke', busy: true, error: null } } }
+    expect(run(stuck, { type: 'revoke/fail', kind: 'llm_transfer', error: apiError(401, 'unauthenticated') }).model.ctx.op).toBeNull()
+    // The menu and its operations need a live session.
+    expect(run(expired, { type: 'overlay/open', overlay: 'account' }).model.overlay).toEqual([])
+    for (const kind of ['logout', 'delete-account'] as const) expect(run(expired, { type: 'confirm/open', kind }).model.overlay).toEqual([])
+    expect(run(expired, { type: 'account/logout' }).effects).toEqual([])
+    // «Увійти знову» still goes.
+    expect(run(expired, { type: 'confirm/open', kind: 'relogin' }, { type: 'confirm/accept' }).effects).toEqual([{ type: 'navigate', href: GOOGLE_START }])
+  })
+
+  test('a late GET /summaries never brings back an erased diary', () => {
+    const save = run(review(), { type: 'review/save' })
+    const fx = save.effects[0] as Extract<Effect, { type: 'save' }>
+    const savedModel = run(save.model, { type: 'save/ok', id: fx.id, summary: SUMMARY }).model
+    expect(savedModel.ctx.diary).toEqual({ status: 'loading' })
+    const revoked = run(
+      savedModel,
+      { type: 'overlay/open', overlay: 'account' },
+      { type: 'confirm/open', kind: 'revoke', revoke: 'data_processing' },
+      { type: 'confirm/accept' },
+      { type: 'revoke/ok', kind: 'data_processing', consents: { ...CONSENTS_OK, missing: ['data_processing'] } },
+    ).model
+    const late = run(revoked, { type: 'diary/ok', diary: DIARY }).model
+    expect(late.ctx.diary).toEqual({ status: 'ok', value: { items: [], nextCursor: null } })
+    expect(run(revoked, { type: 'diary/fail', error: apiError(401, 'unauthenticated') }).model).toEqual(revoked)
+    const out = run(savedModel, { type: 'account/logout' }, { type: 'logout/ok' }).model
+    expect(run(out, { type: 'diary/ok', diary: DIARY }).model.ctx.diary).toEqual({ status: 'idle' })
+    // A load that failed may still be answered by a second one.
+    const failed = run(savedModel, { type: 'diary/fail', error: apiError(0, 'aborted') }).model
+    expect(run(failed, { type: 'diary/ok', diary: DIARY }).model.ctx.diary).toEqual({ status: 'ok', value: DIARY })
+  })
+
+  test('a 429 countdown survives the theses and back; a new conversation does not inherit it', () => {
+    const sent = run(answered(booted()), { type: 'chat/send', text: 'Ліміт' })
+    const limited = run(sent.model, {
+      type: 'turn/outcome',
+      id: turnEffect(sent.effects).id,
+      now: NOW,
+      outcome: { kind: 'http', error: apiError(429, 'rate_limited', { retryAfterMs: 12_000 }) },
+    }).model
+    expect(limited.ctx.cooldown).toBe(NOW + 12_000)
+    const back = run(limited, { type: 'chat/summarize' }, { type: 'summarize/cancel' }).model
+    expect(chatOf(back).turn).toEqual({ p: 'cooldown', until: NOW + 12_000 })
+    expect(run(back, { type: 'chat/resend' }).effects).toEqual([])
+    // Over while on the theses: back in the conversation it is not restored.
+    const away = run(limited, { type: 'chat/summarize' }, { type: 'cooldown/end', until: NOW + 12_000 }, { type: 'summarize/cancel' }).model
+    expect(chatOf(away).turn).toEqual({ p: 'idle' })
+    expect(types(run(away, { type: 'chat/resend' }).effects)).toEqual(['turn'])
+    // Ended without theses, then a new conversation: idle, and the old timer changes nothing.
+    const fresh = run(limited, { type: 'confirm/open', kind: 'end-no-theses' }, { type: 'confirm/accept' }, { type: 'chat/new' }).model
+    expect(fresh.ctx.cooldown).toBeNull()
+    expect(chatOf(fresh).turn).toEqual({ p: 'idle' })
+    expect(run(fresh, { type: 'cooldown/end', until: NOW + 12_000 }).model).toEqual(fresh)
+  })
+
+  test('an unconfirmed save is remembered until it is confirmed or the conversation is over', () => {
+    const unknown = unconfirmed()
+    expect(unknown.ctx.maybeSaved).toBe(true)
+    // «Видалити тези», back to the conversation, «Скласти заново»: none of them forgets it.
+    const discarded = run(unknown, { type: 'confirm/open', kind: 'discard' }, { type: 'confirm/accept' }).model
+    expect(discarded.state).toEqual({ s: 'ended' })
+    expect(discarded.ctx.maybeSaved).toBe(true)
+    const back = run(unknown, { type: 'review/back' }).model
+    expect(back.ctx.maybeSaved).toBe(true)
+    expect(run(back, { type: 'confirm/open', kind: 'end' }, { type: 'confirm/switch', kind: 'end-no-theses' }, { type: 'confirm/accept' }).model.ctx.maybeSaved).toBe(true)
+    // A new conversation starts clean.
+    expect(run(discarded, { type: 'chat/new' }).model.ctx.maybeSaved).toBe(false)
+    // The check finds the record: saved, confirmed.
+    const retry = run(unknown, { type: 'review/save' })
+    const checkId = (retry.effects[0] as Extract<Effect, { type: 'save-check' }>).id
+    const sent = (retry.model.state as Extract<State, { s: 'review' }>).sent!.body
+    const mine: SummaryOut = { ...SUMMARY, scenario: sent.scenario, title: sent.title, bullets: [...sent.bullets], tags: [] }
+    expect(run(retry.model, { type: 'save/check', id: checkId, list: { items: [mine], next_cursor: null }, date: null }).model.ctx.maybeSaved).toBe(false)
+    // The newest record is not ours: the first POST did not land.
+    expect(run(retry.model, { type: 'save/check', id: checkId, list: { items: [], next_cursor: null }, date: null }).model.ctx.maybeSaved).toBe(false)
+    // The check itself fails: still unknown.
+    expect(run(retry.model, { type: 'save/check-fail', id: checkId, error: apiError(0, 'network') }).model.ctx.maybeSaved).toBe(true)
   })
 })
 

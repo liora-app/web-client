@@ -9,8 +9,10 @@ import { uiError } from '../../src/chat/core/errors'
 import { FALLBACK_ABROAD, FALLBACK_MESSAGE } from '../../src/chat/core/helplines'
 import type { AuthCode } from '../../src/chat/core/state'
 import {
+  BUSY_NOW,
   CONSENT_UNCHECKED,
   COOLDOWN_OVER,
+  COPY_FAILED_LABEL,
   CSRF_FIRST,
   CSRF_RELOAD,
   DRAFT_TEXT,
@@ -23,6 +25,7 @@ import {
   SERVER_DOWN,
   TOO_LARGE_BLOCK,
   accountOpError,
+  copyFailed,
   saveError,
   scenarioAbout,
   signInBanner,
@@ -37,6 +40,7 @@ import {
   EMAIL,
   FORBIDDEN,
   KINDS,
+  ME,
   RAW_HELPLINES,
   REPLY,
   REPLY_TEXT,
@@ -79,6 +83,7 @@ import {
   test,
   toReview,
   token,
+  userMessages,
 } from './chat-fixtures'
 import { cutOffAtEdges } from './helpers'
 
@@ -160,6 +165,8 @@ async function expectCopied(page: Page, context: BrowserContext, button: Locator
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await button.click()
   await expect(button).toHaveText('Скопійовано')
+  // A changed name of the focused button is not announced: the live region says it (WCAG 4.1.3).
+  await expect(announcer(page)).toHaveText('Скопійовано')
   expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(`Ви (не надіслано): ${USER}`)
 }
 
@@ -299,6 +306,20 @@ test.describe('turn', () => {
     await axe(page, 'fatal')
   })
 
+  test('#18c «Спробувати ще раз» on the «no connection» screen: <main> holds the focus while it connects (I6)', async ({ page, api }) => {
+    const wait = gate()
+    api.on('GET /me', { status: 502, body: '' }, async () => {
+      await wait.wait
+      return { json: ME }
+    })
+    await openChat(page, '/chat/', 'fatal')
+    await page.getByRole('button', { name: 'Спробувати ще раз' }).click()
+    await onScreen(page, 'booting')
+    await expect(page.locator('main')).toBeFocused()
+    wait.open()
+    await onScreen(page, 'chat')
+  })
+
   test('#19 a 200 with text/html instead of the stream: the general error line', async ({ page, api }) => {
     api.on('POST /chat/turn', { contentType: 'text/html; charset=utf-8', body: '<!doctype html><p>proxy page</p>' })
     await openChat(page)
@@ -401,7 +422,16 @@ test.describe('turn', () => {
     const status = page.locator('[data-el="composer-status"]')
     const over = '😀'.repeat(4001)
     await composer(page).fill(over)
-    await sendButton(page).click()
+    // As inactive as it looks (§3.7.3); a press still reaches the page and gives the hint.
+    await expect(sendButton(page)).toHaveAttribute('aria-disabled', 'true')
+    await sendButton(page).click({ force: true })
+    await expect(status).toHaveText(/Повідомлення задовге: 4\s001 із 4\s000 символів/)
+    // A press again: the line is emptied first, so a screen reader hears the hint again.
+    const emptied = await page.evaluate(() => {
+      document.querySelector<HTMLButtonElement>('[data-el="composer-send"]')!.click()
+      return document.querySelector('[data-el="composer-status"]')!.textContent
+    })
+    expect(emptied).toBe('')
     await expect(status).toHaveText(/Повідомлення задовге: 4\s001 із 4\s000 символів/)
     await expect(composer(page)).toHaveValue(over)
     expect(api.count('POST /chat/turn')).toBe(0)
@@ -415,7 +445,7 @@ test.describe('turn', () => {
     const pasted = 'я'.repeat(10_000)
     await composer(page).fill(pasted)
     expect((await composer(page).inputValue()).length).toBe(10_000)
-    await sendButton(page).click()
+    await sendButton(page).click({ force: true })
     await expect(status).toHaveText(/10\s000 із 4\s000/)
     expect(api.count('POST /chat/turn')).toBe(1)
   })
@@ -448,18 +478,35 @@ test.describe('crisis', () => {
   test('#5 ★ keyword crisis: no field, focus on h1, constant contacts, no paused number, the conversation under <details>', async ({ page, api, consoleLines }, testInfo) => {
     api.on('POST /chat/turn', { sse: meta() + crisis('keyword') })
     await openChat(page)
+    // The field and its button, kept: the crisis takes them out of the document, listeners and all.
+    await page.evaluate(() => {
+      const w = window as unknown as { __kept: [HTMLTextAreaElement, HTMLButtonElement] }
+      w.__kept = [document.querySelector<HTMLTextAreaElement>('#composer-input')!, document.querySelector<HTMLButtonElement>('[data-el="composer-send"]')!]
+    })
     await send(page, CRISIS_TEXT)
     await expectCrisis(page, CRISIS_TEXT, testInfo)
     expect((await markup(page)).includes('evil.example')).toBe(false)
     await axe(page, 'crisis')
-    // I5: nothing sends from here, not even a click on a detached button or an Enter.
-    await page.evaluate(() => {
-      document.querySelector<HTMLButtonElement>('[data-el="composer-send"]')?.click()
-      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    // I5: nothing sends from here — not even the detached button pressed with text in the detached
+    // field, nor Ctrl+Enter in it (both still reach the page's own handlers).
+    const detached = await page.evaluate(() => {
+      const [field, button] = (window as unknown as { __kept: [HTMLTextAreaElement, HTMLButtonElement] }).__kept
+      field.value = 'Ще одне синтетичне повідомлення після кризи.'
+      field.dispatchEvent(new Event('input'))
+      button.click()
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }))
+      return !field.isConnected && !button.isConnected
     })
+    expect(detached).toBe(true)
     await page.waitForTimeout(300)
     expect(api.count('POST /chat/turn')).toBe(1)
     await storageAudit(page, CRISIS_TEXT, consoleLines)
+    // Leaving (pagehide): the contacts stay for «Назад», the conversation under <details> does not.
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })))
+    await expect(page.locator('[data-el="crisis-details"]')).toBeHidden()
+    await expect(page.locator('[data-el="crisis-talk"] li')).toHaveCount(0)
+    expect((await markup(page)).includes(CRISIS_TEXT)).toBe(false)
+    await expect(page.locator('section[data-screen="crisis"] a.help__number[href="tel:112"]')).toBeVisible()
   })
 
   test('#6 ★ the model raises a crisis after four tokens: their text is nowhere', async ({ page, api }, testInfo) => {
@@ -551,6 +598,8 @@ test.describe('errors', () => {
     await expect(stale).toContainText('Друге синтетичне повідомлення.')
     await expect(page.locator('textarea')).toHaveCount(0)
     await expect(page.locator('#expired-title')).toBeFocused()
+    // The account menu needs a live session (§8.1).
+    await expect(accountToggle(page)).toBeHidden()
     await axe(page, 'session-expired')
 
     await page.getByRole('button', { name: 'Увійти знову' }).click()
@@ -573,7 +622,20 @@ test.describe('errors', () => {
     await expect(stale).toContainText(USER)
     await expect(stale.locator('li.said--you .said__flag')).toHaveText('Не надіслано')
     // The clipboard is read in one project.
-    if (isDesktop(testInfo)) await expectCopied(page, context, page.locator('[data-el="expired-copy"]'))
+    if (isDesktop(testInfo)) {
+      const button = page.locator('[data-el="expired-copy"]')
+      // The browser refuses: not silent — the button and the live region say so.
+      await page.evaluate(() => {
+        navigator.clipboard.writeText = () => Promise.reject(new Error('synthetic refusal'))
+      })
+      await button.click()
+      await expect(button).toHaveText(COPY_FAILED_LABEL)
+      await expect(announcer(page)).toHaveText(copyFailed('talk'))
+      await page.evaluate(() => {
+        delete (navigator.clipboard as unknown as { writeText?: unknown }).writeText
+      })
+      await expectCopied(page, context, button)
+    }
   })
 
   test('#8b 403 not_invited on the first turn: the unsent message is under <details> and in the copy', async ({ page, api, context }, testInfo) => {
@@ -732,6 +794,36 @@ test.describe('errors', () => {
     expect(api.count('POST /chat/turn')).toBe(1)
   })
 
+  test('#16b a 429 countdown: the theses and back keep it; its end is said only in its own conversation', async ({ page, api }) => {
+    await page.clock.install()
+    api.on('POST /chat/turn', { sse: reply() }, fail(429, 'rate_limited', undefined, { 'retry-after': '12' }))
+    // The theses never come: «Скасувати» takes the person back while the countdown still runs.
+    const never = gate()
+    api.on('POST /chat/summarize', async () => {
+      await never.wait
+      return { json: DRAFT }
+    })
+    await openChat(page)
+    await exchange(page, USER)
+    await send(page, 'Друге синтетичне повідомлення.')
+    const resend = lastUser(page).getByRole('button', { name: 'Надіслати ще раз' })
+    await expect(resend).toHaveAttribute('aria-disabled', 'true')
+    await page.locator('[data-el="session-end"]').click()
+    await confirmDialog(page).getByRole('button', { name: 'Підсумувати' }).click()
+    await onScreen(page, 'summarizing')
+    await page.getByRole('button', { name: 'Скасувати й повернутися до розмови' }).click()
+    await onScreen(page, 'chat')
+    await expect(resend).toHaveAttribute('aria-disabled', 'true')
+    await endWithoutTheses(page)
+    await page.getByRole('button', { name: 'Почати нову розмову' }).click()
+    await onScreen(page, 'chat')
+    const before = (await announced(page)).length
+    await page.clock.runFor(12_000)
+    await expect(sendButton(page)).toHaveAttribute('aria-disabled', 'true')
+    expect((await announced(page)).slice(before)).not.toContain(COOLDOWN_OVER)
+    never.open()
+  })
+
   test('#17 ★ 503 llm_busy, 503, 200: three requests, a countdown between them', async ({ page, api }) => {
     await page.clock.install()
     const busy = fail(503, 'llm_busy', undefined, { 'retry-after': '5' })
@@ -802,7 +894,7 @@ test.describe('errors', () => {
 // ── Sign-in, consent, scenarios ─────────────────────────────────────────────────────────────
 
 test.describe('sign-in and consent', () => {
-  test('#26 ?auth_error: each known code has its text, not_invited its screen, anything else the general text; the URL is cleaned', async ({ page, api }) => {
+  test('#26 ?auth_error: each known code has its text, not_invited its screen, anything else the general text; the URL is cleaned', async ({ page, api }, testInfo) => {
     api.on('GET /me', fail(401, 'unauthenticated'))
     const codes: AuthCode[] = ['access_denied', 'state_mismatch', 'expired', 'server_error', 'auth_unavailable']
     for (const code of codes) {
@@ -811,6 +903,10 @@ test.describe('sign-in and consent', () => {
       await expect(page.locator('[data-el="signin-banner"]')).toBeFocused()
       await expect(page).toHaveURL(/\/chat\/$/)
     }
+    // Focused by the page, like an h1: a calm line, not a card with a ring around it (§3.3).
+    expect(await page.locator('[data-el="signin-banner"]').evaluate((node) => getComputedStyle(node).outlineStyle)).toBe('none')
+    // Nobody can write here: no «Чекає на ваше повідомлення» under the light (desktop shows it).
+    if (isDesktop(testInfo)) await expect(page.locator('.presence__state')).toBeHidden()
     await openChat(page, '/chat/?auth_error=something_else', 'signed-out')
     await expect(page.locator('[data-el="signin-banner-text"]')).toHaveText(signInBanner({ kind: 'auth-error', code: 'unknown' }).text)
     await expect(page).toHaveURL(/\/chat\/$/)
@@ -818,9 +914,16 @@ test.describe('sign-in and consent', () => {
     await expect(page.locator('[data-el="ni-guest"]')).toBeVisible()
     await expect(page.locator('[data-el="ni-member"]')).toBeHidden()
     await expect(page).toHaveURL(/\/chat\/$/)
+    // The variant keeps the screen's rhythm: the heading, the text and the button do not touch.
+    const gaps = await page.evaluate(() => {
+      const part = document.querySelector('[data-el="ni-guest"]')!
+      const box = (selector: string): DOMRect => part.querySelector(selector)!.getBoundingClientRect()
+      return [box('.prose').top - box('h1').bottom, box('.screen__actions').top - box('.prose').bottom]
+    })
+    for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(12)
   })
 
-  test('#26b ?auth_error with a live session: «Новий вхід не відбувся…» with the email, over the new screen, focused', async ({ page }) => {
+  test('#26b ?auth_error with a live session: «Новий вхід не відбувся…» with the email, over the new screen, focused', async ({ page }, testInfo) => {
     for (const code of ['not_invited', 'expired'] as const) {
       await openChat(page, `/chat/?auth_error=${code}`)
       const banner = page.locator('[data-el="chat-auth"]')
@@ -835,6 +938,8 @@ test.describe('sign-in and consent', () => {
       expect(above).toBe(true)
       await expect(page).toHaveURL(/\/chat\/$/)
     }
+    // The person can write here: the label under the light is shown (desktop).
+    if (isDesktop(testInfo)) await expect(page.locator('.presence__state')).toBeVisible()
     await expect(page.locator('[data-el="chat-auth-text"]')).not.toContainText('списку тестувальників')
   })
 
@@ -1125,6 +1230,22 @@ test.describe('theses', () => {
     await axe(page, 'review with an error on a field')
   })
 
+  test('#15c no thesis left: «Потрібна хоча б одна теза.» is the description of the field that takes the focus', async ({ page, api }) => {
+    await openChat(page)
+    await exchange(page)
+    await toReview(page)
+    for (const field of await page.locator('.thesis__input').all()) await field.fill('')
+    await page.getByRole('button', { name: 'Зберегти в щоденник' }).click()
+    const focused = page.locator('.thesis__input:focus')
+    await expect(focused).toHaveCount(1)
+    await expect(focused).toHaveAttribute('aria-invalid', 'true')
+    await expect(focused).toHaveAccessibleDescription(/Потрібна хоча б одна теза/)
+    expect(api.count('POST /summaries')).toBe(0)
+    await page.locator('#thesis-b0').fill('Одна синтетична теза.')
+    await expect(page.locator('#thesis-b0')).not.toHaveAttribute('aria-invalid', 'true')
+    await expect(page.locator('#thesis-b0')).not.toHaveAccessibleDescription(/Потрібна хоча б одна теза/)
+  })
+
   test('#15b 422 after «Прибрати»: the error lands on the field the index came from, for theses and for tags', async ({ page, api }) => {
     await openChat(page)
     await exchange(page)
@@ -1186,6 +1307,30 @@ test.describe('theses', () => {
     await expect(lastUser(page)).toContainText(USER)
     await expect(aiMessages(page).nth(1)).toContainText(REPLY_TEXT)
     held.open()
+  })
+
+  test('#32c llm_busy on the theses: the countdown is said once, its seconds are not; a pagehide before the retry offers «Скласти ще раз»', async ({ page, api }) => {
+    api.on('POST /chat/summarize', fail(503, 'llm_busy', undefined, { 'retry-after': '30' }), { json: DRAFT })
+    await openChat(page)
+    await exchange(page)
+    await page.locator('[data-el="session-end"]').click()
+    await confirmDialog(page).getByRole('button', { name: 'Підсумувати' }).click()
+    await onScreen(page, 'summarizing')
+    // The live part says what happened; the ticking seconds beside it are aria-hidden (§5.7).
+    await expect(page.locator('[data-el="sum-status"]')).toHaveText(BUSY_NOW)
+    await expect(page.locator('[data-el="sum-countdown"]')).toContainText('Пробуємо ще раз через')
+    await expect(page.locator('[data-el="sum-countdown"]')).toHaveAttribute('aria-hidden', 'true')
+    await expect(announcer(page)).toHaveText('Пробуємо ще раз через 30 секунд')
+    // The page is hidden before the scheduled retry: it never goes, and the screen says so.
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })))
+    const retry = page.getByRole('button', { name: 'Скласти ще раз' })
+    await expect(retry).toBeVisible()
+    await expect(page.locator('[data-el="sum-countdown"]')).toHaveText('')
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })))
+    expect(api.count('POST /chat/summarize')).toBe(1)
+    await retry.click()
+    await onScreen(page, 'review')
+    expect(api.count('POST /chat/summarize')).toBe(2)
   })
 
   test('#33 «Видалити тези»: a confirm, no POST, the ended screen', async ({ page, api }) => {
@@ -1260,6 +1405,35 @@ test.describe('theses', () => {
     expect(api.count('POST /summaries')).toBe(2)
     expect(api.of('POST /summaries')[1]!.raw).toBe(api.of('POST /summaries')[0]!.raw)
   })
+
+  test('#35c the save was not confirmed, then «Видалити тези»: nothing claims the diary got nothing', async ({ page, api }) => {
+    api.on('POST /summaries', { abort: true })
+    await openChat(page)
+    await exchange(page)
+    await toReview(page)
+    const save = page.locator('[data-el="review-save"]')
+    await save.click()
+    await expect(save).toHaveText('Спробувати ще раз')
+    await page.getByRole('button', { name: 'Видалити тези' }).click()
+    const confirm = confirmDialog(page)
+    await expect(confirm.locator('[data-if="maybe-saved"]')).toBeVisible()
+    await expect(confirm.locator('[data-if="not-maybe-saved"]')).toBeHidden()
+    await axe(page, 'confirm discard after an unconfirmed save')
+    await confirm.getByRole('button', { name: 'Видалити', exact: true }).click()
+    await onScreen(page, 'ended')
+    await expect(page.locator('[data-el="ended-maybe"]')).toBeVisible()
+    await expect(page.locator('[data-el="ended-none"]')).toBeHidden()
+    await expect(page.locator('#ended-maybe-title')).toBeFocused()
+    await expect(page.locator('section[data-screen="ended"]')).toHaveAttribute('aria-labelledby', 'ended-maybe-title')
+    await axe(page, 'ended after an unconfirmed save')
+    // A new conversation, ended without theses: «нічого не потрапило» is true again.
+    await page.getByRole('button', { name: 'Почати нову розмову' }).click()
+    await onScreen(page, 'chat')
+    await exchange(page)
+    await endWithoutTheses(page)
+    await expect(page.locator('[data-el="ended-none"]')).toBeVisible()
+    await expect(page.locator('#ended-title')).toBeFocused()
+  })
 })
 
 // ── The account ──────────────────────────────────────────────────────────────────────────────
@@ -1320,6 +1494,21 @@ test.describe('account', () => {
     await axe(page, 'signed-out after the logout')
   })
 
+  test('#37b «Вийти» from «Збережено»: the saved record leaves the page with the session', async ({ page, api }) => {
+    await openChat(page)
+    await exchange(page)
+    await toReview(page)
+    await page.getByRole('button', { name: 'Зберегти в щоденник' }).click()
+    await onScreen(page, 'saved')
+    await expect(page.locator('[data-el="saved-title"]')).toHaveText(DRAFT.title)
+    await accountToggle(page).click()
+    await accountSheet(page).getByRole('button', { name: 'Вийти', exact: true }).click()
+    await onScreen(page, 'signed-out')
+    expect(api.count('POST /auth/logout')).toBe(1)
+    const after = await markup(page)
+    for (const text of [DRAFT.title, ...DRAFT.bullets]) expect(after.includes(text), text).toBe(false)
+  })
+
   test('#38 delete the account: focus starts on «Скасувати»; 204 → account-deleted', async ({ page, api, consoleLines }) => {
     await openChat(page)
     await accountToggle(page).click()
@@ -1363,6 +1552,8 @@ test.describe('account', () => {
     await confirmDialog(page).getByRole('button', { name: 'Так, видалити все' }).click()
     await onScreen(page, 'signed-out')
     await expect(page.locator('[data-el="signin-banner-text"]')).toHaveText(signInBanner({ kind: 'delete-relogin' }).text)
+    // No sign-in failed: the session ended. The label belongs to a failed return from Google.
+    await expect(page.locator('[data-el="signin-banner-label"]')).toBeHidden()
   })
 
   test('#39 revoking data_processing warns about the diary, goes to the consent, and the diary is empty after it', async ({ page, api }) => {
@@ -1473,6 +1664,31 @@ test.describe('page life', () => {
     await expect(announcer(page)).toHaveText('')
   })
 
+  test('#41b «Піти»: the conversation is gone before the page is kept for «Назад»; the restored page starts clean', async ({ page, api }) => {
+    // The landing answers 204, so the browser stays on this document: the test plays the pagehide
+    // and the restore from the bfcache that «Піти» → «Назад» would give.
+    await page.route((url) => url.pathname === '/', (route) => route.fulfill({ status: 204 }))
+    await openChat(page)
+    await exchange(page, USER)
+    await page.locator('.chat-header .brand').click()
+    const confirm = confirmDialog(page)
+    await expect(confirm).toContainText('Піти з розмови?')
+    await confirm.getByRole('button', { name: 'Піти', exact: true }).click()
+    await expect(confirm).toBeHidden()
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })))
+    const kept = await markup(page)
+    expect(kept.includes(USER), 'the message in the page the bfcache keeps').toBe(false)
+    expect(kept.includes(REPLY_TEXT), 'the answer in the page the bfcache keeps').toBe(false)
+    await expect(announcer(page)).toHaveText('')
+    // «Назад»: the session is alive, the page boots again — a new, empty conversation.
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })))
+    await onScreen(page, 'chat')
+    await expect(userMessages(page)).toHaveCount(0)
+    expect((await markup(page)).includes(USER)).toBe(false)
+    expect(new URL(page.url()).pathname).toBe('/chat/')
+    expect(api.count('GET /me')).toBe(2)
+  })
+
   test('#42 the live region: at most two writes for a 50-token answer; empty 5 s after it and when the conversation ends', async ({ page, api }) => {
     await page.clock.install()
     const words = Array.from({ length: 50 }, (_, i) => `слово${i + 1} `)
@@ -1532,8 +1748,12 @@ test.describe('help', () => {
     await axe(page, 'help dialog')
     expect((await stream.info()).aborted).toBe(false)
     await stream.write(token(PARTIAL[1]!) + done())
+    // The page under a modal dialog is inert, and so would be a live region left there: the answer
+    // is said from inside the dialog (WCAG 4.1.3).
+    await expect(help.locator('[data-announcer]')).toHaveText(`Відповідь AI: ${PARTIAL.slice(0, 2).join('')}`)
     await page.keyboard.press('Escape')
     await expect(help).toBeHidden()
+    await expect(page.locator('body > [data-announcer]')).toHaveCount(1)
     await expect(page.locator('.help-link')).toBeFocused()
     await answered(page, 1)
     await expect(aiMessages(page).nth(1).locator('.said__text')).toHaveText(PARTIAL.slice(0, 2).join(''))
@@ -1643,7 +1863,18 @@ test.describe('layout', () => {
     await check('new conversation')
     await exchange(page)
     await check('conversation')
+    // ≈ 360 px: the disclosure under the field breaks only at «·» — «не терапія» stays whole.
+    await page.setViewportSize({ width: 360, height: 640 })
+    expect(await page.locator('.composer__ai span').evaluateAll((spans) => spans.map((span) => span.getClientRects().length))).toEqual([1, 1, 1])
+    // The phone's column for «AI» / «Ви» (§3.7.2).
+    expect(await aiMessages(page).first().evaluate((node) => getComputedStyle(node).columnGap)).toBe('10px')
     await toReview(page)
+    // A 40-character tag without a space wraps inside its pill; «Прибрати тег» stays on the screen.
+    await page.locator('#review-tag-input').fill('тег'.repeat(13) + 'и')
+    await page.locator('#review-tag-input').press('Enter')
+    await expect(page.locator('.tagpill')).toHaveCount(DRAFT.tags.length + 1)
+    // The theses grow by themselves: no resize grip.
+    expect(await page.locator('.thesis__input').first().evaluate((node) => getComputedStyle(node).resize)).toBe('none')
     await check('review')
     await page.getByRole('button', { name: 'Повернутися до розмови' }).click()
     await onScreen(page, 'chat')
@@ -1683,6 +1914,13 @@ test.describe('layout', () => {
     await tabTo(page, composer(page), jump, 'Shift+Tab')
     const pillDown = await coveredBy(page, ['.site-header', '[data-el="session"]'])
     expect(pillDown.hits, `the «↓» pill: ${pillDown.geometry}`).toEqual([])
+    // Its name is what it shows (WCAG 2.5.3): «натиснути До кінця» works by voice.
+    await expect(jump).toHaveAccessibleName('До кінця')
+    // Pressed from the keyboard with motion on (smooth scrolling): the page jumps at once, the pill
+    // goes, the focus lands in the field — never on <body> (I6).
+    await page.keyboard.press('Enter')
+    await expect(jump).toBeHidden()
+    await expect(composer(page)).toBeFocused()
   })
 
   test('#43b the /chat/ header fits at 320 px: wordmark, «Якщо важко», motion and sound, «Акаунт»', async ({ page }, testInfo) => {
@@ -1800,6 +2038,27 @@ test.describe('headers and copy', () => {
 })
 
 test.describe('accessibility', () => {
+  test('#52 I6 within a screen: «Надіслати ще раз» and «Скасувати» hide once pressed and hand the focus on', async ({ page, api }, testInfo) => {
+    await page.clock.install()
+    api.on('POST /chat/turn', { sse: meta() + streamError('llm_failed') }, fail(503, 'llm_busy', undefined, { 'retry-after': '5' }))
+    await openChat(page)
+    // A desktop gets the field; a phone the screen's heading (the field would pop the keyboard).
+    const next = isDesktop(testInfo) ? composer(page) : page.locator('#chat-title')
+    await send(page, USER)
+    const unsent = lastUser(page)
+    const resend = unsent.getByRole('button', { name: 'Надіслати ще раз' })
+    await expect(resend).toBeVisible()
+    await resend.click()
+    await expect(resend).toBeHidden()
+    await expect(next).toBeFocused()
+    const cancel = unsent.getByRole('button', { name: 'Скасувати' })
+    await expect(cancel).toBeVisible()
+    await cancel.click()
+    await expect(unsent.locator('.said__flag')).toHaveText('Відповідь зупинено')
+    await expect(cancel).toBeHidden()
+    await expect(next).toBeFocused()
+  })
+
   test('axe: booting, signed-out with and without the banner, not-invited without a session', async ({ page, api }) => {
     const held = gate()
     api.on('GET /me', async () => {
