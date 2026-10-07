@@ -23,6 +23,7 @@ import {
   FALLBACK_MESSAGE,
   HOWAREU_URL,
   PAUSED_LINE_NOTE,
+  PAUSED_LINE_NOTE_SHORT,
   maskPausedLine,
   noPausedLine,
   sanitizeHelplines,
@@ -1002,6 +1003,37 @@ test.describe('helplines', () => {
     expect(maskPausedLine(`Номер ${PAUSED}`)).toBe(maskPausedLine(maskPausedLine(`Номер ${PAUSED}`)))
   })
 
+  test('maskPausedLine: a digit drawn with a mark is still a digit; one small «з» is a preposition; bidi controls go', () => {
+    const N = PAUSED_LINE_NOTE
+    // Escapes only: each digit followed by what draws it differently.
+    const marked = (marks: string) => [...PAUSED].map((d) => d + marks).join('')
+    const keycap = marked('\u{FE0F}\u{20E3}')
+    const cases: readonly (readonly [string, string])[] = [
+      [keycap, N],
+      [`Дзвоніть ${keycap}.`, `Дзвоніть ${N}.`],
+      [marked('\u{20E3}'), N],
+      [marked('\u{0336}'), N],
+      [marked('\u{20DD}'), N],
+      [marked('\u{0332}'), N],
+      // A capital «З», or several in a row, still reads as threes.
+      [`${PAUSED.slice(0, 1)} \u{0417}\u{0417}\u{0417}`, N],
+    ]
+    for (const [text, want] of cases) expect(maskPausedLine(text), JSON.stringify(text)).toBe(want)
+    // The filter reads these the same way: the number is there.
+    for (const text of [keycap, marked('\u{0336}')]) expect(noPausedLine(text), JSON.stringify(text)).toBe(false)
+    // «У 7 з 33 випадків»: one small «з» between two numbers joins nothing.
+    const [a, b, c] = [...PAUSED] as [string, string, string, string]
+    const preposition = `У ${a} \u{0437} ${b}${c} випадків`
+    expect(maskPausedLine(preposition)).toBe(preposition)
+    // An override or an isolate around the reversed digits would draw the number: the controls go,
+    // the digits stay as written.
+    const reversed = [...PAUSED].reverse().join('')
+    expect(maskPausedLine(`Номер \u{202E}${reversed}`)).toBe(`Номер ${reversed}`)
+    expect(maskPausedLine(`\u{2067}${reversed}\u{2069} і 112`)).toBe(`${reversed} і 112`)
+    // A text without a digit stays as it is (a tag is kept only when the mask leaves it unchanged).
+    expect(maskPausedLine('\u{200F}тег')).toBe('\u{200F}тег')
+  })
+
   test('a number split across tokens: masking the whole answer at every write catches it once its last digit is in', () => {
     const tokens = ['Можна подзвонити на ', PAUSED.slice(0, 1), PAUSED.slice(1, 2) + ' ', PAUSED.slice(2, 3), PAUSED.slice(3) + ' — або 112.']
     let partial = ''
@@ -1758,12 +1790,42 @@ test.describe('state: theses', () => {
     }).model
     expect(review.state.s).toBe('review')
     const draft = (review.state as Extract<State, { s: 'review' }>).draft
-    expect(draft.title).toBe(`Дзвінок на ${PAUSED_LINE_NOTE}`)
-    expect(draft.bullets.map((b) => b.text)).toEqual(['перша', `Номер ${PAUSED_LINE_NOTE} не відповів.`])
+    // The short note: no digits, nothing dated, and it does not eat the field's limit.
+    expect(PAUSED_LINE_NOTE_SHORT).not.toMatch(/\p{N}/u)
+    expect(codePoints(PAUSED_LINE_NOTE_SHORT)).toBeLessThanOrEqual(20)
+    expect(draft.title).toBe(`Дзвінок на ${PAUSED_LINE_NOTE_SHORT}`)
+    expect(draft.bullets.map((b) => b.text)).toEqual(['перша', `Номер ${PAUSED_LINE_NOTE_SHORT} не відповів.`])
     expect(draft.tags.map((t) => t.name)).toEqual(['день'])
     const save = run(review, { type: 'review/save' })
     const body = (save.effects.find((e) => e.type === 'save') as Extract<Effect, { type: 'save' }>).body
     expect(JSON.stringify(body)).not.toContain(PAUSED)
+  })
+
+  test('masked theses still fit: a long title or thesis with the number saves without a length error the person did not make', () => {
+    const { model, effects } = summarizing()
+    const { id } = summarizeFx(effects)
+    const filler = 'дуже '.repeat(200)
+    const fill = (head: string, tail: string, length: number) => head + filler.slice(0, length - codePoints(head) - codePoints(tail)) + tail
+    // The number near the start, and at the very end, where a cut would fall inside the note.
+    const title = fill(`Дзвінок на ${PAUSED}: `, '', 118)
+    const early = fill(`Номер ${PAUSED} `, '.', 498)
+    const late = fill('Теза ', ` ${PAUSED}`, 498)
+    expect([title, early, late].map(codePoints)).toEqual([118, 498, 498])
+    const review = run(model, { type: 'summarize/ok', id, draft: { title, bullets: [early, late], tags: [] } }).model
+    const draft = (review.state as Extract<State, { s: 'review' }>).draft
+    expect(codePoints(draft.title)).toBeLessThanOrEqual(120)
+    for (const b of draft.bullets) expect(codePoints(b.text), b.text).toBeLessThanOrEqual(500)
+    for (const text of [draft.title, ...draft.bullets.map((b) => b.text)]) {
+      expect(text).not.toContain(PAUSED)
+      // Never half a note: a bracket that opens closes.
+      expect(text, text).not.toMatch(/\[[^\]]*$/)
+    }
+    const save = run(review, { type: 'review/save' })
+    expect((save.model.state as Extract<State, { s: 'review' }>).issues).toEqual([])
+    expect(types(save.effects)).toEqual(['save'])
+    // A title that fits as masked is left whole.
+    const short = run(model, { type: 'summarize/ok', id, draft: { title: `Дзвінок на ${PAUSED}`, bullets: ['a'], tags: [] } }).model
+    expect((short.state as Extract<State, { s: 'review' }>).draft.title).not.toMatch(/…$/)
   })
 
   test('I2: no second summarize beside the scheduled llm_busy retry; after a 429 only once the countdown is over', () => {

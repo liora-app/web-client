@@ -54,6 +54,28 @@ export function clampCodePoints(text: string, max: number): string {
   return Array.from(text).slice(0, max).join('')
 }
 
+/** `text` in at most `max` code points (max ≥ 2), cut at the end of a word, «…» after it. `whole`
+ *  is never cut in half: when the cut falls inside it, it goes entirely. One word longer than the
+ *  room is cut where the room ends. */
+export function clampWords(text: string, max: number, whole = ''): string {
+  if (codePoints(text) <= max) return text
+  const room = Array.from(text).slice(0, max - 1).join('')
+  let end = room.length
+  if (whole !== '') {
+    for (let at = text.indexOf(whole); at !== -1 && at < end; at = text.indexOf(whole, at + whole.length)) {
+      if (at + whole.length > end) end = at
+    }
+  }
+  let head = text.slice(0, end)
+  // In the middle of a word: back to the space before it.
+  if (!/\s/.test(text.charAt(end))) {
+    const space = head.search(/\s\S*$/)
+    if (space > 0) head = head.slice(0, space)
+  }
+  head = head.trimEnd()
+  return (head === '' ? room : head) + '…'
+}
+
 /** One more "Надіслати" is allowed while the reply and a later summarize still fit in 200. */
 export function canSend(messageCount: number): boolean {
   return messageCount + 2 <= MAX_MESSAGES

@@ -10,14 +10,17 @@
 
 import { GOOGLE_START, grantBody, summarizeBody, turnBody } from './api'
 import { DEFAULT_BUSY_RETRY_MS, outcomeUnknown, toUiError, uiError, type ApiError, type UiError } from './errors'
-import { FALLBACK, maskPausedLine, type SafeHelplines } from './helplines'
+import { FALLBACK, PAUSED_LINE_NOTE_SHORT, maskPausedLineShort, type SafeHelplines } from './helplines'
 import {
+  MAX_BULLET,
   MAX_CONTENT,
   MAX_QUERY,
   MAX_REVISIT_IDS,
+  MAX_TITLE,
   canSend,
   checkMessage,
   clampCodePoints,
+  clampWords,
   draftFromOut,
   normalize,
   validateDraft,
@@ -940,13 +943,19 @@ function saved(model: Model, summary: SummaryOut): Step {
 }
 
 /** The theses as the AI drafted them, the paused number masked: the draft is what the page shows,
- *  copies and saves. A tag that spells it goes — a tag names a topic, and the note would not fit
- *  the 40 code points of one. */
+ *  copies and saves — to the diary and its export file, so with the short note. A field the mask
+ *  made longer than its limit is cut at a word, never inside the note: the person must not meet a
+ *  length error in a text they did not write. A tag that spells the number goes — a tag names a
+ *  topic, and the note would not fit the 40 code points of one. */
 function maskedDraft(out: SummaryDraftOut): SummaryDraftOut {
+  const fit = (text: string, max: number): string => {
+    const masked = maskPausedLineShort(text)
+    return masked === text ? text : clampWords(masked, max, PAUSED_LINE_NOTE_SHORT)
+  }
   return {
-    title: maskPausedLine(out.title),
-    bullets: out.bullets.map(maskPausedLine),
-    tags: out.tags.filter((tag) => maskPausedLine(tag) === tag),
+    title: fit(out.title, MAX_TITLE),
+    bullets: out.bullets.map((bullet) => fit(bullet, MAX_BULLET)),
+    tags: out.tags.filter((tag) => maskPausedLineShort(tag) === tag),
   }
 }
 
