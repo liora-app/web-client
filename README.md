@@ -38,6 +38,8 @@ npm run dev          # http://localhost:5173
 index.html            весь текст сторінки (DOM, SEO, доступність): hero і глави 01–07
 src/main.ts           вхід: навігація, поява, «розшифровування» міток, пауза, запуск сцени
 src/ui/               motion.ts (пауза / reduced motion), nav.ts (aria-current, HUD глави),
+                      menu.ts (меню глав < 85em, нативний <dialog>), sound.ts + sound-engine.ts
+                      («Звук»: генеративний пад, вимкнений за замовчуванням, лінивий чанк),
                       reveal.ts, steps.ts (приклад сесії йде за кроком), decode.ts,
                       hero-light.ts (де стоїть світло hero — спільне для CSS і сцени)
 src/gl/               WebGL-шар — окремий лінивий чанк з three.js

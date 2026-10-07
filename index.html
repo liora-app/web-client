@@ -46,22 +46,51 @@
         <span class="brand__name">Liora</span>
       </a>
 
-      <nav class="nav-pill" aria-label="Розділи сторінки">
+      <nav class="site-nav" aria-label="Розділи сторінки">
         <a href="#how" data-nav-link>Як це працює</a>
-        <span class="nav-pill__rule" aria-hidden="true"></span>
         <a href="#privacy" data-nav-link>Приватність</a>
-        <span class="nav-pill__rule" aria-hidden="true"></span>
         <a href="#faq" data-nav-link>Запитання</a>
       </nav>
 
       <div class="site-header__actions">
         <a class="help-link" href="#safety" data-nav-link>Якщо важко<span class="visually-hidden">: контакти допомоги, 112 і 103</span></a>
-        <button class="motion-toggle" type="button" data-motion-toggle aria-pressed="false" aria-label="Пауза анімації" hidden>
-          <span class="motion-toggle__bars" aria-hidden="true"><span></span><span></span><span></span></span>
-          <span class="motion-toggle__text" aria-hidden="true">Пауза</span>
+        <!-- One control for what moves and what sounds. «Пауза» is required (WCAG 2.2.2); «Звук» is off on
+             every visit until pressed. Both buttons stay hidden without JS (motion.ts, sound.ts). -->
+        <div class="media" role="group" aria-label="Анімація і звук">
+          <button class="media__button motion-toggle" type="button" data-motion-toggle aria-pressed="false" aria-label="Пауза анімації" hidden>
+            <svg class="media__icon motion-toggle__pause" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 3.5v9M11 3.5v9" /></svg>
+            <svg class="media__icon motion-toggle__play" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5.5 3.5l7 4.5-7 4.5z" /></svg>
+          </button>
+          <button class="media__button sound-toggle" type="button" data-sound-toggle aria-pressed="false" aria-label="Звук" hidden>
+            <span class="sound-toggle__wave" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+          </button>
+        </div>
+        <button class="menu-toggle" type="button" data-menu-open aria-haspopup="dialog" aria-controls="site-menu" aria-expanded="false" aria-label="Меню" hidden>
+          <span class="menu-toggle__lines" aria-hidden="true"><span></span><span></span></span>
         </button>
       </div>
     </header>
+
+    <!-- Narrow screens: every chapter in one list (src/ui/menu.ts). A native modal dialog, no form. -->
+    <dialog class="site-menu" id="site-menu" aria-labelledby="site-menu-title" data-menu>
+      <div class="site-menu__head">
+        <p class="site-menu__title" id="site-menu-title">Меню</p>
+        <button class="site-menu__close" type="button" data-menu-close>Закрити</button>
+      </div>
+      <nav class="site-menu__nav" aria-label="Глави сторінки">
+        <ol class="site-menu__list" role="list">
+          <li><a href="#how" data-menu-link><span class="site-menu__index" aria-hidden="true">01</span> Як це працює</a></li>
+          <li><a href="#scenarios" data-menu-link><span class="site-menu__index" aria-hidden="true">02</span> Сценарії</a></li>
+          <li><a href="#diary" data-menu-link><span class="site-menu__index" aria-hidden="true">03</span> Щоденник</a></li>
+          <li><a href="#privacy" data-menu-link><span class="site-menu__index" aria-hidden="true">04</span> Приватність</a></li>
+          <li><a href="#faq" data-menu-link><span class="site-menu__index" aria-hidden="true">06</span> Запитання</a></li>
+          <li><a href="#final" data-menu-link><span class="site-menu__index" aria-hidden="true">07</span> Що далі</a></li>
+        </ol>
+      </nav>
+      <div class="site-menu__actions">
+        <a class="help-link site-menu__help" href="#safety" data-menu-link>Якщо важко: 112, 103</a>
+      </div>
+    </dialog>
 
     <p class="hud" aria-hidden="true">
       <span class="hud__index" data-hud-index>00</span>

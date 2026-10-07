@@ -7,17 +7,20 @@
   margin-inline: auto;
 }
 
-/* ---------- Header: wordmark left, one pill and the help link right ---------- */
+/* ---------- Header: wordmark and sections left, actions right ---------- */
 
+/* Quiet, like product sites: sentence-case links in the body face, one outlined action, one small
+   control for motion and sound. The mono voice stays in the chapters. */
 .site-header {
   position: fixed;
   inset: 0 0 auto;
   z-index: var(--z-chrome);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: clamp(0.9rem, 2.2vh, 1.5rem) var(--gutter);
+  gap: 2.5rem;
+  min-height: 4.25rem;
+  padding: 0.75rem var(--gutter);
+  font-family: var(--font-body);
   pointer-events: none;
 }
 
@@ -25,8 +28,8 @@
   pointer-events: auto;
 }
 
-/* Text fades out under the chrome instead of running through it: ~0.9 behind the wordmark and
-   the pills, then a soft tail (no hard bar edge over the sky). */
+/* Text fades out under the chrome instead of running through it: ~0.9 behind the header, then a
+   soft tail (no hard bar edge over the sky). */
 .site-header::before {
   content: '';
   position: absolute;
@@ -46,15 +49,13 @@
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.7rem;
+  gap: 0.6rem;
   min-height: 2.75rem;
-  padding: 0 0.8rem;
-  margin-inline: -0.8rem;
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
+  padding: 0 0.6rem;
+  margin-inline: -0.6rem;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   text-decoration: none;
 }
 
@@ -73,95 +74,66 @@
     0 0 14px rgb(255 190 120 / 0.35);
 }
 
-.nav-pill {
+.site-nav {
   display: none;
   align-items: center;
-  gap: 1.1rem;
-  margin-left: auto;
-  padding: 0.85rem 1.6rem;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 999px;
-  background: rgb(4 8 9 / 0.82);
+  gap: 2rem;
+}
+
+.site-nav a {
   position: relative;
-}
-
-/* A soft line of light under the pill, like a lamp over a desk. */
-.nav-pill::after {
-  content: '';
-  position: absolute;
-  left: 18%;
-  right: 18%;
-  bottom: -14px;
-  height: 18px;
-  background: radial-gradient(50% 50% at 50% 0%, rgb(143 227 212 / 0.32), rgb(143 227 212 / 0));
-  pointer-events: none;
-}
-
-.nav-pill a,
-.help-link,
-.motion-toggle {
-  font-family: var(--font-mono);
-  font-size: var(--step-label);
-  font-weight: 400;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  font-size: 0.9375rem;
+  color: var(--color-text-soft);
   text-decoration: none;
   white-space: nowrap;
-}
-
-.nav-pill a {
-  position: relative;
-  color: var(--color-text-soft);
   transition: color var(--dur-fast) ease;
 }
 
-.nav-pill a:hover,
-.nav-pill a[aria-current] {
+.site-nav a:hover,
+.site-nav a[aria-current] {
   color: var(--color-text);
 }
 
-/* The dot hangs in the gap before the link, so the pill keeps its width when the chapter changes. */
-.nav-pill a[aria-current]::before {
+/* The current chapter: a small light under its name. */
+.site-nav a[aria-current]::after {
   content: '';
   position: absolute;
-  left: calc(-5px - 0.6em);
-  top: calc(50% - 0.1em);
-  width: 5px;
-  height: 5px;
+  left: 50%;
+  bottom: 0.45rem;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
   background: var(--color-light);
   box-shadow: 0 0 8px var(--color-light);
-  translate: 0 -50%;
-}
-
-.nav-pill__rule {
-  width: clamp(1.5rem, 3vw, 3.25rem);
-  height: 1px;
-  background: var(--color-line-strong);
+  translate: -50% 0;
 }
 
 .site-header__actions {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
+  margin-left: auto;
 }
 
-.help-link,
-.motion-toggle {
+/* «Якщо важко»: the one outlined action, in the warm light colour. */
+.help-link {
   display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
-  min-height: 2.75rem;
-  padding: 0 1.1rem;
-  border: 1px solid var(--color-line-strong);
+  min-height: 2.5rem;
+  padding: 0 1rem;
+  border: 1px solid rgb(255 197 143 / 0.45);
   border-radius: 999px;
   /* Opaque enough that no blur is needed: no backdrop-filter re-rendered over the WebGL layer. */
   background: rgb(4 8 9 / 0.82);
-}
-
-.help-link {
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-weight: 500;
   color: var(--color-light);
-  border-color: rgb(255 197 143 / 0.45);
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .help-link:hover {
@@ -178,93 +150,223 @@
     rgb(4 8 9 / 0.82);
 }
 
-.motion-toggle {
-  cursor: pointer;
-  color: var(--color-text-soft);
-}
-
-.motion-toggle[hidden] {
+/* Motion and sound: one pill, two round icon buttons. Shown once either button is (JS). */
+.media {
   display: none;
-}
-
-.motion-toggle:hover {
-  color: var(--color-text);
-}
-
-/* Paused: a lit outline and two still bars (‖), quieter than the crisis link next to it. */
-.motion-toggle[aria-pressed='true'],
-.motion-toggle[aria-pressed='true']:hover {
-  border-color: var(--color-text);
-  background:
-    linear-gradient(rgb(238 242 238 / 0.16), rgb(238 242 238 / 0.16)),
-    rgb(4 8 9 / 0.82);
-  color: var(--color-text);
-}
-
-.motion-toggle[aria-pressed='true'] .motion-toggle__bars span {
-  transform: none;
-}
-
-.motion-toggle[aria-pressed='true'] .motion-toggle__bars span:nth-child(3) {
-  display: none;
-}
-
-/* Three bars, like a sound toggle: they move while the page moves. */
-.motion-toggle__bars {
-  display: inline-flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 2px;
-  height: 12px;
+  padding: 2px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 999px;
+  background: rgb(4 8 9 / 0.82);
 }
 
-.motion-toggle__bars span {
+.media:has(> .media__button:not([hidden])) {
+  display: inline-flex;
+}
+
+.media__button,
+.menu-toggle {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-soft);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) ease,
+    background-color var(--dur-fast) ease;
+}
+
+.media__button[hidden],
+.menu-toggle[hidden] {
+  display: none;
+}
+
+.media__button:hover,
+.menu-toggle:hover {
+  color: var(--color-text);
+  background: rgb(238 242 238 / 0.08);
+}
+
+/* Pressed: paused, or sound on. */
+.media__button[aria-pressed='true'] {
+  color: var(--color-text);
+  background: rgb(238 242 238 / 0.14);
+}
+
+.media__icon {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.motion-toggle__play {
+  display: none;
+  fill: currentColor;
+}
+
+/* Paused: the button offers to play again. */
+.motion-toggle[aria-pressed='true'] .motion-toggle__pause {
+  display: none;
+}
+
+.motion-toggle[aria-pressed='true'] .motion-toggle__play {
+  display: block;
+}
+
+/* Sound: four bars, still and low while off; a slow wave in the teal light while it plays. */
+.sound-toggle__wave {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 14px;
+}
+
+.sound-toggle__wave span {
   width: 2px;
   height: 100%;
+  border-radius: 1px;
   background: currentColor;
-  transform-origin: bottom;
-  transform: scaleY(0.35);
+  transform: scaleY(0.3);
 }
 
-html[data-motion='on'] .motion-toggle__bars span {
-  animation: bars 1.4s var(--ease-in-out) infinite alternate;
+/* Off: a still equalizer, so the icon reads as sound, not as dots. */
+.sound-toggle__wave span:nth-child(1) {
+  transform: scaleY(0.4);
 }
 
-html[data-motion='on'] .motion-toggle__bars span:nth-child(2) {
-  animation-delay: -0.5s;
+.sound-toggle__wave span:nth-child(2) {
+  transform: scaleY(0.8);
 }
 
-html[data-motion='on'] .motion-toggle__bars span:nth-child(3) {
-  animation-delay: -0.9s;
+.sound-toggle__wave span:nth-child(3) {
+  transform: scaleY(0.55);
 }
 
-@keyframes bars {
+.sound-toggle__wave span:nth-child(4) {
+  transform: scaleY(0.95);
+}
+
+.sound-toggle[aria-pressed='true'] .sound-toggle__wave span {
+  background: var(--color-teal);
+  transform: scaleY(0.65);
+}
+
+html[data-sound='on'][data-motion='on'] .sound-toggle__wave span {
+  animation: wave 1.6s var(--ease-in-out) infinite alternate;
+}
+
+html[data-sound='on'][data-motion='on'] .sound-toggle__wave span:nth-child(2) {
+  animation-delay: -0.4s;
+}
+
+html[data-sound='on'][data-motion='on'] .sound-toggle__wave span:nth-child(3) {
+  animation-delay: -0.8s;
+}
+
+html[data-sound='on'][data-motion='on'] .sound-toggle__wave span:nth-child(4) {
+  animation-delay: -1.2s;
+}
+
+@keyframes wave {
   from {
     transform: scaleY(0.25);
   }
   to {
-    transform: scaleY(1);
+    transform: scaleY(0.95);
   }
 }
 
-/* The word shows as soon as the header has room for it (≈ 307 CSS px with the help link). */
-.motion-toggle__text {
-  display: none;
+/* A small label under the icon on hover and keyboard focus. The accessible name is aria-label. */
+.media__button::after {
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  left: 50%;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 0.5rem;
+  background: var(--color-bg);
+  font-size: 0.8125rem;
+  color: var(--color-text);
+  white-space: nowrap;
+  translate: -50% 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) ease;
 }
 
-@media (min-width: 20em) {
-  .motion-toggle__text {
-    display: inline;
-  }
+.motion-toggle::after {
+  content: 'Пауза анімації';
+}
+
+.motion-toggle[aria-pressed='true']::after {
+  content: 'Увімкнути анімацію';
+}
+
+.sound-toggle::after {
+  content: 'Увімкнути звук';
+}
+
+.sound-toggle[aria-pressed='true']::after {
+  content: 'Вимкнути звук';
+}
+
+.media__button:hover::after,
+.media__button:focus-visible::after {
+  opacity: 1;
+}
+
+/* «Меню»: a round icon button, below the width where the sections fit in the header. */
+.menu-toggle {
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--color-line-strong);
+  background: rgb(4 8 9 / 0.82);
+}
+
+.menu-toggle__lines {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 14px;
+}
+
+.menu-toggle__lines span {
+  height: 1.5px;
+  border-radius: 1px;
+  background: currentColor;
 }
 
 @media (min-width: 64em) {
-  .nav-pill {
+  .site-nav {
     display: flex;
+  }
+
+  .menu-toggle:not([hidden]) {
+    display: none;
   }
 }
 
 /* Narrow phones: the mark alone; the name stays for screen readers (the link needs a name). */
 @media (max-width: 26em) {
+  .site-header {
+    gap: 1rem;
+  }
+
+  .site-header__actions {
+    gap: 0.35rem;
+  }
+
   .brand__name {
     position: absolute;
     width: 1px;
@@ -273,6 +375,112 @@ html[data-motion='on'] .motion-toggle__bars span:nth-child(3) {
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
   }
+
+  .help-link {
+    padding: 0 0.8rem;
+  }
+}
+
+/* ---------- Chapter menu (narrow screens): a sheet over the page ---------- */
+
+/* The open modal keeps the page inert; it should not scroll under the sheet either. */
+html:has(.site-menu[open]) {
+  overflow: hidden;
+}
+
+.site-menu {
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: clamp(0.9rem, 2.2vh, 1.5rem) var(--gutter) 2rem;
+  border: 0;
+  /* Opaque: the page behind would ghost through the big chapter names. */
+  background: var(--color-bg);
+  color: var(--color-text);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.site-menu[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.site-menu::backdrop {
+  background: rgb(4 7 8 / 0.6);
+}
+
+.site-menu__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.site-menu__title {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.site-menu__close {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0 1.1rem;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.site-menu__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--color-line);
+}
+
+.site-menu__list a {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--color-line);
+  font-family: var(--font-body);
+  font-size: 1.5rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  color: var(--color-text);
+}
+
+.site-menu__list a:hover {
+  color: var(--color-light-strong);
+}
+
+.site-menu__index {
+  min-width: 1.6rem;
+  font-family: var(--font-mono);
+  font-size: var(--step-label);
+  letter-spacing: 0.14em;
+  color: var(--color-light);
+}
+
+.site-menu__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: auto;
 }
 
 /* ---------- Chapter HUD (decorative; the nav carries aria-current) ---------- */

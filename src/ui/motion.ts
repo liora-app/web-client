@@ -31,6 +31,11 @@ export function systemReducesMotion(): boolean {
   return reduceQuery.matches
 }
 
+/** The visitor pressed «Пауза» (not just the OS setting): everything that moves or sounds stops. */
+export function userPaused(): boolean {
+  return userPreference === 'off'
+}
+
 export function motionAllowed(): boolean {
   return userPreference ? userPreference === 'on' : !reduceQuery.matches
 }
