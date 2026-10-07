@@ -626,7 +626,8 @@ function enterResume(model: Model, session: Session, pending: Pending | null, re
   ])
 }
 
-/** Wipes the session and everything about the account from the page. */
+/** Wipes the session and everything about the account from the page — the account operation too:
+ *  reduce() keeps one that is still busy across a screen change. */
 function signedOut(model: Model, variant: 'fresh' | 'logged-out', notice: AuthNotice | null): Step {
   const ctx: Ctx = {
     ...model.ctx,
@@ -638,6 +639,7 @@ function signedOut(model: Model, variant: 'fresh' | 'logged-out', notice: AuthNo
     csrfFailures: 0,
     deleteAttempt: 'none',
     afterCrisis: false,
+    op: null,
   }
   return [
     { ...model, ctx, state: { s: 'signed-out', variant, notice } },
@@ -646,7 +648,7 @@ function signedOut(model: Model, variant: 'fresh' | 'logged-out', notice: AuthNo
 }
 
 function accountDeleted(model: Model, variant: 'confirmed' | 'presumed'): Step {
-  const ctx: Ctx = { ...model.ctx, me: null, consents: null, diary: EMPTY_DIARY, authNotice: null, wantChat: false, deleteAttempt: 'none' }
+  const ctx: Ctx = { ...model.ctx, me: null, consents: null, diary: EMPTY_DIARY, authNotice: null, wantChat: false, deleteAttempt: 'none', op: null }
   return [
     { ...model, ctx, state: { s: 'account-deleted', variant } },
     [{ type: 'abort', target: 'all' }, { type: 'announcer/clear' }],
@@ -654,17 +656,18 @@ function accountDeleted(model: Model, variant: 'confirmed' | 'presumed'): Step {
 }
 
 /** 401 on a protected call: keep what the person wrote, read-only, when there is a session. The
- *  account operation goes with the session: reduce() resets it only on a new screen, and a 401
- *  that keeps `session-expired` would leave it busy for good. */
+ *  account operation goes with the session: reduce() keeps a busy one across a new screen, and a
+ *  401 that keeps `session-expired` would leave it busy for good. */
 function unauthenticated(model: Model, session: Session | null, pending: Pending | null, draft: Draft | null): Step {
   const next: Model = model.ctx.op === null ? model : { ...model, ctx: { ...model.ctx, op: null } }
   if (session === null) return signedOut(next, 'fresh', null)
   return withState(next, { s: 'session-expired', stale: session, pending, draft }, [{ type: 'abort', target: 'all' }])
 }
 
-/** The account operation is over, whatever screen the page is on. */
-function withoutOp(model: Model): Model {
-  return model.ctx.op === null ? model : { ...model, ctx: { ...model.ctx, op: null } }
+/** The revoke is over, whatever screen the page is on. Its answer lets go of the revoke only: an
+ *  operation of another name is not its to end. */
+function withoutRevoke(model: Model): Model {
+  return model.ctx.op?.name !== 'revoke' ? model : { ...model, ctx: { ...model.ctx, op: null } }
 }
 
 /** The page as a fresh load has it: no session, no conversation, no account data (§5.6). */
@@ -1478,30 +1481,36 @@ function step(model: Model, action: Action): Step {
     }
     case 'revoke/ok': {
       // A late answer after the session ended (signed out, account deleted, 401 meanwhile) changes
-      // no screen; it only lets go of the operation.
-      if (!accountReachable(model)) return [withoutOp(model), NONE]
+      // no screen; it only lets go of the revoke.
+      if (!accountReachable(model)) return [withoutRevoke(model), NONE]
       // Withdrawing data_processing erases the journal on the server: drop it here too, or the
       // revisit picker would offer deleted records (§8.6).
       const diary = action.kind === 'data_processing' ? EMPTY_DIARY : ctx.diary
       const me = ctx.me === null ? null : { ...ctx.me, consents_ok: false }
+      // The revoke is over; an operation of another name is not this answer's to end.
+      const op = ctx.op?.name === 'revoke' ? null : ctx.op
       // Closed explicitly: revoking from the consent screen keeps `s`, so reduce() would not.
       return [
-        { state: consent('first', { fresh: true }), overlay: [], ctx: { ...ctx, consents: action.consents, diary, me, op: null } },
+        { state: consent('first', { fresh: true }), overlay: [], ctx: { ...ctx, consents: action.consents, diary, me, op } },
         [{ type: 'abort', target: 'all' }, { type: 'announcer/clear' }],
       ]
     }
     case 'revoke/fail':
       // The same for a late failure: a 401 must not turn «акаунт видалено» into the sign-in screen.
-      if (!accountReachable(model)) return [withoutOp(model), NONE]
+      if (!accountReachable(model)) return [withoutRevoke(model), NONE]
       if (action.error.status === 401) return unauthenticated(model, sessionOf(state), pendingOf(state), draftOf(state))
+      // Only the revoke's own operation takes its failure: a DELETE /me under way stays as it is.
+      if (ctx.op?.name !== 'revoke') return [model, NONE]
       return [{ ...model, ctx: { ...ctx, op: { name: 'revoke', busy: false, error: toUiError(action.error) } } }, NONE]
   }
 }
 
 /** The single entry point. A new screen closes every overlay (I6; focus goes to its h1 in
- *  ui/render.ts) and forgets the account operation that led there. */
+ *  ui/render.ts) and forgets the account operation that led there — unless it is still under
+ *  way: «one account operation at a time» holds until its answer comes, on whatever screen. */
 export function reduce(model: Model, action: Action): Step {
   const [next, effects] = step(model, action)
   if (next.state.s === model.state.s) return [next, effects]
-  return [{ ...next, overlay: [], ctx: next.ctx.op === null ? next.ctx : { ...next.ctx, op: null } }, effects]
+  const op = next.ctx.op
+  return [{ ...next, overlay: [], ctx: op === null || op.busy ? next.ctx : { ...next.ctx, op: null } }, effects]
 }

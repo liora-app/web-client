@@ -2231,6 +2231,55 @@ test.describe('state: one account operation at a time, late answers, a boot cut 
     ])
   })
 
+  test('a revoke on its way outlives a screen change: no DELETE /me from the theses, and its answer ends only itself', () => {
+    const deleteFrom = (m: Model) =>
+      run(m, { type: 'overlay/open', overlay: 'account' }, { type: 'confirm/open', kind: 'delete-account' }, { type: 'confirm/accept' })
+    // Revoke in flight, its confirm closed → «Завершити» → summarizing: the lock is still there.
+    const closed = run(revoking(), { type: 'overlay/close' }, { type: 'overlay/close' }).model
+    const summarizing = run(closed, { type: 'confirm/open', kind: 'end' }, { type: 'confirm/accept' })
+    expect(summarizing.model.state.s).toBe('summarizing')
+    expect(summarizing.model.ctx.op).toMatchObject({ name: 'revoke', busy: true })
+    const pressed = deleteFrom(summarizing.model)
+    expect(pressed.effects).toEqual([])
+    expect(pressed.model.ctx.op).toMatchObject({ name: 'revoke', busy: true })
+    expect(run(summarizing.model, { type: 'account/logout' }).effects).toEqual([])
+
+    // A revoke started on summarizing, then the theses come: review keeps the lock.
+    const fromSummarizing = run(summarizing.model, { type: 'revoke/fail', kind: 'data_processing', error: apiError(0, 'network') }).model
+    expect(fromSummarizing.ctx.op).toMatchObject({ name: 'revoke', busy: false })
+    const again = run(fromSummarizing, { type: 'overlay/open', overlay: 'account' }, { type: 'confirm/open', kind: 'revoke', revoke: 'age_18' }, { type: 'confirm/accept' })
+    expect(again.effects).toEqual([{ type: 'revoke', kind: 'age_18' }])
+    const id = (summarizing.effects.find((e) => e.type === 'summarize') as Extract<Effect, { type: 'summarize' }>).id
+    const review = run(again.model, { type: 'summarize/ok', id, draft: { title: 'Розмова про день', bullets: ['a'], tags: [] } }).model
+    expect(review.state.s).toBe('review')
+    expect(review.overlay).toEqual([])
+    expect(review.ctx.op).toMatchObject({ name: 'revoke', busy: true })
+    expect(deleteFrom(review).effects).toEqual([])
+    // Its answer ends the revoke, on whatever screen it comes.
+    const consents: ConsentState = { ...CONSENTS_OK, missing: ['age_18'] }
+    const answered = run(review, { type: 'revoke/ok', kind: 'age_18', consents }).model
+    expect(answered.state).toMatchObject({ s: 'consent', mode: 'first' })
+    expect(answered.ctx.op).toBeNull()
+
+    // A revoke answer never ends another operation: a DELETE /me under way stays busy.
+    const deleting: Model = { ...review, ctx: { ...review.ctx, op: { name: 'delete-account', busy: true, error: null } } }
+    expect(run(deleting, { type: 'revoke/fail', kind: 'age_18', error: apiError(0, 'network') }).model.ctx.op).toEqual(deleting.ctx.op)
+    expect(run(deleting, { type: 'revoke/ok', kind: 'age_18', consents }).model.ctx.op).toEqual(deleting.ctx.op)
+    // An operation that is over (failed, not busy) is still forgotten on a new screen.
+    const failed: Model = { ...review, ctx: { ...review.ctx, op: { name: 'logout', busy: false, error: toUiError(apiError(0, 'network')) } } }
+    const back = run(failed, { type: 'review/back' }).model
+    expect(back.state.s).toBe('chat')
+    expect(back.ctx.op).toBeNull()
+  })
+
+  test('signing out and a deleted account let go of a busy operation themselves', () => {
+    for (const end of [{ type: 'logout/ok' }, { type: 'delete/ok' }] as const) {
+      const after = run(revoking(), end).model
+      expect(after.state.s, end.type).toBe(end.type === 'logout/ok' ? 'signed-out' : 'account-deleted')
+      expect(after.ctx.op, end.type).toBeNull()
+    }
+  })
+
   test('a late revoke answer changes no screen once the session is gone: account-deleted and signed-out stay', () => {
     const busy = revoking()
     const consents: ConsentState = { ...CONSENTS_OK, missing: ['data_processing'] }
