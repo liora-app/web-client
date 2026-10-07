@@ -1043,6 +1043,55 @@ test.describe('sign-in and consent', () => {
     expect(api.count('POST /consents')).toBe(0)
   })
 
+  test('#28c a provider without a country, then without a name: no empty slot anywhere; only the consent needs both', async ({ page, api }, testInfo) => {
+    const NAME = 'Ollama Cloud (Ollama Inc.)'
+    // Rendered text only: the clauses that wait for a missing value are [hidden].
+    const text = (locator: Locator) => locator.evaluate((node) => (node as HTMLElement).innerText.replace(/\s+/g, ' ').trim())
+    const sheetAndConfirms = async (named: string, dative: string) => {
+      await accountToggle(page).click()
+      const sheet = accountSheet(page)
+      expect(await text(sheet.locator('.grants__item', { has: page.locator('[data-kind="llm_transfer"]') }).locator('p'))).toBe(`Передача тексту ${dative} — надано 06.10.2026`)
+      await sheet.locator('[data-act="revoke"][data-kind="llm_transfer"]').click()
+      const confirm = confirmDialog(page)
+      await expect(confirm).toBeVisible()
+      expect(await text(confirm.locator('#confirm-title'))).toBe(`Відкликати згоду на передачу тексту ${dative}?`)
+      await confirm.getByRole('button', { name: 'Скасувати' }).click()
+      await sheet.locator('[data-act="delete-account"]').click()
+      await expect(confirm).toBeVisible()
+      expect(await text(confirm.locator('p', { hasText: 'зберігається за його умовами' }))).toBe(
+        `Те, що під час розмов отримав ${named}, зберігається за його умовами — Liora видалити це не може.`,
+      )
+      await confirm.getByRole('button', { name: 'Скасувати' }).click()
+      await page.keyboard.press('Escape')
+      await expect(sheet).toBeHidden()
+    }
+    const note = page.locator('#composer-note .wide-only')
+
+    api.on('GET /consents', { json: consents([], VERSION, { name: NAME, country: '' }) })
+    await openChat(page)
+    await expect(note.locator('[data-el="provider"]')).toHaveText(NAME)
+    await expect(note.locator('[data-provider="located"]')).toHaveAttribute('hidden', '')
+    if (isDesktop(testInfo)) expect(await text(note)).toBe(`Liora не зберігає цю розмову: якщо закрити чи оновити сторінку, текст зникне. Текст обробляє ${NAME}.`)
+    await sheetAndConfirms(`постачальник AI, ${NAME}`, NAME)
+
+    api.on('GET /consents', { json: consents([], VERSION, null) })
+    await page.reload()
+    await onScreen(page, 'chat')
+    await expect(note.locator('[data-provider="unnamed"]')).toHaveText('постачальник AI')
+    if (isDesktop(testInfo)) expect(await text(note)).toBe('Liora не зберігає цю розмову: якщо закрити чи оновити сторінку, текст зникне. Текст обробляє постачальник AI.')
+    await sheetAndConfirms('постачальник AI', 'постачальнику AI')
+
+    // The consent itself still needs the country: no boxes to agree to.
+    api.on('GET /consents', { json: consents([...KINDS], VERSION, { name: NAME, country: '' }) })
+    await page.reload()
+    await onScreen(page, 'consent')
+    await expect(page.locator('[data-el="consent-no-provider"]')).toBeVisible()
+    await expect(page.locator('[data-el="consent-checks"]')).toBeHidden()
+    const lead = page.locator('section[data-screen="consent"] p', { hasText: 'Відповіді й тези створює' })
+    expect(await text(lead)).toContain(`а постачальник AI — ${NAME}. Щоб AI міг відповідати`)
+    expect(api.count('POST /consents')).toBe(0)
+  })
+
   test('#12 ★ 409 policy_outdated: a second GET /consents, the boxes cleared, «Умови щойно оновилися…»', async ({ page, api }) => {
     const B = '2026-10-20'
     api.on('GET /consents', { json: CONSENTS_NONE }, { json: consents([...KINDS], B) })

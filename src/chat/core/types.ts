@@ -27,8 +27,9 @@ export type ConsentState = Readonly<{
   required: readonly ConsentKind[]
   granted: readonly GrantedConsent[]
   missing: readonly ConsentKind[]
-  /** Required by the schema. api.ts turns a missing or unusable provider into null: nobody can
-   *  agree to hand the conversation to an unnamed provider (spec §3.5). */
+  /** Required by the schema. api.ts turns a provider without a usable name into null and a
+   *  missing or unusable country into '': nobody can agree to hand the conversation to a provider
+   *  that is not named and located (spec §3.5, state.ts transferAskable). */
   llm_provider: LLMProviderInfo | null
 }>
 

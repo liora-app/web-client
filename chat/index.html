@@ -196,7 +196,7 @@
               <div class="row">
                 <h2 class="row__title">Хто обробляє текст розмови</h2>
                 <div class="row__body">
-                  <p>Відповіді й тези створює не наш сервер, а постачальник AI — <span data-el="provider"></span>, <span data-el="country"></span>. Щоб AI міг відповідати, йому щоразу передається текст усієї розмови. Для тез текст передається ще раз — разом із назвами тегів, які найчастіше трапляються у вашому щоденнику, щоб нові теги збігалися зі старими. У сценарії «Повернення до теми» постачальник отримує також назви, тези й теги записів, які ви оберете. Як довго постачальник зберігає ці дані, визначають його умови, а не Liora.</p>
+                  <p>Відповіді й тези створює не наш сервер, а постачальник AI<span data-provider="named"> — <span data-el="provider"></span><span data-provider="located">, <span data-el="country"></span></span></span>. Щоб AI міг відповідати, йому щоразу передається текст усієї розмови. Для тез текст передається ще раз — разом із назвами тегів, які найчастіше трапляються у вашому щоденнику, щоб нові теги збігалися зі старими. У сценарії «Повернення до теми» постачальник отримує також назви, тези й теги записів, які ви оберете. Як довго постачальник зберігає ці дані, визначають його умови, а не Liora.</p>
                   <p>Наш сервер автоматично перевіряє текст на фрази, які можуть свідчити про кризу. У базу даних і журнали він текст розмови не записує.</p>
                 </div>
               </div>
@@ -232,7 +232,7 @@
               </label>
               <label class="check">
                 <input type="checkbox" data-kind="llm_transfer" aria-describedby="consent-alert" />
-                <span class="check__text">Я погоджуюся, щоб текст моїх розмов передавався постачальнику AI — <span data-el="provider"></span>, <span data-el="country"></span> — для відповідей і тез.<span class="check__granted" data-granted="llm_transfer" hidden></span></span>
+                <span class="check__text">Я погоджуюся, щоб текст моїх розмов передавався постачальнику AI<span data-provider="named"> — <span data-el="provider"></span><span data-provider="located">, <span data-el="country"></span></span> —</span> для відповідей і тез.<span class="check__granted" data-granted="llm_transfer" hidden></span></span>
               </label>
               <label class="check">
                 <input type="checkbox" data-kind="age_18" aria-describedby="consent-alert" />
@@ -348,7 +348,7 @@
                 <p class="composer__count" data-el="composer-count" aria-hidden="true"></p>
               </div>
               <p class="composer__note" id="composer-note">
-                <span class="wide-only">Liora не зберігає цю розмову: якщо закрити чи оновити сторінку, текст зникне. Текст обробляє <span data-el="provider"></span>, <span data-el="country"></span>.</span>
+                <span class="wide-only">Liora не зберігає цю розмову: якщо закрити чи оновити сторінку, текст зникне. Текст обробляє <span data-provider="named"><span data-el="provider"></span><span data-provider="located">, <span data-el="country"></span></span></span><span data-provider="unnamed" data-text="постачальник AI" hidden></span>.</span>
                 <span class="narrow-only">Liora не зберігає розмову: закриєте сторінку — текст зникне.</span>
               </p>
             </div>
@@ -652,7 +652,7 @@
               <span class="arrows arrows--inline"><button type="button" data-act="revoke" data-kind="data_processing" aria-haspopup="dialog">Відкликати</button></span>
             </li>
             <li class="grants__item">
-              <p>Передача тексту <span data-el="provider"></span> — <span data-grant-date="llm_transfer"></span></p>
+              <p>Передача тексту <span data-provider="named"><span data-el="provider"></span></span><span data-provider="unnamed" data-text="постачальнику AI" hidden></span> — <span data-grant-date="llm_transfer"></span></p>
               <span class="arrows arrows--inline"><button type="button" data-act="revoke" data-kind="llm_transfer" aria-haspopup="dialog">Відкликати</button></span>
             </li>
             <li class="grants__item">
@@ -888,7 +888,7 @@
       <h2 class="confirm__title" id="confirm-title">Видалити акаунт назавжди?</h2>
       <p>Одразу видалимо: усі записи щоденника — назви, тези, теги; ваші згоди; входи на всіх пристроях; ваш email та ідентифікатор Google.</p>
       <p>Що лишиться: службовий запис — номер акаунта й дата видалення, щоб видалення не скасувалося при відновленні даних із резервної копії. Технічні журнали сервера без тексту розмов, з псевдонімом замість акаунта; вони з часом перезаписуються.</p>
-      <p>Те, що під час розмов отримав постачальник AI, <span data-el="provider"></span>, зберігається за його умовами — Liora видалити це не може.</p>
+      <p>Те, що під час розмов отримав постачальник AI<span data-provider="named">, <span data-el="provider"></span></span>, зберігається за його умовами — Liora видалити це не може.</p>
       <p>Відновити акаунт не вийде. Якщо захочете повернутися, можна увійти знову — це буде новий, порожній акаунт.</p>
       <p>Хочете зберегти щоденник? Спершу завантажте його:</p>
       <ul class="arrows arrows--row" role="list">
@@ -920,7 +920,7 @@
     </template>
 
     <template data-confirm="revoke-llm_transfer">
-      <h2 class="confirm__title" id="confirm-title">Відкликати згоду на передачу тексту <span data-el="provider"></span>?</h2>
+      <h2 class="confirm__title" id="confirm-title">Відкликати згоду на передачу тексту <span data-provider="named"><span data-el="provider"></span></span><span data-provider="unnamed" data-text="постачальнику AI" hidden></span>?</h2>
       <p>Без неї AI не зможе відповідати: розмови стануть недоступні, доки ви знову не погодитеся. Щоденник залишиться.</p>
       <p data-if="talk">Поточна розмова закриється.</p>
       <p class="field-error" data-op-error role="alert"></p>

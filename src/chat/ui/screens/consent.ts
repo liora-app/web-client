@@ -9,7 +9,7 @@
 
 import { countryName } from '../../core/country'
 import type { Model, State } from '../../core/state'
-import { hasUserMessage } from '../../core/state'
+import { hasUserMessage, transferAskable } from '../../core/state'
 import { CONSENT_KINDS, type ConsentKind, type ConsentState } from '../../core/types'
 import { CONSENT_UNCHECKED, accountOpError, consentError, policyVersion, shortDate } from '../copy'
 import { allEl, byEl, screenOf, setAttr, setText, show } from '../dom'
@@ -25,11 +25,21 @@ const regionNames = ((): Intl.DisplayNames | null => {
   }
 })()
 
-/** «Ollama Cloud (Ollama Inc.)» and «США» wherever the page names the provider. */
+/** «Ollama Cloud (Ollama Inc.)» and «США» wherever the page names the provider. What the server
+ *  did not give leaves its clause out instead of an empty slot: [data-provider="named"] needs the
+ *  name, [data-provider="located"] the country, and [data-provider="unnamed"] stands in for a
+ *  provider without a name with its data-text («постачальнику AI»), written only while shown. */
 export function fillProvider(model: Model, root: ParentNode = document): void {
   const provider = model.ctx.consents?.llm_provider ?? null
+  const country = provider === null || provider.country === '' ? '' : countryName(provider.country, regionNames)
   for (const node of allEl('provider', root)) setText(node, provider?.name ?? '')
-  for (const node of allEl('country', root)) setText(node, provider === null ? '' : countryName(provider.country, regionNames))
+  for (const node of allEl('country', root)) setText(node, country)
+  const shown: Readonly<Record<string, boolean>> = { named: provider !== null, located: provider !== null && country !== '', unnamed: provider === null }
+  for (const node of Array.from(root.querySelectorAll<HTMLElement>('[data-provider]'))) {
+    const on = shown[node.dataset.provider ?? ''] === true
+    show(node, on)
+    if (node.dataset.provider === 'unnamed') setText(node, on ? (node.dataset.text ?? '') : '')
+  }
 }
 
 export function consentScreen(): Screen & { checked(): ConsentKind[]; toggleLater(): void } {
@@ -81,7 +91,8 @@ export function consentScreen(): Screen & { checked(): ConsentKind[]; toggleLate
       show(byEl('consent-resume', root), state.mode === 'resume')
       fillProvider(model, root)
 
-      const noProvider = !state.loading && state.fresh && (consents === null || consents.llm_provider === null)
+      // A provider without a country is named in the text, but not one to agree to (§3.5).
+      const noProvider = !state.loading && state.fresh && !transferAskable(consents)
       show(byEl('consent-no-provider', root), noProvider || state.error?.code === 'provider_missing')
       show(checks, !noProvider)
       show(byEl('consent-agree', root), !noProvider)

@@ -15,7 +15,8 @@ import type { Action, Model, Overlay, PickOverlay } from '../core/state'
 import { hasReply, hasUserMessage, leaveGuard, pendingOf, sessionOf } from '../core/state'
 import { maskPausedLine, type SafeLine } from '../core/helplines'
 import { accountOpError, dayMonth, requestIdLine, shortDate } from './copy'
-import { allEl, byEl, fromTemplate, headingOf, setAttr, setText, show } from './dom'
+import { byEl, fromTemplate, headingOf, setAttr, setText, show } from './dom'
+import { fillProvider } from './screens/consent'
 
 type Kind = Overlay['o']
 
@@ -139,8 +140,7 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
     for (const node of Array.from(confirmBody.querySelectorAll<HTMLElement>('[data-if]'))) {
       show(node, conditions[node.dataset.if ?? ''] === true)
     }
-    const provider = ctx.consents?.llm_provider?.name ?? ''
-    for (const node of allEl('provider', confirmBody)) setText(node, provider)
+    fillProvider(m, confirmBody)
     const op = ctx.op
     const text = op !== null && op.error !== null ? accountOpError(op.name, op.error) : null
     const opError = confirmBody.querySelector<HTMLElement>('[data-op-error]')
@@ -165,8 +165,7 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
     const { ctx } = m
     const root = elements.account
     setText(byEl('account-email', root), ctx.me?.email ?? '')
-    const provider = ctx.consents?.llm_provider?.name ?? ''
-    for (const node of allEl('provider', root)) setText(node, provider)
+    fillProvider(m, root)
     for (const node of Array.from(root.querySelectorAll<HTMLElement>('[data-grant-date]'))) {
       const granted = ctx.consents?.granted.find((g) => g.kind === node.dataset.grantDate)
       setText(node, granted ? `надано ${shortDate(granted.granted_at)}` : 'не надано')

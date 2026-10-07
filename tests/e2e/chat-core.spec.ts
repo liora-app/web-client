@@ -49,6 +49,7 @@ import {
   llmInFlight,
   matchesSaved,
   reduce,
+  transferAskable,
   type Action,
   type ChatState,
   type Effect,
@@ -768,17 +769,30 @@ test.describe('api', () => {
     expect(c.ok && c.data.llm_provider).toBeNull()
   })
 
-  test('a provider without a country is no provider: no consent to hand the text to «{provider}, »', async () => {
+  test('a provider without a country keeps its name (country ""); one without a name is no provider', async () => {
     const withProvider = (llm_provider: unknown) =>
       createApi({
         fetch: async () => new Response(JSON.stringify({ current_policy_version: 'v1', required: [], granted: [], missing: [], llm_provider }), { status: 200 }),
       }).consents()
-    for (const country of ['', '   ', 'X'.repeat(65)]) {
-      const r = await withProvider({ name: 'Ollama Cloud (Ollama Inc.)', country })
-      expect(r.ok && r.data.llm_provider, JSON.stringify(country)).toBeNull()
+    // The name still goes on the page; only the consent gate needs the country (transferAskable).
+    for (const provider of [
+      { name: 'Ollama Cloud (Ollama Inc.)', country: '' },
+      { name: 'Ollama Cloud (Ollama Inc.)', country: '   ' },
+      { name: 'Ollama Cloud (Ollama Inc.)', country: 'X'.repeat(65) },
+      { name: 'Ollama Cloud (Ollama Inc.)', country: 7 },
+      { name: 'Ollama Cloud (Ollama Inc.)' },
+    ]) {
+      const r = await withProvider(provider)
+      expect(r.ok && r.data.llm_provider, JSON.stringify(provider)).toEqual({ name: 'Ollama Cloud (Ollama Inc.)', country: '' })
+      expect(r.ok && transferAskable(r.data), JSON.stringify(provider)).toBe(false)
+    }
+    for (const provider of [{ name: '', country: 'US' }, { name: '   ', country: 'US' }, { country: 'US' }, { name: 'X'.repeat(201), country: 'US' }, 'Ollama', null]) {
+      const r = await withProvider(provider)
+      expect(r.ok && r.data.llm_provider, JSON.stringify(provider)).toBeNull()
     }
     const ok = await withProvider({ name: '  Ollama Cloud (Ollama Inc.) ', country: ' US ' })
     expect(ok.ok && ok.data.llm_provider).toEqual({ name: 'Ollama Cloud (Ollama Inc.)', country: 'US' })
+    expect(ok.ok && transferAskable(ok.data)).toBe(true)
   })
 
   test('helplines() returns the sanitized object only', async () => {
@@ -1326,15 +1340,17 @@ test.describe('state: consent', () => {
     expect(chatOf(run(granted.model, { type: 'scenarios/ok', items: SCENARIOS }).model).session.scenario).toBe('free')
   })
 
-  test('no named provider → no consent at all', () => {
-    const m = run(INITIAL_MODEL, { type: 'boot', search: '' }, { type: 'me/ok', purpose: 'boot', me: ME }, {
-      type: 'consents/ok',
-      purpose: 'boot',
-      consents: { ...CONSENTS_NONE, llm_provider: null },
-    }).model
-    const r = run(m, { type: 'consent/agree', checked: [...KINDS] })
-    expect(r.effects).toEqual([])
-    expect(r.model.state).toMatchObject({ s: 'consent', error: { code: 'provider_missing' } })
+  test('no named provider → no consent at all; named without a country → no consent either', () => {
+    for (const llm_provider of [null, { name: 'Ollama Cloud (Ollama Inc.)', country: '' }]) {
+      const m = run(INITIAL_MODEL, { type: 'boot', search: '' }, { type: 'me/ok', purpose: 'boot', me: ME }, {
+        type: 'consents/ok',
+        purpose: 'boot',
+        consents: { ...CONSENTS_NONE, llm_provider },
+      }).model
+      const r = run(m, { type: 'consent/agree', checked: [...KINDS] })
+      expect(r.effects, JSON.stringify(llm_provider)).toEqual([])
+      expect(r.model.state, JSON.stringify(llm_provider)).toMatchObject({ s: 'consent', error: { code: 'provider_missing' } })
+    }
   })
 
   test('409 policy_outdated in first → fresh GET, update mode, the banner; network/5xx/422 → a line, boxes kept', () => {

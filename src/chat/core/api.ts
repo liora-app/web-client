@@ -112,16 +112,16 @@ function parseMe(raw: unknown): MeOut | null {
   }
 }
 
-/** Named and located, or not at all: a consent to hand the conversation over needs both the name
- *  and the country (§3.5). Without either the page says it cannot ask for that consent. */
+/** Named, or not at all; the country when there is a usable one, '' otherwise. The page names the
+ *  provider wherever it mentions it; the consent to hand it the conversation needs the country as
+ *  well, and only the consent gate asks for it (state.ts transferAskable, §3.5). */
 function parseProvider(raw: unknown): LLMProviderInfo | null {
-  if (!isObj(raw) || !isStr(raw.name) || !isStr(raw.country)) return null
+  if (!isObj(raw) || !isStr(raw.name)) return null
   const name = raw.name.trim()
-  const country = raw.country.trim()
   const length = codePoints(name)
   if (length < 1 || length > 200) return null
-  if (country === '' || codePoints(country) > 64) return null
-  return { name, country }
+  const country = isStr(raw.country) ? raw.country.trim() : ''
+  return { name, country: codePoints(country) > 64 ? '' : country }
 }
 
 function parseConsents(raw: unknown): ConsentState | null {

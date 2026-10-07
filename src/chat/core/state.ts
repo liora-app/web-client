@@ -691,6 +691,13 @@ function accountReachable(model: Model): boolean {
   return model.ctx.me !== null && s !== 'signed-out' && s !== 'account-deleted' && s !== 'booting' && s !== 'session-expired'
 }
 
+/** The consent to hand the conversation over needs the provider's name and its country (§3.5).
+ *  Without the country the page still names the provider wherever it mentions it. */
+export function transferAskable(consents: ConsentState | null): boolean {
+  const provider = consents?.llm_provider ?? null
+  return provider !== null && provider.country !== ''
+}
+
 function notInvited(model: Model, session: Session | null, pending: Pending | null, draft: Draft | null): Step {
   return withState(model, { s: 'not-invited', hasSession: true, stale: session, pending, draft }, [{ type: 'abort', target: 'all' }])
 }
@@ -1169,8 +1176,8 @@ function step(model: Model, action: Action): Step {
       // §3.5); the boxes reset when the answer comes.
       if (!state.fresh) return withState(model, { ...state, loading: true, error: null }, [{ type: 'consents', purpose: 'fresh' }])
       const consents = ctx.consents
-      // No named provider, no consent to hand it the conversation (§3.5).
-      if (consents === null || consents.llm_provider === null) return withState(model, { ...state, error: uiError('provider_missing') })
+      // No named and located provider, no consent to hand it the conversation (§3.5).
+      if (consents === null || !transferAskable(consents)) return withState(model, { ...state, error: uiError('provider_missing') })
       const unchecked = CONSENT_KINDS.filter((k) => !action.checked.includes(k))
       if (unchecked.length > 0) return withState(model, { ...state, error: uiError('unchecked', { fields: unchecked }) })
       if (consents.missing.length === 0) return afterConsent(model)
