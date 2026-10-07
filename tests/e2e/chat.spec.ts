@@ -1049,10 +1049,16 @@ test.describe('sign-in and consent', () => {
     expect(api.count('POST /consents')).toBe(0)
   })
 
-  test('#28c a provider without a country, then without a name: no empty slot anywhere; only the consent needs both', async ({ page, api }, testInfo) => {
+  test('#28c a provider without a country, then without a name: no empty slot anywhere; only the consent needs both', async ({ page, api }) => {
     const NAME = 'Ollama Cloud (Ollama Inc.)'
-    // Rendered text only: the clauses that wait for a missing value are [hidden].
-    const text = (locator: Locator) => locator.evaluate((node) => (node as HTMLElement).innerText.replace(/\s+/g, ' ').trim())
+    // The text without its [hidden] clauses (those wait for a missing value), as written: no CSS
+    // case (the confirm's title is upper-case on the screen), and the same on every width.
+    const text = (locator: Locator) =>
+      locator.evaluate((node) => {
+        const copy = node.cloneNode(true) as HTMLElement
+        for (const hidden of Array.from(copy.querySelectorAll('[hidden]'))) hidden.remove()
+        return (copy.textContent ?? '').replace(/\s+/g, ' ').trim()
+      })
     const sheetAndConfirms = async (named: string, dative: string) => {
       await accountToggle(page).click()
       const sheet = accountSheet(page)
@@ -1077,14 +1083,14 @@ test.describe('sign-in and consent', () => {
     await openChat(page)
     await expect(note.locator('[data-el="provider"]')).toHaveText(NAME)
     await expect(note.locator('[data-provider="located"]')).toHaveAttribute('hidden', '')
-    if (isDesktop(testInfo)) expect(await text(note)).toBe(`Liora не зберігає цю розмову: якщо закрити чи оновити сторінку, текст зникне. Текст обробляє ${NAME}.`)
+    expect(await text(note)).toBe(`Liora не зберігає цю розмову: якщо закрити чи оновити сторінку, текст зникне. Текст обробляє ${NAME}.`)
     await sheetAndConfirms(`постачальник AI, ${NAME}`, NAME)
 
     api.on('GET /consents', { json: consents([], VERSION, null) })
     await page.reload()
     await onScreen(page, 'chat')
     await expect(note.locator('[data-provider="unnamed"]')).toHaveText('постачальник AI')
-    if (isDesktop(testInfo)) expect(await text(note)).toBe('Liora не зберігає цю розмову: якщо закрити чи оновити сторінку, текст зникне. Текст обробляє постачальник AI.')
+    expect(await text(note)).toBe('Liora не зберігає цю розмову: якщо закрити чи оновити сторінку, текст зникне. Текст обробляє постачальник AI.')
     await sheetAndConfirms('постачальник AI', 'постачальнику AI')
 
     // The consent itself still needs the country: no boxes to agree to.
