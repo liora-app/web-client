@@ -54,7 +54,8 @@ export function signInBanner(notice: AuthNotice): BannerText {
     case 'logged-out':
       return { label: null, text: 'Ви вийшли з акаунта на цьому пристрої.' }
     case 'delete-relogin':
-      return { label: 'Вхід не відбувся', text: 'Вхід завершився. Увійдіть, щоб видалити акаунт.' }
+      // No sign-in failed here: the session ended. The label belongs to a failed return from Google.
+      return { label: null, text: 'Вхід завершився. Увійдіть, щоб видалити акаунт.' }
     case 'auth-error': {
       const code = notice.code === 'not_invited' ? 'unknown' : notice.code
       return { label: 'Вхід не відбувся', text: AUTH_TEXT[code] }
@@ -154,9 +155,13 @@ export function turnError(error: UiError, csrfFailures: number, retryInSeconds: 
   }
 }
 
-/** The countdown of an automatic llm_busy retry (§4.3). */
+/** The countdown of an automatic llm_busy retry (§4.3): what it is, then the seconds. */
+export const BUSY_NOW = 'AI зараз зайнятий іншою розмовою.'
+export function busyRetryIn(seconds: number): string {
+  return `Пробуємо ще раз через ${Math.max(0, seconds)} с…`
+}
 export function busyWait(seconds: number): string {
-  return `AI зараз зайнятий іншою розмовою. Пробуємо ще раз через ${Math.max(0, seconds)} с…`
+  return `${BUSY_NOW} ${busyRetryIn(seconds)}`
 }
 
 /** The label in the AI's slot while the answer is on its way (§3.7.4). */
@@ -190,7 +195,11 @@ export function counter(length: number, max: number): string {
 
 // ── Theses (§7.1–7.3) ────────────────────────────────────────────────────────────────────────
 
-/** The line on `summarizing` (§7.1, §4.3). `retryInSeconds`: what is left of a 429 countdown. */
+const RATE_LIMIT_NOTE = 'За хвилину можна надіслати до 20 повідомлень разом із тезами.'
+
+/** The line on `summarizing` (§7.1, §4.3). `retryInSeconds`: what is left of a 429 countdown.
+ *  The line is a live region, so the seconds never go into it: while the countdown runs it says
+ *  only what happened, and summarizeRetryIn() writes the seconds beside it, aria-hidden (§5.7). */
 export function summarizeError(error: UiError, csrfFailures: number, retryInSeconds: number | null): ErrorText {
   switch (error.code) {
     case 'llm_busy':
@@ -205,14 +214,22 @@ export function summarizeError(error: UiError, csrfFailures: number, retryInSeco
     case 'rate_limited':
       return line(
         retryInSeconds !== null && retryInSeconds > 0
-          ? `За хвилину можна надіслати до 20 повідомлень разом із тезами. Скласти тези знову можна через ${retryInSeconds} с.`
-          : 'За хвилину можна надіслати до 20 повідомлень разом із тезами. Можна скласти тези ще раз.',
+          ? RATE_LIMIT_NOTE
+          : `${RATE_LIMIT_NOTE} Можна скласти тези ще раз.`,
       )
     case 'network':
       return line(NO_CONNECTION)
+    case 'aborted':
+      // The page was hidden before the request (or its automatic retry) went: nothing failed here.
+      return line('Тези ще не складено. Спробуйте ще раз — розмова на місці.')
     default:
       return shared(error, csrfFailures) ?? line(GENERIC, true)
   }
+}
+
+/** Beside the line on `summarizing`, aria-hidden: the seconds left of a 429 countdown. */
+export function summarizeRetryIn(seconds: number): string {
+  return `Скласти тези знову можна через ${seconds} с.`
 }
 
 /** Next to «Зберегти в щоденник» (§7.3). A 422 that maps to a field is shown on the field. */
@@ -323,6 +340,17 @@ export const sayAnswer = (text: string): string => `Відповідь AI: ${tex
 export const sayRetry = (seconds: number): string => `Пробуємо ще раз через ${seconds} секунд`
 export const sayTheses = (n: number): string => `Тези готові: ${n}`
 export const SAY_SAVED = 'Збережено в щоденник'
+
+// ── Copying (§3.8) ───────────────────────────────────────────────────────────────────────────
+
+export const COPIED = 'Скопійовано'
+/** On the button for 2 s; copyFailed() is what the live region says. */
+export const COPY_FAILED_LABEL = 'Не вдалося скопіювати'
+export function copyFailed(kind: 'talk' | 'theses'): string {
+  return kind === 'theses'
+    ? 'Не вдалося скопіювати. Виділіть тези вручну.'
+    : 'Не вдалося скопіювати. Виділіть текст розмови вручну.'
+}
 
 // ── Dates ────────────────────────────────────────────────────────────────────────────────────
 

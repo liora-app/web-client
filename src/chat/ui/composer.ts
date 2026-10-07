@@ -49,9 +49,12 @@ export function createComposer(root: HTMLElement, onSend: () => void, onStop: ()
       button.dataset.mode = 'stop'
       return
     }
-    button.dataset.mode = text.trim() === '' || blocked || over ? 'empty' : 'ready'
+    // Over 4000 code points it is as inactive as it looks (§3.7.3); a press still reaches onSend and
+    // repeats the hint.
+    const inactive = text.trim() === '' || blocked || over
+    button.dataset.mode = inactive ? 'empty' : 'ready'
     setAttr(button, 'aria-label', 'Надіслати')
-    setAttr(button, 'aria-disabled', text.trim() === '' || blocked ? 'true' : null)
+    setAttr(button, 'aria-disabled', inactive ? 'true' : null)
   }
 
   const describe = (): void => {

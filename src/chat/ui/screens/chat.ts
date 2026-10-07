@@ -26,6 +26,7 @@ import {
   tooLong,
 } from '../copy'
 import { byEl, fromTemplate, headingOf, screenOf, setAttr, setText, show } from '../dom'
+import { REPEAT_GAP_MS } from '../announcer'
 import { createComposer, type Composer } from '../composer'
 import { createScrollAnchor } from '../scroll-anchor'
 import { Transcript, type StreamView } from '../transcript'
@@ -67,6 +68,8 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
   const talk = el<HTMLOListElement>('talk')
   let scenarioKey = ''
   let lastModel: Model | null = null
+  let shownNotice: ChatState['notice'] = null
+  let repeatTimer = 0
 
   const anchor = createScrollAnchor({
     header: document.querySelector<HTMLElement>('[data-header]')!,
@@ -242,7 +245,17 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       composer.setMode(inFlight ? 'stop' : 'send', blocked || state.turn.p === 'cooldown')
       const statusText =
         notice?.kind === 'need-records' ? NEED_RECORDS : notice?.kind === 'too-long' ? tooLong(notice.length) : notice?.kind === 'unsent' ? UNSENT : ''
-      setText(status, statusText)
+      // A press again gives a new notice with the same text: emptied first, so the live line is
+      // heard again (§3.7.3 «натиск лише повторює підказку»).
+      const repeated = notice !== shownNotice && statusText !== '' && status.textContent === statusText
+      shownNotice = notice
+      window.clearTimeout(repeatTimer)
+      if (repeated) {
+        status.textContent = ''
+        repeatTimer = window.setTimeout(() => setText(status, statusText), REPEAT_GAP_MS)
+      } else {
+        setText(status, statusText)
+      }
       show(status, statusText !== '')
 
       // The «↓» pill: only once the person has written something (§3.7.6).

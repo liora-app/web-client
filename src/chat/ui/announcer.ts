@@ -12,7 +12,7 @@
 
 export const CLEAR_AFTER_MS = 5_000
 /** The same text twice in a row: empty first, so a screen reader hears it again. */
-const REPEAT_GAP_MS = 100
+export const REPEAT_GAP_MS = 100
 
 export type Announcer = Readonly<{
   /** One announcement outside a turn. */

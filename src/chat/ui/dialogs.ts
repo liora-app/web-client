@@ -6,6 +6,10 @@
 //
 // The stack is at most two deep, and only as account → confirm(logout | delete-account | revoke):
 // closing the confirm leaves the account sheet open with the focus on the button that opened it.
+//
+// The page's live region moves into the dialog on top: showModal() makes the rest of the document
+// inert, and an inert region is not read — an answer that arrives under «Якщо важко» would go
+// unheard (§3.11, §5.7, WCAG 4.1.3). With no dialog open it is back in its place.
 
 import type { Action, Model, Overlay, PickOverlay } from '../core/state'
 import { hasReply, hasUserMessage, leaveGuard, pendingOf, sessionOf } from '../core/state'
@@ -25,6 +29,9 @@ export type Dialogs = Readonly<{
   /** The control the person just pressed: the opener of a dialog it opens. Safari does not focus
    *  a clicked button, so document.activeElement alone would lose it. */
   noteOpener(el: HTMLElement): void
+  /** The focus inside the dialog on top went away with its control: its first stop again (I6).
+   *  False when no dialog is open. */
+  focusTop(): boolean
 }>
 
 /** Debounce of the search in the record picker (§3.6). */
@@ -62,6 +69,9 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
   const confirmBody = byEl('confirm-body')
   const pickRoot = elements['revisit-pick']
   const search = byEl<HTMLInputElement>('pick-q', pickRoot)
+  const region = document.querySelector<HTMLElement>('[data-announcer]')
+  const home = document.createComment('announcer')
+  region?.before(home)
   let stack: Open[] = []
   let pickTried = false
   let last: Model | null = null
@@ -116,6 +126,9 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
       // «Поточна розмова теж зникне» / «…закриється»: there is something to lose (I7).
       talk: leaveGuard(state),
       'can-summarize': state.s === 'chat' && hasReply(state.session) && !state.session.noSave,
+      // An unconfirmed save may have reached the diary: no «Liora їх не зберігала» (§7.3).
+      'maybe-saved': ctx.maybeSaved,
+      'not-maybe-saved': !ctx.maybeSaved,
     }
     for (const node of Array.from(confirmBody.querySelectorAll<HTMLElement>('[data-if]'))) {
       show(node, conditions[node.dataset.if ?? ''] === true)
@@ -132,8 +145,12 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
       setText(opId, id ?? '')
       show(opId, id !== null)
     }
+    // Busy only in the confirm of the operation that runs: a revoke stuck elsewhere must not
+    // silence «Увійти» or «Завершити».
+    const top = m.overlay[m.overlay.length - 1]
+    const busy = ctx.op?.busy === true && top?.o === 'confirm' && top.kind === ctx.op.name
     for (const button of Array.from(confirmBody.querySelectorAll<HTMLButtonElement>('[data-act="accept"]'))) {
-      setAttr(button, 'aria-busy', ctx.op?.busy === true ? 'true' : null)
+      setAttr(button, 'aria-busy', busy ? 'true' : null)
     }
   }
 
@@ -250,6 +267,17 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
     if (screen) headingOf(screen)?.focus()
   }
 
+  /** The live region follows the dialog on top (see the head of this file). */
+  function placeRegion(): void {
+    if (region === null) return
+    const top = stack[stack.length - 1]
+    if (top !== undefined) {
+      if (region.parentElement !== top.el) top.el.append(region)
+    } else if (region.previousSibling !== home) {
+      home.after(region)
+    }
+  }
+
   function openerNow(): HTMLElement | null {
     const active = document.activeElement
     if (active instanceof HTMLElement && active !== document.body) return active
@@ -264,6 +292,12 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
     },
     noteOpener(el) {
       noted = el
+    },
+    focusTop() {
+      const top = stack[stack.length - 1]
+      if (top === undefined) return false
+      initialFocus(top.el)
+      return true
     },
     sync(next, screenChanged) {
       last = next
@@ -316,6 +350,7 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
       if (stack.some((o) => o.kind === 'account')) refreshAccount(next)
       if (stack.some((o) => o.kind === 'help')) refreshHelp(next)
       if (stack.some((o) => o.kind === 'revisit-pick')) refreshPick(next)
+      placeRegion()
     },
   }
 }

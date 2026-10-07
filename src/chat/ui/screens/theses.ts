@@ -8,7 +8,7 @@
 
 import { BULLET_COUNTER_FROM, MAX_BULLET, MAX_BULLETS, MAX_TITLE, TITLE_COUNTER_FROM, codePoints, newTagIssue, type Draft } from '../../core/limits'
 import type { Action, Model, State } from '../../core/state'
-import { DRAFT_TEXT, busyWait, counter, requestIdLine, saveError, summarizeError } from '../copy'
+import { BUSY_NOW, DRAFT_TEXT, busyRetryIn, counter, requestIdLine, saveError, summarizeError, summarizeRetryIn } from '../copy'
 import { byEl, fromTemplate, screenOf, setAttr, setText, show } from '../dom'
 import type { Screen } from './text'
 
@@ -32,8 +32,15 @@ export function summarizingScreen(): Screen {
     const error = state.error
     const code = error?.code ?? ''
     const left = state.until === null ? null : Math.max(0, Math.ceil((state.until - now) / 1000))
+    const cooling = code === 'rate_limited' && left !== null && left > 0
     const text = error !== null ? summarizeError(error, last.ctx.csrfFailures, code === 'rate_limited' ? left : null) : null
-    setText(el('sum-status'), text !== null ? text.why : waitingBusy ? busyWait(left ?? 0) : '')
+    // The live part changes only with what happened (no per-second announcements, §5.7): the
+    // countdown is said once at its start (effects.ts) and, after a 429, its end changes the line.
+    const status = text !== null ? text.why : waitingBusy ? BUSY_NOW : ''
+    const countdown = waitingBusy ? busyRetryIn(left ?? 0) : cooling ? summarizeRetryIn(left) : ''
+    setText(el('sum-status'), status)
+    setText(el('sum-countdown'), countdown)
+    show(el('sum-line'), status !== '' || countdown !== '')
     const id = text?.showId === true ? requestIdLine(error!.requestId) : null
     setText(el('sum-request-id'), id ?? '')
     show(el('sum-request-id'), id !== null)
@@ -42,7 +49,6 @@ export function summarizingScreen(): Screen {
     const canRetry = error !== null && !reload && code !== 'validation_error' && code !== 'payload_too_large'
     show(el('sum-retry-actions'), canRetry || code === 'payload_too_large')
     show(el('sum-retry'), canRetry)
-    const cooling = code === 'rate_limited' && state.until !== null && now < state.until
     setAttr(el('sum-retry'), 'aria-disabled', cooling ? 'true' : null)
     show(el('sum-end-button'), code === 'payload_too_large')
     show(el('sum-reload-row'), reload)
@@ -130,6 +136,9 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
     const { draft } = state
     const rows = new Map(Array.from(bullets.querySelectorAll<HTMLLIElement>('li[data-id]')).map((li) => [li.dataset.id!, li]))
     const active = activeCount(draft)
+    // «Потрібна хоча б одна теза.» stands under the list; every thesis still there points to it, so
+    // the field that takes the focus says it too (§7.2).
+    const none = state.issues.find((i) => i.reason === 'bullets-none')
     let n = 0
     let previous: HTMLLIElement | null = null
     for (const bullet of draft.bullets) {
@@ -139,7 +148,6 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
         li.dataset.id = bullet.id
         const input = li.querySelector<HTMLTextAreaElement>('textarea')!
         input.id = `thesis-${bullet.id}`
-        input.setAttribute('aria-describedby', `thesis-${bullet.id}-error`)
         li.querySelector<HTMLLabelElement>('label')!.htmlFor = input.id
         li.querySelector<HTMLElement>('.field-error')!.id = `thesis-${bullet.id}-error`
         for (const button of Array.from(li.querySelectorAll<HTMLElement>('button'))) button.dataset.id = bullet.id
@@ -172,10 +180,11 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
       show(count, length >= BULLET_COUNTER_FROM && !bullet.removed)
       const issue = state.issues.find((i) => i.field === bullet.id && i.reason !== 'bullets-none')
       setText(li.querySelector('.field-error')!, issue ? (DRAFT_TEXT[issue.reason] ?? '') : '')
-      setAttr(input, 'aria-invalid', issue ? 'true' : null)
+      const empty = none !== undefined && !bullet.removed
+      setAttr(input, 'aria-invalid', issue || empty ? 'true' : null)
+      setAttr(input, 'aria-describedby', empty ? `thesis-${bullet.id}-error review-bullets-error` : `thesis-${bullet.id}-error`)
     }
     for (const stale of rows.values()) stale.remove()
-    const none = state.issues.find((i) => i.reason === 'bullets-none')
     setText(el('review-bullets-error'), none ? (DRAFT_TEXT[none.reason] ?? '') : '')
     show(el('review-add-wrap'), active < MAX_BULLETS && state.saving === 'idle')
   }
@@ -285,7 +294,7 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
         const target =
           first.field === 'title'
             ? title
-            : (root.querySelector<HTMLElement>(`#thesis-${first.field}`) ?? (first.reason === 'bullets-none' ? root.querySelector<HTMLElement>('.thesis__input') : tagInput))
+            : (root.querySelector<HTMLElement>(`#thesis-${first.field}`) ?? (first.reason === 'bullets-none' ? root.querySelector<HTMLElement>('.thesis:not(.thesis--removed) .thesis__input') : tagInput))
         target?.focus()
       }
       lastIssues = state.issues

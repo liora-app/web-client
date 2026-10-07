@@ -5,7 +5,7 @@
 import type { Model, State } from '../../core/state'
 import { hasUserMessage } from '../../core/state'
 import { accountOpError, longDateTime, requestIdLine, signInBanner, stillSignedIn } from '../copy'
-import { byEl, screenOf, setText, show } from '../dom'
+import { byEl, screenOf, setAttr, setText, show } from '../dom'
 import { renderStatic } from '../transcript'
 
 type On<S extends State['s']> = Extract<State, { s: S }>
@@ -109,6 +109,13 @@ export function expiredScreen(): Screen {
 export function savedScreen(): Screen {
   const root = screenOf('saved')
   return {
+    // Signed out or the account deleted from here: the record leaves the hidden section too.
+    leave() {
+      setText(byEl('saved-date', root), '')
+      setText(byEl('saved-title', root), '')
+      byEl('saved-bullets', root).replaceChildren()
+      setText(byEl('saved-tags', root), '')
+    },
     render(model, entered) {
       if (!entered) return
       const { summary } = model.state as On<'saved'>
@@ -130,6 +137,24 @@ export function savedScreen(): Screen {
       const tags = byEl('saved-tags', root)
       setText(tags, summary.tags.map((t) => `#${t.name}`).join(' '))
       show(tags, summary.tags.length > 0)
+    },
+  }
+}
+
+// ── ended ──
+
+/** «У щоденник нічого не потрапило» only when that is known: after an unconfirmed save the
+ *  record may be there (§7.3, §7.6). */
+export function endedScreen(): Screen {
+  const root = screenOf('ended')
+  const none = byEl('ended-none', root)
+  const maybe = byEl('ended-maybe', root)
+  return {
+    render(model) {
+      const maybeSaved = model.ctx.maybeSaved
+      show(none, !maybeSaved)
+      show(maybe, maybeSaved)
+      setAttr(root, 'aria-labelledby', maybeSaved ? 'ended-maybe-title' : 'ended-title')
     },
   }
 }

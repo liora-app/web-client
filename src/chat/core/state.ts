@@ -221,6 +221,15 @@ export type Ctx = Readonly<{
   deleteAttempt: 'none' | 'unknown'
   /** The account operation in progress or failed (shown in its dialog or next to its button). */
   op: Readonly<{ name: 'logout' | 'delete-account' | 'revoke'; busy: boolean; error: UiError | null }> | null
+  /** A 429 countdown of turns runs until then. It outlives the theses and back (§4.3: the manual
+   *  retry only after it); cooldown/end clears it. */
+  cooldown: number | null
+  /** The last POST /summaries of this conversation may have landed (an unknown result, §7.3): no
+   *  text may say that nothing reached the diary. */
+  maybeSaved: boolean
+  /** The page navigates away on the person's word («Піти», «Увійти»): at pagehide nothing of the
+   *  conversation may stay behind for the bfcache (§5.6). */
+  leaving: boolean
 }>
 
 export type ConfirmKind =
@@ -277,6 +286,9 @@ export const INITIAL_CTX: Ctx = Object.freeze<Ctx>({
   csrfFailures: 0,
   deleteAttempt: 'none',
   op: null,
+  cooldown: null,
+  maybeSaved: false,
+  leaving: false,
 })
 
 export const INITIAL_MODEL: Model = Object.freeze<Model>({ state: { s: 'booting' }, ctx: INITIAL_CTX, overlay: [] })
@@ -301,6 +313,8 @@ export type Action =
   | Readonly<{ type: 'helplines/ok'; helplines: SafeHelplines }>
   | Readonly<{ type: 'helplines/fail' }>
   | Readonly<{ type: 'page/show'; persisted: boolean }>
+  /** pagehide (after the effects aborted what was in flight). */
+  | Readonly<{ type: 'page/left' }>
   // consent
   | Readonly<{ type: 'consent/agree'; checked: readonly ConsentKind[] }>
   | Readonly<{ type: 'consent/reload' }>
@@ -515,9 +529,11 @@ function consent(mode: ConsentMode, init: Partial<Omit<ConsentScreen, 's' | 'mod
 }
 
 /** Back to the conversation from the theses, the unsent message with it (§7.1 «Розмова на
- *  місці»). After a 413 the block comes back too: the same message would get the same 413. */
-function backToChat(session: Session, pending: Pending | null): ChatState {
-  return chat(session, { pending, notice: pending?.error?.code === 'payload_too_large' ? { kind: 'too-large' } : null })
+ *  місці»). After a 413 the block comes back too: the same message would get the same 413. A 429
+ *  countdown still running comes back with it: «Надіслати ще раз» waits for its end (§4.3). */
+function backToChat(ctx: Ctx, session: Session, pending: Pending | null): ChatState {
+  const turn: TurnPhase = ctx.cooldown !== null ? { p: 'cooldown', until: ctx.cooldown } : IDLE
+  return chat(session, { pending, turn, notice: pending?.error?.code === 'payload_too_large' ? { kind: 'too-large' } : null })
 }
 
 const loaded = <T>(value: T): Loadable<T> => ({ status: 'ok', value })
@@ -532,9 +548,16 @@ function lastUserText(request: readonly Msg[]): string {
   return ''
 }
 
-/** A new, empty conversation (§3.6). Clears the announcer when it replaces an old one. */
+/** A new, empty conversation (§3.6). Clears the announcer when it replaces an old one. Nothing of
+ *  the old one carries over: neither its 429 countdown nor its unconfirmed save. */
 function startChat(model: Model, init: Readonly<{ afterCrisis?: boolean; wipe?: boolean }> = {}): Step {
-  const ctx: Ctx = { ...model.ctx, wantChat: false, afterCrisis: init.afterCrisis ?? model.ctx.afterCrisis }
+  const ctx: Ctx = {
+    ...model.ctx,
+    wantChat: false,
+    afterCrisis: init.afterCrisis ?? model.ctx.afterCrisis,
+    cooldown: null,
+    maybeSaved: false,
+  }
   const state = chat(freshSession(ctx, 'free', false))
   return [{ ...model, ctx, state }, init.wipe === true ? [{ type: 'announcer/clear' }] : NONE]
 }
@@ -630,10 +653,34 @@ function accountDeleted(model: Model, variant: 'confirmed' | 'presumed'): Step {
   ]
 }
 
-/** 401 on a protected call: keep what the person wrote, read-only, when there is a session. */
+/** 401 on a protected call: keep what the person wrote, read-only, when there is a session. The
+ *  account operation goes with the session: reduce() resets it only on a new screen, and a 401
+ *  that keeps `session-expired` would leave it busy for good. */
 function unauthenticated(model: Model, session: Session | null, pending: Pending | null, draft: Draft | null): Step {
-  if (session === null) return signedOut(model, 'fresh', null)
-  return withState(model, { s: 'session-expired', stale: session, pending, draft }, [{ type: 'abort', target: 'all' }])
+  const next: Model = model.ctx.op === null ? model : { ...model, ctx: { ...model.ctx, op: null } }
+  if (session === null) return signedOut(next, 'fresh', null)
+  return withState(next, { s: 'session-expired', stale: session, pending, draft }, [{ type: 'abort', target: 'all' }])
+}
+
+/** The page as a fresh load has it: no session, no conversation, no account data (§5.6). */
+function wiped(model: Model): Step {
+  return [
+    { state: { s: 'booting' }, overlay: [], ctx: { ...INITIAL_CTX, helplines: model.ctx.helplines, seq: model.ctx.seq } },
+    [{ type: 'abort', target: 'all' }, { type: 'announcer/clear' }],
+  ]
+}
+
+/** Wipe, then boot again: another account answered GET /me on a page restored from the bfcache. */
+function reboot(model: Model): Step {
+  const [clean, effects] = wiped(model)
+  const [next, more] = step(clean, { type: 'boot', search: '' })
+  return [next, [...effects, ...more]]
+}
+
+/** The account menu and its operations: only with a live session (§8.1). */
+function accountReachable(model: Model): boolean {
+  const s = model.state.s
+  return model.ctx.me !== null && s !== 'signed-out' && s !== 'account-deleted' && s !== 'booting' && s !== 'session-expired'
 }
 
 function notInvited(model: Model, session: Session | null, pending: Pending | null, draft: Draft | null): Step {
@@ -796,7 +843,7 @@ function onTurnOutcome(model: Model, state: ChatState, outcome: TurnOutcome, now
       const ms = error.retryAfterMs ?? RATE_LIMIT_FALLBACK_MS
       const until = now + ms
       return withState(
-        model,
+        { ...model, ctx: { ...model.ctx, cooldown: until } },
         { ...state, turn: { p: 'cooldown', until }, pending: { ...failed, error: { ...ui, retryAfterMs: ms } } },
         [{ type: 'after', ms, action: { type: 'cooldown/end', until } }],
       )
@@ -841,7 +888,11 @@ function onSaveFail(model: Model, state: ReviewState, error: ApiError): Step {
   // exist. The next attempt first looks at the newest record (save-check), so a retry never
   // makes a duplicate (§7.3).
   if (outcomeUnknown(error)) {
-    return withState(model, { ...state, saving: 'unknown', error: uiError('save_unknown', { requestId: error.requestId }) })
+    return withState({ ...model, ctx: { ...model.ctx, maybeSaved: true } }, {
+      ...state,
+      saving: 'unknown',
+      error: uiError('save_unknown', { requestId: error.requestId }),
+    })
   }
   if (error.status === 401) return unauthenticated(model, session, pending, draft)
   if (error.code === 'not_invited') return notInvited(model, session, pending, draft)
@@ -868,7 +919,7 @@ function onSaveFail(model: Model, state: ReviewState, error: ApiError): Step {
 
 function saved(model: Model, summary: SummaryOut): Step {
   return [
-    { ...model, ctx: { ...model.ctx, diary: { status: 'loading' } }, state: { s: 'saved', summary } },
+    { ...model, ctx: { ...model.ctx, diary: { status: 'loading' }, maybeSaved: false }, state: { s: 'saved', summary } },
     [{ type: 'diary' }, { type: 'announcer/clear' }],
   ]
 }
@@ -880,7 +931,7 @@ function ended(model: Model, effects: readonly Effect[] = NONE): Step {
 const STACKED: ReadonlySet<ConfirmKind> = new Set(['logout', 'delete-account', 'revoke'])
 
 function confirmAllowed(model: Model, kind: ConfirmKind, revoke: ConsentKind | undefined): boolean {
-  const { state, ctx } = model
+  const { state } = model
   const idleChat = state.s === 'chat' && (state.turn.p === 'idle' || state.turn.p === 'cooldown')
   switch (kind) {
     case 'end':
@@ -899,9 +950,9 @@ function confirmAllowed(model: Model, kind: ConfirmKind, revoke: ConsentKind | u
       return state.s === 'crisis'
     case 'logout':
     case 'delete-account':
-      return ctx.me !== null
+      return accountReachable(model)
     case 'revoke':
-      return ctx.me !== null && revoke !== undefined
+      return accountReachable(model) && revoke !== undefined
   }
 }
 
@@ -936,9 +987,11 @@ function onConfirmAccept(model: Model, choice: 'summarize' | undefined): Step {
           !state.session.noSave
         return ok && state.s === 'chat' ? beginSummarize(model, state.session, state.pending) : [model, NONE]
       }
-      return [popped, [top.leaveTo === 'reload' ? { type: 'reload' } : { type: 'navigate', href: '/' }]]
+      // «Якщо підете, на цій сторінці його вже не буде»: page/left wipes it at pagehide (§5.6).
+      return [{ ...popped, ctx: { ...ctx, leaving: true } }, [top.leaveTo === 'reload' ? { type: 'reload' } : { type: 'navigate', href: '/' }]]
     case 'relogin':
-      return [popped, [{ type: 'navigate', href: GOOGLE_START }]]
+      // «Текст цієї розмови зникне зі сторінки»: the same at pagehide.
+      return [{ ...popped, ctx: { ...ctx, leaving: true } }, [{ type: 'navigate', href: GOOGLE_START }]]
     case 'logout':
       return beginLogout(model)
     case 'new-after-crisis':
@@ -981,7 +1034,12 @@ function step(model: Model, action: Action): Step {
       ]
     }
     case 'me/ok': {
-      if (action.purpose === 'pageshow') return [{ ...model, ctx: { ...ctx, me: action.me } }, NONE]
+      if (action.purpose === 'pageshow') {
+        // Another account signed in meanwhile (a shared computer): the old conversation must not go
+        // on under its session. Wipe and start over as that account (§5.6).
+        if (ctx.me !== null && action.me.id !== ctx.me.id) return reboot(model)
+        return [{ ...model, ctx: { ...ctx, me: action.me } }, NONE]
+      }
       if (state.s !== 'booting') return [model, NONE]
       const authNotice = ctx.authError !== null ? { code: ctx.authError, email: action.me.email } : null
       return [
@@ -1043,8 +1101,13 @@ function step(model: Model, action: Action): Step {
       if (ctx.scenarios.status === 'loading') return [model, NONE]
       return [{ ...model, ctx: { ...ctx, scenarios: { status: 'loading' } } }, [{ type: 'scenarios' }]]
     case 'diary/ok':
+      // Only an answer someone waits for: a late one must not bring back a diary that a revoke, a
+      // deleted account or a sign-out has erased meanwhile (§8.6). After a failure a second load
+      // may still be on its way (a page restored and booted again), and its answer counts.
+      if (ctx.diary.status !== 'loading' && ctx.diary.status !== 'failed') return [model, NONE]
       return [{ ...model, ctx: { ...ctx, diary: loaded(action.diary) } }, NONE]
     case 'diary/fail': {
+      if (ctx.diary.status !== 'loading') return [model, NONE]
       const next: Model = { ...model, ctx: { ...ctx, diary: { status: 'failed' } } }
       // A 401 on GET /summaries mid-session ends the session like any protected call (§4.3).
       if (action.error.status === 401 && signedInScreen(state)) return unauthenticated(next, sessionOf(state), pendingOf(state), draftOf(state))
@@ -1058,8 +1121,18 @@ function step(model: Model, action: Action): Step {
     case 'helplines/fail':
       return [{ ...model, ctx: { ...ctx, helplines: { status: 'failed' } } }, NONE]
     case 'page/show':
-      if (!action.persisted || ctx.me === null) return [model, NONE]
+      if (!action.persisted) return [model, NONE]
+      // Wiped at pagehide (page/left): start over the way a fresh load would.
+      if (state.s === 'booting') return step(model, { type: 'boot', search: '' })
+      if (ctx.me === null) return [model, NONE]
       return [model, [{ type: 'me', purpose: 'pageshow', timeoutMs: BOOT_TIMEOUT }]]
+    case 'page/left':
+      // The crisis: whatever way out the person took, the conversation under <details> does not
+      // wait in the bfcache; the contacts stay (§6).
+      if (state.s === 'crisis') return state.stale.length === 0 ? [model, NONE] : withState(model, { ...state, stale: [] })
+      // «Піти», «Увійти знову»: the page promised the text would be gone (§3.12, §5.6).
+      if (!ctx.leaving) return [model, NONE]
+      return wiped(model)
 
     // ── consent ──
     case 'consent/agree': {
@@ -1195,9 +1268,12 @@ function step(model: Model, action: Action): Step {
       if (turnActive(state, action.id) === null || state.s !== 'chat') return [model, NONE]
       return onTurnOutcome(model, state, action.outcome, action.now)
     }
-    case 'cooldown/end':
-      if (state.s !== 'chat' || state.turn.p !== 'cooldown' || state.turn.until !== action.until) return [model, NONE]
-      return withState(model, { ...state, turn: IDLE })
+    case 'cooldown/end': {
+      // Over wherever the person is (the theses, say): back in the conversation it is not restored.
+      const next: Model = ctx.cooldown === action.until ? { ...model, ctx: { ...ctx, cooldown: null } } : model
+      if (state.s !== 'chat' || state.turn.p !== 'cooldown' || state.turn.until !== action.until) return [next, NONE]
+      return withState(next, { ...state, turn: IDLE })
+    }
 
     // ── record picker ──
     case 'revisit/open': {
@@ -1286,7 +1362,7 @@ function step(model: Model, action: Action): Step {
       return onSummarizeFail(model, state, action.error, action.now)
     case 'summarize/cancel':
       if (state.s !== 'summarizing') return [model, NONE]
-      return withState(model, backToChat(state.session, state.pending), [{ type: 'abort', target: 'summarize' }])
+      return withState(model, backToChat(ctx, state.session, state.pending), [{ type: 'abort', target: 'summarize' }])
     case 'summarize/retry':
       // I2: by hand only after a final error, never beside the scheduled llm_busy retry; after a
       // 429 only once its countdown is over.
@@ -1306,7 +1382,7 @@ function step(model: Model, action: Action): Step {
       return ended(model)
     case 'review/back':
       if (state.s !== 'review' || state.saving === 'saving') return [model, NONE]
-      return withState(model, backToChat(state.session, state.pending))
+      return withState(model, backToChat(ctx, state.session, state.pending))
     case 'save/ok':
       if (state.s !== 'review' || state.id !== action.id || state.saving !== 'saving') return [model, NONE]
       return saved(model, action.summary)
@@ -1317,20 +1393,22 @@ function step(model: Model, action: Action): Step {
       if (state.s !== 'review' || state.id !== action.id || state.saving !== 'saving' || state.sent === null) return [model, NONE]
       const newest = action.list.items[0]
       if (newest !== undefined && matchesSaved(state.sent.body, newest, action.date)) return saved(model, newest)
-      return [model, [{ type: 'save', id: state.id, body: state.sent.body }]]
+      // The newest record is not ours: the earlier POST did not land. This one may again.
+      return [{ ...model, ctx: { ...ctx, maybeSaved: false } }, [{ type: 'save', id: state.id, body: state.sent.body }]]
     }
     case 'save/check-fail':
       if (state.s !== 'review' || state.id !== action.id || state.saving !== 'saving') return [model, NONE]
       if (action.error.status === 401) return unauthenticated(model, state.session, state.pending, state.draft)
       // Still unknown: never POST blind.
-      return withState(model, { ...state, saving: 'unknown', error: uiError('save_unknown', { requestId: action.error.requestId }) })
+      return withState({ ...model, ctx: { ...ctx, maybeSaved: true } }, {
+        ...state,
+        saving: 'unknown',
+        error: uiError('save_unknown', { requestId: action.error.requestId }),
+      })
 
     // ── overlays and the account ──
     case 'overlay/open': {
-      if (action.overlay === 'account') {
-        const signedIn = ctx.me !== null && state.s !== 'signed-out' && state.s !== 'account-deleted' && state.s !== 'booting'
-        return signedIn ? [{ ...model, overlay: [{ o: 'account' }] }, NONE] : [model, NONE]
-      }
+      if (action.overlay === 'account') return accountReachable(model) ? [{ ...model, overlay: [{ o: 'account' }] }, NONE] : [model, NONE]
       const opened: Model = { ...model, overlay: [{ o: 'help' }] }
       if (ctx.helplines.status !== 'idle') return [opened, NONE]
       return [{ ...opened, ctx: { ...ctx, helplines: { status: 'loading' } } }, [{ type: 'helplines' }]]
@@ -1361,7 +1439,7 @@ function step(model: Model, action: Action): Step {
     case 'overlay/close':
       return onOverlayClose(model)
     case 'account/logout':
-      if (ctx.me === null || ctx.op?.busy === true) return [model, NONE]
+      if (!accountReachable(model) || ctx.op?.busy === true) return [model, NONE]
       if (leaveGuard(state)) return step(model, { type: 'confirm/open', kind: 'logout' })
       return beginLogout(model)
     case 'logout/ok':

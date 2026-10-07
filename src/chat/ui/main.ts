@@ -20,6 +20,7 @@ import { draftOf, leaveGuard, pendingOf, sessionOf, type Action, type Model } fr
 import type { ConsentKind } from '../core/types'
 import { createAnnouncer } from './announcer'
 import { conversationText, copyText, thesesText } from './clipboard'
+import { COPIED, COPY_FAILED_LABEL, copyFailed } from './copy'
 import { createEffects } from './effects'
 import { initKeyboard } from './keyboard'
 import { createLeaveGuard } from './leave-guard'
@@ -53,11 +54,14 @@ const gl =
 const api = createApi({ fetch: (input, init) => window.fetch(input, init) })
 const announcer = createAnnouncer(document.querySelector<HTMLElement>('[data-announcer]'))
 // Page life (§5.6): pagehide aborts everything in flight ('pagehide'); the bfcache asks GET /me.
+// After «Піти» / «Увійти знову» (and out of the crisis) the conversation is wiped right here,
+// synchronously, before the browser keeps the page for «Назад».
 const leave = createLeaveGuard({
   onPageHide() {
     effects.pageHide()
     view.chat.transcript.dropStreamNow()
     announcer.clear()
+    dispatch({ type: 'page/left' })
   },
   onPageShow(persisted) {
     effects.pageShow()
@@ -84,7 +88,9 @@ function topOverlay(model: Model) {
   return model.overlay[model.overlay.length - 1]
 }
 
-/** «Скопіювати текст розмови» / «Скопіювати тези» on whichever screen still holds them (§3.8). */
+/** «Скопіювати текст розмови» / «Скопіювати тези» on whichever screen still holds them (§3.8). The
+ *  result is said through the live region too: a changed name of the focused button is not
+ *  announced by most screen readers (WCAG 4.1.3). */
 async function copy(button: HTMLElement, kind: 'talk' | 'theses'): Promise<void> {
   const { state } = store.model()
   let text = ''
@@ -96,11 +102,18 @@ async function copy(button: HTMLElement, kind: 'talk' | 'theses'): Promise<void>
     const pending = pendingOf(state)
     if (session !== null || pending !== null) text = conversationText(session?.messages ?? [], pending)
   }
-  if (text === '' || !(await copyText(text))) return
-  const label = button.textContent
-  button.textContent = 'Скопійовано'
+  if (text === '') return
+  const ok = await copyText(text)
+  const shown = ok ? COPIED : COPY_FAILED_LABEL
+  // The button's own name, kept across quick repeated presses (a failure, then a success).
+  const label = button.dataset.label ?? button.textContent ?? ''
+  button.dataset.label = label
+  button.textContent = shown
+  announcer.say(ok ? COPIED : copyFailed(kind))
   window.setTimeout(() => {
-    if (button.textContent === 'Скопійовано') button.textContent = label
+    if (button.textContent !== shown) return
+    button.textContent = label
+    delete button.dataset.label
   }, 2000)
 }
 

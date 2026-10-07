@@ -114,10 +114,10 @@
           <!-- ============ not-invited ============ -->
           <section class="screen" data-screen="not-invited" hidden>
             <p class="tag">Доступ за запрошенням</p>
-            <div data-el="ni-guest">
+            <div class="screen__part" data-el="ni-guest">
               <h1 class="display-2 screen__title" tabindex="-1">Поки що вхід — за запрошеннями</h1>
               <div class="prose">
-                <p>Цієї адреси Google немає в списку тестувальників, або Google не підтвердив її. Ви нічого не зробили не так. Ми нічого не зберегли — ні адреси, ні акаунта.</p>
+                <p>Цієї адреси Google немає в списку тестувальників, або Google не підтвердив її. Ви нічого не зробили не так. Акаунт не створено, і вашої адреси ми не зберегли.</p>
                 <p>Коли доступ відкриється ширше, про це буде написано на головній сторінці.</p>
               </div>
               <p class="screen__actions">
@@ -127,7 +127,7 @@
                 <li><a href="/">На головну</a></li>
               </ul>
             </div>
-            <div data-el="ni-member" hidden>
+            <div class="screen__part" data-el="ni-member" hidden>
               <h1 class="display-2 screen__title" tabindex="-1">Розмови з AI для вашого акаунта зараз закриті</h1>
               <div class="prose">
                 <p>Ви увійшли як <span class="email" data-el="ni-email"></span>. Цієї адреси зараз немає в списку тестувальників, тож розмови з AI і збереження в щоденник недоступні. Те, що вже збережено, на місці: щоденник можна завантажити або видалити разом з акаунтом.</p>
@@ -332,7 +332,7 @@
             </div>
 
             <div class="composer" data-el="composer">
-              <button class="jump" type="button" data-act="jump-end" aria-label="Прокрутити до кінця розмови" data-el="jump" hidden>↓ <span data-el="jump-text">Далі відповідь</span></button>
+              <button class="jump" type="button" data-act="jump-end" data-el="jump" hidden><span aria-hidden="true">↓</span> <span data-el="jump-text">Далі відповідь</span></button>
               <label class="visually-hidden" for="composer-input">Ваше повідомлення для AI</label>
               <div class="composer__field">
                 <textarea class="composer__input" id="composer-input" rows="1" autocomplete="off" placeholder="Пишіть так, як думаєте…" aria-describedby="composer-note"></textarea>
@@ -343,7 +343,7 @@
               </div>
               <p class="composer__status" data-el="composer-status" role="status"></p>
               <div class="composer__meta">
-                <p class="composer__ai">AI, не людина · може помилятися · не терапія</p>
+                <p class="composer__ai"><span>AI, не людина</span> · <span>може помилятися</span> · <span>не терапія</span></p>
                 <p class="composer__keys" id="composer-keys">Enter — надіслати · Shift+Enter — новий рядок</p>
                 <p class="composer__count" data-el="composer-count" aria-hidden="true"></p>
               </div>
@@ -424,7 +424,8 @@
               <li>02 —</li>
               <li>03 —</li>
             </ol>
-            <p class="status-line" data-el="sum-status" role="status"></p>
+            <!-- The live part says what happened, once; the seconds beside it are aria-hidden (§5.7). -->
+            <p class="status-line" data-el="sum-line" hidden><span data-el="sum-status" role="status"></span> <span data-el="sum-countdown" aria-hidden="true"></span></p>
             <p class="small" data-el="sum-request-id" hidden></p>
             <p class="screen__actions" data-el="sum-retry-actions" hidden>
               <button class="button button--primary" type="button" data-act="summarize-retry" data-el="sum-retry">Скласти ще раз</button>
@@ -457,7 +458,7 @@
             <fieldset class="theses">
               <legend class="field__label">Тези</legend>
               <ol class="theses__list" role="list" data-el="review-bullets"></ol>
-              <p class="field-error" data-el="review-bullets-error"></p>
+              <p class="field-error" id="review-bullets-error" data-el="review-bullets-error"></p>
               <ul class="arrows" role="list" data-el="review-add-wrap">
                 <li><button type="button" data-act="bullet-add">+ Додати тезу</button></li>
               </ul>
@@ -525,9 +526,21 @@
           <!-- ============ ended ============ -->
           <section class="screen" data-screen="ended" aria-labelledby="ended-title" hidden>
             <p class="tag">Розмову завершено</p>
-            <h1 class="display-2 screen__title" id="ended-title" tabindex="-1">У щоденник нічого не потрапило</h1>
-            <div class="prose">
-              <p>У Liora немає ні тексту цієї розмови, ні тез, ні запису в щоденнику. Текст розмови прибрано з цієї сторінки.</p>
+            <div class="screen__part" data-el="ended-none">
+              <h1 class="display-2 screen__title" id="ended-title" tabindex="-1">У щоденник нічого не потрапило</h1>
+              <div class="prose">
+                <p>У Liora немає ні тексту цієї розмови, ні тез, ні запису в щоденнику. Текст розмови прибрано з цієї сторінки.</p>
+              </div>
+            </div>
+            <!-- After a save whose result stayed unknown (§7.3): the record may be in the diary. -->
+            <div class="screen__part" data-el="ended-maybe" hidden>
+              <h1 class="display-2 screen__title" id="ended-maybe-title" tabindex="-1">Збереження тез не підтвердилося</h1>
+              <div class="prose">
+                <p>Можливо, тези все ж потрапили у ваш щоденник — це видно у файлі щоденника. Тексту цієї розмови в Liora немає, і з цієї сторінки його прибрано.</p>
+              </div>
+              <ul class="arrows" role="list">
+                <li><a href="/api/v1/export?format=md" download>Завантажити щоденник (.md)</a></li>
+              </ul>
             </div>
             <p class="quiet">Добре, що ви знайшли на це час. Якщо після розмови стало важче — <a href="tel:112">112</a>, <a href="tel:103">103</a> або <a href="https://howareu.com/hot-lines" target="_blank" rel="noopener noreferrer">гарячі лінії «Ти як?»<span class="visually-hidden"> (відкриється в новій вкладці)</span></a>.</p>
             <p class="screen__actions">
@@ -802,7 +815,8 @@
 
     <template data-confirm="end-no-theses">
       <h2 class="confirm__title" id="confirm-title">Завершити без тез?</h2>
-      <p>Текст розмови зникне з цієї сторінки. Ні тексту, ні тез у Liora не залишиться — лише технічні записи без тексту, про які сказано на екрані згоди. Скасувати це не можна.</p>
+      <p data-if="not-maybe-saved">Текст розмови зникне з цієї сторінки. Ні тексту, ні тез у Liora не залишиться — лише технічні записи без тексту, про які сказано на екрані згоди. Скасувати це не можна.</p>
+      <p data-if="maybe-saved">Текст розмови зникне з цієї сторінки. Збереження тез не підтвердилося: можливо, вони вже є у вашому щоденнику — це видно у файлі щоденника в меню «Акаунт». Скасувати це не можна.</p>
       <div class="confirm__actions">
         <button class="button button--danger" type="button" data-act="accept">Завершити</button>
         <button class="button button--secondary" type="button" data-act="back" data-focus>Назад</button>
@@ -811,7 +825,8 @@
 
     <template data-confirm="discard">
       <h2 class="confirm__title" id="confirm-title">Видалити тези?</h2>
-      <p>Liora їх не зберігала, тож повернути їх не вийде. Текст розмови теж зникне з цієї сторінки.</p>
+      <p data-if="not-maybe-saved">Liora їх не зберігала, тож повернути їх не вийде. Текст розмови теж зникне з цієї сторінки.</p>
+      <p data-if="maybe-saved">Збереження не підтвердилося: можливо, ці тези вже є у вашому щоденнику — це видно у файлі щоденника в меню «Акаунт». Чернетка й текст розмови зникнуть з цієї сторінки.</p>
       <div class="confirm__actions">
         <button class="button button--danger" type="button" data-act="accept">Видалити</button>
         <button class="button button--secondary" type="button" data-act="close" data-focus>Залишити</button>

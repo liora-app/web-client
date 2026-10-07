@@ -5,7 +5,7 @@
 
 import type { Model, State } from '../../core/state'
 import { fillLines } from '../dialogs'
-import { byEl, screenOf, setText } from '../dom'
+import { byEl, screenOf, setText, show } from '../dom'
 import { renderStatic } from '../transcript'
 import type { Screen } from './text'
 
@@ -13,18 +13,30 @@ type Crisis = Extract<State, { s: 'crisis' }>
 
 export function crisisScreen(): Screen {
   const root = screenOf('crisis')
+  const details = byEl<HTMLDetailsElement>('crisis-details', root)
+  const talk = byEl<HTMLOListElement>('crisis-talk', root)
+  let shown: Crisis['stale'] | null = null
   return {
     // A new conversation after the crisis: the old one leaves the page with the screen.
-    leave: () => byEl<HTMLOListElement>('crisis-talk', root).replaceChildren(),
+    leave() {
+      talk.replaceChildren()
+      shown = null
+    },
     render(model: Model, entered: boolean) {
-      if (!entered) return
       const { helplines, stale } = model.state as Crisis
-      setText(byEl('crisis-lead', root), helplines.message)
-      fillLines(byEl('crisis-lines', root), byEl('crisis-lines-block', root), helplines.lines)
-      setText(byEl('crisis-abroad', root), helplines.abroadText)
-      const details = byEl<HTMLDetailsElement>('crisis-details', root)
-      details.open = false
-      renderStatic(byEl<HTMLOListElement>('crisis-talk', root), stale, null)
+      if (entered) {
+        setText(byEl('crisis-lead', root), helplines.message)
+        fillLines(byEl('crisis-lines', root), byEl('crisis-lines-block', root), helplines.lines)
+        setText(byEl('crisis-abroad', root), helplines.abroadText)
+        details.open = false
+      }
+      // pagehide empties it (page/left): the contacts stay, the conversation does not wait in the
+      // bfcache.
+      if (entered || stale !== shown) {
+        shown = stale
+        renderStatic(talk, stale, null)
+        show(details, stale.length > 0)
+      }
     },
   }
 }

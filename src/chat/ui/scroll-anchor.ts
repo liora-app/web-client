@@ -75,19 +75,39 @@ export function createScrollAnchor(parts: AnchorParts): ScrollAnchor {
     return body.getBoundingClientRect().bottom
   }
 
+  /** Hides the pill. If it had the focus — pressed, or the page scrolled under it — the focus goes
+   *  on (I6: never on body): from the keyboard to the field, from a tap to the screen's h1, since
+   *  focusing the field inside a tap would pop the on-screen keyboard. */
+  const hide = (): void => {
+    if (jump.hidden) return
+    if (document.activeElement !== jump) {
+      show(jump, false)
+      return
+    }
+    let fromKeys = false
+    try {
+      fromKeys = jump.matches(':focus-visible')
+    } catch {
+      fromKeys = false
+    }
+    show(jump, false)
+    parts.focusAfterJump(fromKeys)?.focus({ preventScroll: true })
+  }
+
   const check = (): void => {
     frame = 0
     if (!ctx.shown || shownHeight(composer) === 0) {
-      show(jump, false)
+      hide()
       return
     }
     const bottom = lastBottom()
     if (bottom === null) {
-      show(jump, false)
+      hide()
       return
     }
     setText(jumpText, ctx.streaming ? 'Далі відповідь' : 'До кінця')
-    show(jump, bottom - 4 > composer.getBoundingClientRect().top)
+    if (bottom - 4 > composer.getBoundingClientRect().top) show(jump, true)
+    else hide()
   }
 
   const update = (): void => {
@@ -126,27 +146,25 @@ export function createScrollAnchor(parts: AnchorParts): ScrollAnchor {
     },
     update,
     jumpToEnd() {
-      // The pill hides under the focus it had (a tap focuses it too, on Android Chrome). From the
-      // keyboard focus goes on to the field; from a tap to the screen's h1, since focusing the
-      // field inside a tap would pop the on-screen keyboard.
-      const hadFocus = document.activeElement === jump
-      let fromKeys = false
-      try {
-        fromKeys = hadFocus && jump.matches(':focus-visible')
-      } catch {
-        fromKeys = false
-      }
+      // An instant jump: 'auto' would take the page's smooth scroll-behavior, the check right after
+      // would still see the pill needed, and it would hide later under the focus it had (a tap
+      // focuses it too, on Android Chrome). hide() hands that focus on either way.
       const last = talk.lastElementChild as HTMLElement | null
       const body = last?.querySelector<HTMLElement>('.said__body') ?? last
-      body?.scrollIntoView({ block: 'end', behavior: 'auto' })
+      try {
+        body?.scrollIntoView({ block: 'end', behavior: 'instant' })
+      } catch {
+        // An engine that does not know 'instant' (a WebIDL enum) throws; the plain call is instant.
+        body?.scrollIntoView(false)
+      }
       check()
-      if (hadFocus && jump.hidden) parts.focusAfterJump(fromKeys)?.focus({ preventScroll: true })
     },
     reset() {
       room = null
       if (frame !== 0) window.cancelAnimationFrame(frame)
       frame = 0
       ctx = { shown: false, streaming: false }
+      // The screen is going or starting over: its own focus rule applies, not the pill's.
       show(jump, false)
     },
   }

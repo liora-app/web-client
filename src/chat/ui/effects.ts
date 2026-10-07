@@ -4,7 +4,7 @@
 // so the server frees the LLM slot and nothing is kept.
 
 import type { Api } from '../core/api'
-import type { ApiError } from '../core/errors'
+import { clientError, type ApiError } from '../core/errors'
 import type { Action, Effect, Model } from '../core/state'
 import { anySignal, runTurn, type TurnOutcome } from '../core/turn'
 import type { Announcer } from './announcer'
@@ -173,9 +173,28 @@ export function createEffects(deps: EffectDeps): Effects {
       })
     }
     if (effect.delayMs > 0) {
-      const timer = window.setTimeout(go, effect.delayMs)
-      ctl.signal.addEventListener('abort', () => window.clearTimeout(timer), { once: true })
-      page.signal.addEventListener('abort', () => window.clearTimeout(timer), { once: true })
+      // The llm_busy countdown: said once at its start; the seconds on the screen are aria-hidden.
+      if (deps.model().state.s === 'summarizing') announcer.say(sayRetry(Math.max(1, Math.round(effect.delayMs / 1000))))
+      const pageSignal = page.signal
+      const stop = (): void => {
+        window.clearTimeout(timer)
+        ctl.signal.removeEventListener('abort', stop)
+        pageSignal.removeEventListener('abort', onPageHide)
+      }
+      // pagehide: the scheduled retry never goes. The reducer hears it as an aborted request, like a
+      // turn does, so a page restored from the bfcache offers «Скласти ще раз» instead of a
+      // countdown stuck at 0 s.
+      const onPageHide = (): void => {
+        stop()
+        if (summarize === ctl) summarize = null
+        dispatch({ type: 'summarize/fail', id: effect.id, error: clientError('aborted'), now: Date.now() })
+      }
+      const timer = window.setTimeout(() => {
+        stop()
+        go()
+      }, effect.delayMs)
+      ctl.signal.addEventListener('abort', stop, { once: true })
+      pageSignal.addEventListener('abort', onPageHide, { once: true })
     } else {
       go()
     }
@@ -325,11 +344,15 @@ export function createEffects(deps: EffectDeps): Effects {
         return
       case 'after':
         window.setTimeout(() => {
-          dispatch(effect.action)
-          if (effect.action.type === 'cooldown/end') {
-            const { state } = deps.model()
-            if (state.s === 'chat' && state.turn.p === 'idle') announcer.say(COOLDOWN_OVER)
-          }
+          const { action } = effect
+          const before = deps.model().state
+          dispatch(action)
+          if (action.type !== 'cooldown/end') return
+          // Only when this very countdown ended in this conversation: not in a new one, not on the
+          // theses (§4.3).
+          const ran = before.s === 'chat' && before.turn.p === 'cooldown' && before.turn.until === action.until
+          const { state } = deps.model()
+          if (ran && state.s === 'chat' && state.turn.p === 'idle') announcer.say(COOLDOWN_OVER)
         }, effect.ms)
         return
       case 'navigate':

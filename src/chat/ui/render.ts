@@ -1,7 +1,8 @@
 // Model → page (spec §9.1 render.ts). One section per State.s, `hidden` on the others. A new screen
 // closes every dialog and moves focus to its h1 (or to its banner, or — on a desktop new
-// conversation — into the message field), I6. Page attributes carry the screen and the presence,
-// never any text of the conversation (I1).
+// conversation — into the message field), I6. Within a screen, a control that hides once pressed
+// («Надіслати ще раз», «Спробувати ще раз»…) hands the focus on instead of dropping it on <body>.
+// Page attributes carry the screen and the presence, never any text of the conversation (I1).
 
 import type { GlControl } from '../../gl/core/boot'
 import type { PresenceHandle } from '../../gl/presence'
@@ -9,13 +10,14 @@ import type { SkyControl } from '../../ui/sky'
 import type { SoundControl } from '../../ui/sound'
 import { hasUserMessage, type Action, type Model, type State } from '../core/state'
 import { createDialogs, type Dialogs } from './dialogs'
-import { headingOf, setAttr, show } from './dom'
+import { finePointer, headingOf, setAttr, show } from './dom'
 import { createPresence, type PresenceView } from './presence'
 import { chatScreen, type ChatScreen } from './screens/chat'
 import { consentScreen } from './screens/consent'
 import { crisisScreen } from './screens/crisis'
 import {
   deletedScreen,
+  endedScreen,
   expiredScreen,
   fatalScreen,
   notInvitedScreen,
@@ -68,7 +70,7 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky 
     summarizing: summarizingScreen(),
     review,
     saved: savedScreen(),
-    ended: staticScreen,
+    ended: endedScreen(),
     'account-deleted': deletedScreen(),
     fatal: fatalScreen(),
   }
@@ -93,10 +95,38 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky 
     if (lastModel) syncSlot(lastModel)
   })
 
+  /** Where the focus goes when the control that had it went away within the screen (I6). */
+  const fallback = (model: Model): HTMLElement | null => {
+    const section = sections.get(model.state.s)!
+    if (model.state.s === 'chat') {
+      // The field on a desktop (on a phone it would pop the keyboard), else a block that replaced it.
+      const field = section.querySelector<HTMLElement>('textarea')
+      if (finePointer() && field !== null && field.isConnected && field.closest('[hidden]') === null) return field
+      const block = section.querySelector<HTMLElement>('[data-el="chat-block"]:not([hidden]) button:not([hidden])')
+      if (block !== null && block.closest('[hidden]') === null) return block
+    }
+    return headingOf(section) ?? main
+  }
+
+  /** Checked once the click handler and the effects are through: they may have placed the focus
+   *  themselves («Змінити» puts the text back into the field, «Прибрати» focuses «Повернути»). */
+  const keepFocus = (lost: Element | null): void => {
+    if (!(lost instanceof HTMLElement) || lost === document.body) return
+    queueMicrotask(() => {
+      if (lastModel === null) return
+      if (lost.isConnected && lost.closest('[hidden]') === null) return
+      const active = document.activeElement
+      if (active !== null && active !== document.body && active !== lost) return
+      if (dialogs.focusTop()) return
+      fallback(lastModel)?.focus({ preventScroll: true })
+    })
+  }
+
   const render = (model: Model, prev: Model | null): void => {
     lastModel = model
     const s = model.state.s
     const changed = prev === null || prev.state.s !== s
+    const focused = document.activeElement
     if (changed) {
       // The screen being left lets go of the conversation first — the answer in progress and its
       // scheduled write before anything else (I3, §5.7) — then the new one shows.
@@ -119,7 +149,8 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky 
       // The help contacts always stand on the night sky (§9.2).
       sky?.setSuppressed(s === 'crisis')
     }
-    const signedIn = model.ctx.me !== null && s !== 'signed-out' && s !== 'account-deleted' && s !== 'booting'
+    // «Акаунт» only with a live session: not after a 401 either (§8.1).
+    const signedIn = model.ctx.me !== null && s !== 'signed-out' && s !== 'account-deleted' && s !== 'booting' && s !== 'session-expired'
     show(account, signedIn)
     setAttr(help, 'aria-current', s === 'crisis' ? 'true' : null)
 
@@ -128,10 +159,14 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky 
     presence.sync(model, dialogs.helpOpen())
     syncSlot(model)
 
-    if (changed && s !== 'booting') {
+    // The first paint keeps the browser's focus; any later screen takes it — `booting` again (after
+    // «Спробувати ще раз», say) has no h1, so <main> holds it until the next screen (I6).
+    if (changed && (s !== 'booting' || prev !== null)) {
       const section = sections.get(s)!
-      const target = screens[s].focusTarget?.(model) ?? headingOf(section)
-      target?.focus()
+      const target = screens[s].focusTarget?.(model) ?? headingOf(section) ?? main
+      target.focus()
+    } else if (!changed) {
+      keepFocus(focused)
     }
   }
 
