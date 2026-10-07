@@ -17,7 +17,16 @@ import {
 } from '../../src/chat/core/api'
 import { countryName } from '../../src/chat/core/country'
 import { codeForStatus, fromResponse, outcomeUnknown, retryAfterMs, toUiError, type ApiError } from '../../src/chat/core/errors'
-import { FALLBACK, FALLBACK_ABROAD, FALLBACK_MESSAGE, HOWAREU_URL, sanitizeHelplines } from '../../src/chat/core/helplines'
+import {
+  FALLBACK,
+  FALLBACK_ABROAD,
+  FALLBACK_MESSAGE,
+  HOWAREU_URL,
+  PAUSED_LINE_NOTE,
+  maskPausedLine,
+  noPausedLine,
+  sanitizeHelplines,
+} from '../../src/chat/core/helplines'
 import {
   MAX_CONTENT,
   MAX_QUERY,
@@ -59,7 +68,8 @@ import {
 import type { ConsentState, ScenarioOut, SummaryCreate, SummaryList, SummaryOut, TurnRequest } from '../../src/chat/core/types'
 // UI modules whose logic needs no DOM to load: what they decide is tested here, the page in CI.
 import { CLEAR_AFTER_MS, createAnnouncer, type Region } from '../../src/chat/ui/announcer'
-import { sayRetry } from '../../src/chat/ui/copy'
+import { conversationText, thesesText } from '../../src/chat/ui/clipboard'
+import { sayAnswer, sayRetry } from '../../src/chat/ui/copy'
 import { KEYBOARD_DROP, keyboardInset, keyboardShown } from '../../src/chat/ui/keyboard'
 import { SKY_KEY, parseSky, skyAttribute } from '../../src/ui/sky'
 
@@ -899,6 +909,122 @@ test.describe('helplines', () => {
     expect(JSON.stringify(safe)).not.toMatch(/[\u202A-\u202E\u2066-\u2069\u200E\u200F\u061C]/)
   })
 
+  test('digits other than 0-9, right-to-left letters and a Cyrillic «З» for a 3 drop the text: message, name, hours, abroad.text', () => {
+    // Code points and escapes only, never the characters themselves.
+    const arabic = [...PAUSED].map((d) => String.fromCodePoint(0x0660 + Number(d))).join('')
+    const dingbats = [...PAUSED].map((d) => String.fromCodePoint(0x2775 + Number(d))).join('')
+    const ze = PAUSED.slice(0, 3) + '\u{0417}'
+    const zeApart = PAUSED.slice(0, 1) + ' \u{0437}\u{0437}\u{0437}'
+    // Beside a right-to-left letter «333 7» is drawn as «7 333»; its digits, in order, are not the number.
+    const rtl = '\u{05D0} ' + PAUSED.slice(1) + ' ' + PAUSED.slice(0, 1)
+    expect(noPausedLine(rtl)).toBe(true)
+    // Not even the number: any digit outside 0-9 is a number the checks cannot vouch for.
+    const otherDigits = String.fromCodePoint(0x2776, 0x2777)
+    for (const trick of [arabic, dingbats, ze, zeApart, rtl, otherDigits]) {
+      const safe = sanitizeHelplines({
+        message: `Синтетичний лід ${trick}`,
+        lines: [
+          { name: `Лінія ${trick}`, phone: '0 800 00 00 12', hours: null, free: true },
+          { name: 'Синтетична лінія з годинами', phone: '0 800 00 00 13', hours: `до ${trick}`, free: true },
+          { name: 'Звичайна синтетична лінія', phone: '0 800 00 00 14', hours: 'цілодобово', free: true },
+        ],
+        abroad: { text: `За кордоном: ${trick}` },
+      })
+      expect(safe.lines.map((l) => l.name), JSON.stringify(trick)).toEqual(['Звичайна синтетична лінія'])
+      expect(safe.message, JSON.stringify(trick)).toBe(FALLBACK_MESSAGE)
+      expect(safe.abroadText, JSON.stringify(trick)).toBe(FALLBACK_ABROAD)
+    }
+    // «з» inside words, and the preposition with no digit beside it, drop nothing.
+    const plain = sanitizeHelplines({
+      message: 'Лінія працює 24/7. Зверніться зараз, з будь-яким питанням.',
+      lines: [{ name: 'Синтетична лінія звʼязку', phone: '0 800 00 00 15', hours: 'з 9:00 до 18:00', free: true }],
+      abroad: { text: 'За кордоном зверніться до 112.' },
+    })
+    expect(plain.message).toBe('Лінія працює 24/7. Зверніться зараз, з будь-яким питанням.')
+    expect(plain.lines.map((l) => l.hours)).toEqual(['з 9:00 до 18:00'])
+    expect(plain.abroadText).toBe('За кордоном зверніться до 112.')
+  })
+
+  test('maskPausedLine: every spelling of the paused number in the AI’s text is masked; other numbers and words stay', () => {
+    const [a, b, c, d] = [...PAUSED] as [string, string, string, string]
+    const fullwidth = [...PAUSED].map((x) => String.fromCodePoint(0xff10 + Number(x))).join('')
+    const arabic = [...PAUSED].map((x) => String.fromCodePoint(0x0660 + Number(x))).join('')
+    const dingbats = [...PAUSED].map((x) => String.fromCodePoint(0x2775 + Number(x))).join('')
+    const N = PAUSED_LINE_NOTE
+    const cases: readonly (readonly [string, string])[] = [
+      [`Дзвоніть ${PAUSED}.`, `Дзвоніть ${N}.`],
+      [`${a} ${b}${c}${d}`, N],
+      [`${a}-${b}-${c}-${d}`, N],
+      [`${a} - ${b}${c}${d}`, N],
+      [`${a}.${b}${c}.${d}`, N],
+      [`${a}\u{200B}${b}${c}${d}`, N],
+      [fullwidth, N],
+      [arabic, N],
+      [dingbats, N],
+      [`${a}${b}${c}\u{0417}`, N],
+      [`${a} \u{0437}\u{0437}\u{0437}`, N],
+      [`(${PAUSED})`, `(${N})`],
+      // Inside a spaced longer number too: a mask too many costs less than the number on the screen.
+      [`0 800 ${PAUSED}`, `0 800 ${N}`],
+      [`${PAUSED}, 112 або 103`, `${N}, 112 або 103`],
+      [`${PAUSED} ${PAUSED}`, `${N} ${N}`],
+    ]
+    for (const [text, want] of cases) expect(maskPausedLine(text), JSON.stringify(text)).toBe(want)
+    // An unbroken longer number is another number (decided: a digit group is never split); a time,
+    // a comma, a line break or a word end the number; «з» in a word is a letter.
+    const kept = [
+      `1${PAUSED}`,
+      `${PAUSED}1`,
+      `${PAUSED}${PAUSED}`,
+      `${a}${b}${c} зараз`,
+      `${a}${b}:${c}${d}`,
+      `${a}${b}${c},${d}`,
+      `${a}${b}${c}\n\n${d}`,
+      'Зверніться зараз, з будь-яким питанням: 112 або 103.',
+    ]
+    for (const text of kept) expect(maskPausedLine(text), JSON.stringify(text)).toBe(text)
+    // The note itself has no digits: masking twice changes nothing.
+    expect(N).not.toMatch(/\p{N}/u)
+    expect(maskPausedLine(`Номер ${PAUSED}`)).toBe(maskPausedLine(maskPausedLine(`Номер ${PAUSED}`)))
+  })
+
+  test('a number split across tokens: masking the whole answer at every write catches it once its last digit is in', () => {
+    const tokens = ['Можна подзвонити на ', PAUSED.slice(0, 1), PAUSED.slice(1, 2) + ' ', PAUSED.slice(2, 3), PAUSED.slice(3) + ' — або 112.']
+    let partial = ''
+    const writes: string[] = []
+    for (const t of tokens) {
+      partial += t
+      writes.push(maskPausedLine(partial))
+    }
+    expect(partial).toContain(PAUSED.slice(0, 2) + ' ' + PAUSED.slice(2))
+    expect(writes.at(-1)).toBe(`Можна подзвонити на ${PAUSED_LINE_NOTE} — або 112.`)
+    for (const w of writes) expect(w.replace(/\D/g, '')).not.toContain(PAUSED)
+  })
+
+  test('the live region and the copied text carry the masked AI text; the person’s own words stay as written', () => {
+    const now = new Date('2026-10-07T12:00:00Z')
+    expect(sayAnswer(`Номер ${PAUSED}.`)).toBe(`Відповідь AI: Номер ${PAUSED_LINE_NOTE}.`)
+    const talk = conversationText(
+      [
+        { role: 'assistant', content: `Спробуйте ${PAUSED}.` },
+        { role: 'user', content: 'Синтетична відповідь людини.' },
+      ],
+      null,
+      now,
+    )
+    expect(talk).toContain(`AI: Спробуйте ${PAUSED_LINE_NOTE}.`)
+    expect(talk).toContain('Ви: Синтетична відповідь людини.')
+    expect(talk).not.toContain(PAUSED)
+    const draft: Draft = {
+      title: `Тема ${PAUSED}`,
+      bullets: [{ id: 'b0', text: `Теза про ${PAUSED}`, removed: false }],
+      tags: [{ id: 't0', name: `день ${PAUSED}`, source: 'user' }],
+    }
+    const theses = thesesText(draft, now)
+    expect(theses).not.toContain(PAUSED)
+    expect(theses).toContain(`01 — Теза про ${PAUSED_LINE_NOTE}`)
+  })
+
   test('112, 103 and the howareu link are constants; abroad.url and emergency are never read', () => {
     const safe = sanitizeHelplines(RAW_HELPLINES)
     expect(safe.howareuUrl).toBe(HOWAREU_URL)
@@ -1603,6 +1729,25 @@ test.describe('state: theses', () => {
     for (const error of [apiError(502, 'llm_failed'), apiError(0, 'timeout'), apiError(422, 'validation_error'), apiError(413, 'payload_too_large')]) {
       expect(run(model, { type: 'summarize/fail', id, now: NOW, error }).model.state).toMatchObject({ s: 'summarizing', error: { code: error.code } })
     }
+  })
+
+  test('the AI’s theses arrive masked: the draft shows, copies and saves no paused number; a tag that spells it goes', () => {
+    const { model, effects } = summarizing()
+    const { id } = summarizeFx(effects)
+    const spaced = PAUSED.slice(0, 1) + ' ' + PAUSED.slice(1)
+    const review = run(model, {
+      type: 'summarize/ok',
+      id,
+      draft: { title: `Дзвінок на ${PAUSED}`, bullets: ['перша', `Номер ${spaced} не відповів.`], tags: ['день', PAUSED, `лінія ${PAUSED}`] },
+    }).model
+    expect(review.state.s).toBe('review')
+    const draft = (review.state as Extract<State, { s: 'review' }>).draft
+    expect(draft.title).toBe(`Дзвінок на ${PAUSED_LINE_NOTE}`)
+    expect(draft.bullets.map((b) => b.text)).toEqual(['перша', `Номер ${PAUSED_LINE_NOTE} не відповів.`])
+    expect(draft.tags.map((t) => t.name)).toEqual(['день'])
+    const save = run(review, { type: 'review/save' })
+    const body = (save.effects.find((e) => e.type === 'save') as Extract<Effect, { type: 'save' }>).body
+    expect(JSON.stringify(body)).not.toContain(PAUSED)
   })
 
   test('I2: no second summarize beside the scheduled llm_busy retry; after a 429 only once the countdown is over', () => {

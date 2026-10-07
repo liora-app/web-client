@@ -10,7 +10,7 @@
 
 import { GOOGLE_START, grantBody, summarizeBody, turnBody } from './api'
 import { DEFAULT_BUSY_RETRY_MS, outcomeUnknown, toUiError, uiError, type ApiError, type UiError } from './errors'
-import { FALLBACK, type SafeHelplines } from './helplines'
+import { FALLBACK, maskPausedLine, type SafeHelplines } from './helplines'
 import {
   MAX_CONTENT,
   MAX_QUERY,
@@ -932,6 +932,17 @@ function saved(model: Model, summary: SummaryOut): Step {
   ]
 }
 
+/** The theses as the AI drafted them, the paused number masked: the draft is what the page shows,
+ *  copies and saves. A tag that spells it goes — a tag names a topic, and the note would not fit
+ *  the 40 code points of one. */
+function maskedDraft(out: SummaryDraftOut): SummaryDraftOut {
+  return {
+    title: maskPausedLine(out.title),
+    bullets: out.bullets.map(maskPausedLine),
+    tags: out.tags.filter((tag) => maskPausedLine(tag) === tag),
+  }
+}
+
 function ended(model: Model, effects: readonly Effect[] = NONE): Step {
   return [{ ...model, state: { s: 'ended' } }, [...effects, { type: 'announcer/clear' }]]
 }
@@ -1366,7 +1377,7 @@ function step(model: Model, action: Action): Step {
         s: 'review',
         session: state.session,
         pending: state.pending,
-        draft: draftFromOut(action.draft),
+        draft: draftFromOut(maskedDraft(action.draft)),
         saving: 'idle',
         error: null,
         issues: [],

@@ -6,7 +6,7 @@
 
 import type { BrowserContext, Locator, Page, TestInfo } from '@playwright/test'
 import { uiError } from '../../src/chat/core/errors'
-import { FALLBACK_ABROAD, FALLBACK_MESSAGE } from '../../src/chat/core/helplines'
+import { FALLBACK_ABROAD, FALLBACK_MESSAGE, PAUSED_LINE_NOTE } from '../../src/chat/core/helplines'
 import type { AuthCode } from '../../src/chat/core/state'
 import {
   BUSY_NOW,
@@ -41,6 +41,7 @@ import {
   FORBIDDEN,
   KINDS,
   ME,
+  PAUSED,
   RAW_HELPLINES,
   REPLY,
   REPLY_TEXT,
@@ -214,6 +215,27 @@ test.describe('turn', () => {
 
     if (isDesktop(testInfo)) await expect(composer(page)).toBeFocused()
     await storageAudit(page, USER, consoleLines)
+  })
+
+  test('#2b the paused number in a reply: masked while it streams split across tokens, in the history and in the live region', async ({ page }) => {
+    const stream = await streamTurns(page)
+    await openChat(page)
+    await send(page, USER)
+    await stream.requests(1)
+    const reply = aiMessages(page).nth(1).locator('.said__text')
+    // Two tokens in: three digits, which are not the number yet.
+    await stream.write(meta() + token(`Можна подзвонити на ${PAUSED.slice(0, 1)}`) + token(`${PAUSED.slice(1, 2)} ${PAUSED.slice(2, 3)}`))
+    await expect(reply).toHaveText(`Можна подзвонити на ${PAUSED.slice(0, 2)} ${PAUSED.slice(2, 3)}`)
+    // The last digit comes in its own token: the answer so far is masked as a whole.
+    await stream.write(token(`${PAUSED.slice(3)}, але найперше — 112.`))
+    const masked = `Можна подзвонити на ${PAUSED_LINE_NOTE}, але найперше — 112.`
+    await expect(reply).toHaveText(masked)
+    expect((await markup(page)).includes(PAUSED)).toBe(false)
+    await stream.write(done())
+    await answered(page, 1)
+    await expect(reply).toHaveText(masked)
+    await expect.poll(async () => (await announced(page)).includes(`Відповідь AI: ${masked}`)).toBe(true)
+    expect((await announced(page)).some((text) => text.includes(PAUSED))).toBe(false)
   })
 
   test('#2 ★ «: ping» before meta, between tokens and before done changes nothing', async ({ page, api }) => {

@@ -2,6 +2,7 @@
 // deleted, no connection (spec §3.3, §3.4, §3.8, §3.9, §7.5, §7.6, §8.5). Their copy is static in
 // chat/index.html; here only what comes from the state or the API is filled in.
 
+import { maskPausedLine } from '../../core/helplines'
 import type { Model, State } from '../../core/state'
 import { hasUserMessage } from '../../core/state'
 import { accountOpError, longDateTime, requestIdLine, signInBanner, stillSignedIn } from '../copy'
@@ -133,7 +134,8 @@ export function savedScreen(): Screen {
       if (!entered) return
       const { summary } = model.state as On<'saved'>
       setText(byEl('saved-date', root), longDateTime(summary.created_at))
-      setText(byEl('saved-title', root), summary.title)
+      // The record as saved; the AI drafted it, so the paused number is masked here too.
+      setText(byEl('saved-title', root), maskPausedLine(summary.title))
       const list = byEl('saved-bullets', root)
       list.replaceChildren()
       summary.bullets.forEach((bullet, i) => {
@@ -143,12 +145,12 @@ export function savedScreen(): Screen {
         index.setAttribute('aria-hidden', 'true')
         index.textContent = String(i + 1).padStart(2, '0')
         const text = document.createElement('p')
-        text.textContent = bullet
+        text.textContent = maskPausedLine(bullet)
         li.append(index, text)
         list.append(li)
       })
       const tags = byEl('saved-tags', root)
-      setText(tags, summary.tags.map((t) => `#${t.name}`).join(' '))
+      setText(tags, summary.tags.map((t) => `#${maskPausedLine(t.name)}`).join(' '))
       show(tags, summary.tags.length > 0)
     },
   }

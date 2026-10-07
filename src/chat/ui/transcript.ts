@@ -12,7 +12,11 @@
 //   On `done` the rest is written at once and the <li> becomes a confirmed message in place.
 // - Where the page scrolls is scroll-anchor.ts: the transcript only says what was sent and when
 //   text was written.
+// - The AI's text reaches the DOM only through shown(): the paused hotline number masked
+//   (core/helplines.ts). A streamed answer is masked as a whole on every write, so a number split
+//   across tokens is caught once its last digit is in.
 
+import { maskPausedLine } from '../core/helplines'
 import type { Msg, Pending } from '../core/state'
 import { busyWait, requestIdLine, turnError, waitLabel } from './copy'
 import { fromTemplate, setAttr, setText, show } from './dom'
@@ -82,6 +86,11 @@ function said(role: Msg['role']): { li: HTMLLIElement; text: Para } {
   return { li, text: { paras: [] } }
 }
 
+/** What a message shows: the person's own words as written, the AI's with the paused number masked. */
+function shown(role: Msg['role'], content: string): string {
+  return role === 'assistant' ? maskPausedLine(content) : content
+}
+
 function textBox(li: HTMLElement): HTMLElement {
   return li.querySelector<HTMLElement>('.said__text')!
 }
@@ -91,7 +100,7 @@ export function renderStatic(list: HTMLOListElement, messages: readonly Msg[], p
   list.replaceChildren()
   for (const m of messages) {
     const { li, text } = said(m.role)
-    writeText(textBox(li), text, m.content)
+    writeText(textBox(li), text, shown(m.role, m.content))
     list.append(li)
   }
   if (pending !== null) {
@@ -218,7 +227,7 @@ export class Transcript {
         text = this.streamText
         this.cancelFlush()
         // The screen keeps the whole answer even when the history keeps 4000 code points (§5.8).
-        writeText(textBox(li), text, this.target.length >= m.content.length ? this.target : m.content)
+        writeText(textBox(li), text, shown('assistant', this.target.length >= m.content.length ? this.target : m.content))
         li.classList.remove('said--streaming', 'said--waiting')
         setAttr(li, 'aria-busy', 'false')
         show(li.querySelector<HTMLElement>('.said__wait')!, false)
@@ -229,7 +238,7 @@ export class Transcript {
         const fresh = said(m.role)
         li = fresh.li
         text = fresh.text
-        writeText(textBox(li), text, m.content)
+        writeText(textBox(li), text, shown(m.role, m.content))
         // Before the pending message, so the order stays: history, then what is still on its way.
         const before = this.pendingLi?.isConnected ? this.pendingLi : this.streamLi?.isConnected ? this.streamLi : null
         if (before) this.list.insertBefore(li, before)
@@ -422,7 +431,8 @@ export class Transcript {
   private flush(): void {
     this.scheduled = null
     if (this.streamLi === null) return
-    writeText(textBox(this.streamLi), this.streamText, this.target)
+    // The whole answer so far, masked: digits that came in separate tokens are one number here.
+    writeText(textBox(this.streamLi), this.streamText, shown('assistant', this.target))
     this.hooks.onWrite?.()
     if (this.target === '') return
     const now = performance.now()

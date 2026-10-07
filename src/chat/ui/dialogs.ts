@@ -13,7 +13,7 @@
 
 import type { Action, Model, Overlay, PickOverlay } from '../core/state'
 import { hasReply, hasUserMessage, leaveGuard, pendingOf, sessionOf } from '../core/state'
-import type { SafeLine } from '../core/helplines'
+import { maskPausedLine, type SafeLine } from '../core/helplines'
 import { accountOpError, dayMonth, requestIdLine, shortDate } from './copy'
 import { allEl, byEl, fromTemplate, headingOf, setAttr, setText, show } from './dom'
 
@@ -240,10 +240,11 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
         const input = li.querySelector<HTMLInputElement>('.pick__input')!
         input.dataset.act = 'revisit-toggle'
         input.dataset.id = item.id
-        setText(li.querySelector('.pick__title')!, item.title)
-        const tags = item.tags.map((t) => `#${t.name}`).join(' ')
+        // Records the AI drafted: the paused number masked, as everywhere the AI's text is shown.
+        setText(li.querySelector('.pick__title')!, maskPausedLine(item.title))
+        const tags = item.tags.map((t) => `#${maskPausedLine(t.name)}`).join(' ')
         setText(li.querySelector('.pick__meta')!, [dayMonth(item.created_at), tags].filter((x) => x !== '').join(' · '))
-        setText(li.querySelector('.pick__first')!, item.bullets[0] ?? '')
+        setText(li.querySelector('.pick__first')!, maskPausedLine(item.bullets[0] ?? ''))
         list.append(li)
       }
     }

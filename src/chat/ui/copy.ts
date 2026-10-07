@@ -3,6 +3,7 @@
 // the server's English `error.message` never reaches the page (spec §4.1).
 
 import type { UiError } from '../core/errors'
+import { maskPausedLine } from '../core/helplines'
 import type { AuthCode, AuthNotice } from '../core/state'
 import type { ScenarioId, ScenarioOut } from '../core/types'
 
@@ -337,7 +338,8 @@ export const PRESENCE_LABEL: Readonly<Record<Presence, string>> = {
 
 export const SAY_THINKING = 'AI думає над відповіддю'
 export const SAY_STOPPED = 'Відповідь зупинено'
-export const sayAnswer = (text: string): string => `Відповідь AI: ${text}`
+/** The answer read out once it is in — with the paused number masked, as on the screen. */
+export const sayAnswer = (text: string): string => `Відповідь AI: ${maskPausedLine(text)}`
 const plural = new Intl.PluralRules('uk')
 const SECONDS: Readonly<Record<string, string>> = { one: 'секунду', few: 'секунди', many: 'секунд', other: 'секунди' }
 /** «через 1 секунду», «через 3 секунди», «через 5 секунд», «через 22 секунди». */
