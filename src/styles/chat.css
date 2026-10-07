@@ -242,6 +242,13 @@ html[data-slot='still'] .presence .orb {
   visibility: visible;
 }
 
+/* «Чекає на ваше повідомлення» is true only where the person can write (or the AI works): not on
+   sign-in, not-invited, consent, the theses being edited, ended, fatal, a deleted account or an
+   ended session. The line keeps its place, so nothing moves. Specificity (0,2,1) over --on. */
+html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summarizing'], [data-screen='saved'], [data-screen='crisis'])) .presence__state {
+  visibility: hidden;
+}
+
 /* Phone: the light above the text — 200 px in a new conversation, 160 px on text screens; gone in a
    running conversation (a 32 px CSS orb in the session row) and in the crisis (numbers first). */
 @media (max-width: 63.99em) {
@@ -306,6 +313,14 @@ html[data-slot='still'] .presence .orb {
 /* ---------- Screens ---------- */
 
 .screen {
+  display: grid;
+  gap: clamp(1rem, 2.2vh, 1.4rem);
+  align-content: start;
+}
+
+/* A variant of a screen (not-invited with or without a session, ended): its parts keep the
+   screen's own rhythm. The variant not in use is [hidden]. */
+.screen__part {
   display: grid;
   gap: clamp(1rem, 2.2vh, 1.4rem);
   align-content: start;
@@ -409,13 +424,15 @@ html[data-slot='still'] .presence .orb {
   border-left: 2px solid var(--color-light);
 }
 
-.banner:focus {
+/* Focused by the page (tabindex="-1", never by Tab), like a screen's h1: no ring, no card around a
+   calm notice (§3.3). Its own line only gets brighter. */
+.banner:focus,
+.banner:focus-visible {
   outline: none;
 }
 
 .banner:focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 4px;
+  border-left-color: var(--color-light-strong);
 }
 
 .banner__label {
@@ -1000,6 +1017,14 @@ html[data-slot='still'] .presence .orb {
   scroll-margin-top: 0.5rem;
 }
 
+/* Phone: a narrower column for «AI» / «Ви», more room for the text (§3.7.2). */
+@media (max-width: 63.99em) {
+  .said {
+    grid-template-columns: 2rem minmax(0, 1fr);
+    column-gap: 0.625rem;
+  }
+}
+
 .said + .said {
   margin-top: 1.25rem;
 }
@@ -1346,6 +1371,15 @@ html[data-screen='chat'] .chat__text {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--color-text-dim);
+}
+
+/* The disclosure breaks only at «·»: «не терапія» never splits into «не» and a lone «терапія». */
+.composer__ai {
+  text-wrap: balance;
+}
+
+.composer__ai span {
+  white-space: nowrap;
 }
 
 .composer__keys {
@@ -1767,6 +1801,13 @@ html[data-kb] .composer__keys {
   field-sizing: content;
 }
 
+/* The field grows by itself where it can: no resize grip then (§7.2). */
+@supports (field-sizing: content) {
+  .thesis__input {
+    resize: none;
+  }
+}
+
 .thesis__remove {
   display: grid;
   place-items: center;
@@ -1817,6 +1858,7 @@ html[data-kb] .composer__keys {
   display: inline-flex;
   align-items: center;
   gap: 0.15rem;
+  max-width: 100%;
   min-height: 2.25rem;
   padding: 0 0.2rem 0 0.85rem;
   border: 1px solid var(--color-line-strong);
@@ -1826,11 +1868,18 @@ html[data-kb] .composer__keys {
   color: var(--color-text-soft);
 }
 
+/* A 40-character tag without a space still wraps inside the pill at 320 px (SC 1.4.10). */
+.tagpill__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .tagpill--invalid {
   border-color: var(--color-light);
 }
 
 .tagpill__remove {
+  flex: none;
   display: grid;
   place-items: center;
   width: 2rem;
@@ -1914,6 +1963,7 @@ html[data-kb] .composer__keys {
   font-size: 1.375rem;
   font-weight: 600;
   line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .record__bullets {
@@ -2189,6 +2239,7 @@ html[data-kb] .composer__keys {
 .pick__title {
   font-size: 1.0625rem;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .pick__meta {
