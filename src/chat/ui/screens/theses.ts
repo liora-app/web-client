@@ -294,5 +294,14 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
         focusId = null
       }
     },
+    // Saved, ended, signed out…: the draft leaves the hidden section too. Coming back (after a
+    // consent, say) renders it again from the state.
+    leave() {
+      last = null
+      title.value = ''
+      tagInput.value = ''
+      bullets.replaceChildren()
+      tags.replaceChildren()
+    },
   }
 }

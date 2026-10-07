@@ -14,6 +14,9 @@ export type Screen = Readonly<{
   render(model: Model, entered: boolean): void
   /** What to focus on entering the screen instead of its h1 (a banner). */
   focusTarget?(model: Model): HTMLElement | null
+  /** The page moves to another screen (`next`): before that one renders, this one lets go of
+   *  whatever text of the conversation it holds, so a hidden section keeps none of it. */
+  leave?(next: Model): void
 }>
 
 // ── signed-out ──
@@ -80,6 +83,7 @@ export function notInvitedScreen(): Screen {
       const opText = op !== null && op.error !== null && op.name === 'logout' && model.overlay.length === 0 ? accountOpError(op.name, op.error).why : ''
       setText(byEl('ni-op-error', root), opText)
     },
+    leave: () => talk.replaceChildren(),
   }
 }
 
@@ -96,6 +100,7 @@ export function expiredScreen(): Screen {
       copy.dataset.act = state.draft !== null ? 'copy-theses' : 'copy'
       if (entered) renderStatic(talk, state.stale.messages, state.pending)
     },
+    leave: () => talk.replaceChildren(),
   }
 }
 

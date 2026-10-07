@@ -57,6 +57,10 @@ import {
   type TurnProgress,
 } from '../../src/chat/core/turn'
 import type { ConsentState, ScenarioOut, SummaryCreate, SummaryList, SummaryOut, TurnRequest } from '../../src/chat/core/types'
+// UI modules whose logic needs no DOM to load: what they decide is tested here, the page in CI.
+import { CLEAR_AFTER_MS, createAnnouncer, type Region } from '../../src/chat/ui/announcer'
+import { KEYBOARD_DROP, keyboardInset, keyboardShown } from '../../src/chat/ui/keyboard'
+import { SKY_KEY, parseSky, skyAttribute } from '../../src/ui/sky'
 
 test.beforeEach(({}, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'pure core tests: one project is enough')
@@ -2012,6 +2016,172 @@ test.describe('state: account and page life', () => {
   })
 })
 
+// ── UI decisions without a page: the live region, the keyboard, the sky ─────────────────────────
+
+/** Timers that run only when told to; the region records every non-empty write (test #42). */
+function liveRegion() {
+  let now = 0
+  let seq = 0
+  const timers = new Map<number, { at: number; fn: () => void }>()
+  const writes: string[] = []
+  let text: string | null = ''
+  const region: Region = {
+    get textContent() {
+      return text
+    },
+    set textContent(value) {
+      text = value
+      if (value) writes.push(value)
+    },
+  }
+  return {
+    region,
+    writes,
+    text: () => text,
+    timers: {
+      setTimeout: (fn: () => void, ms: number): number => {
+        timers.set(++seq, { at: now + ms, fn })
+        return seq
+      },
+      clearTimeout: (handle: number) => {
+        timers.delete(handle)
+      },
+    },
+    advance(ms: number) {
+      const end = now + ms
+      for (;;) {
+        const next = [...timers.entries()].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0]
+        if (next === undefined) break
+        timers.delete(next[0])
+        now = next[1].at
+        next[1].fn()
+      }
+      now = end
+    },
+    pending: () => timers.size,
+  }
+}
+
+test.describe('announcer', () => {
+  test('a turn writes at most twice: the first progress line and the end; the rest is dropped', () => {
+    const live = liveRegion()
+    const announcer = createAnnouncer(live.region, live.timers)
+    announcer.turn()
+    announcer.progress('Пробуємо ще раз через 5 секунд')
+    announcer.progress('AI думає над відповіддю')
+    announcer.progress('Пробуємо ще раз через 5 секунд')
+    announcer.final('Відповідь AI: Привіт.')
+    announcer.final('Відповідь зупинено')
+    announcer.progress('AI думає над відповіддю')
+    expect(live.writes).toEqual(['Пробуємо ще раз через 5 секунд', 'Відповідь AI: Привіт.'])
+
+    // The next turn has its own two.
+    announcer.turn()
+    announcer.final('Не надіслано. Сервер зараз не відповідає.')
+    expect(live.writes).toHaveLength(3)
+    // One-off announcements outside a turn are not counted against it.
+    announcer.say('Можна надіслати ще раз')
+    expect(live.writes.at(-1)).toBe('Можна надіслати ще раз')
+  })
+
+  test('nothing before a turn starts; a turn without progress still says how it ended', () => {
+    const live = liveRegion()
+    const announcer = createAnnouncer(live.region, live.timers)
+    announcer.progress('AI думає над відповіддю')
+    announcer.final('Відповідь зупинено')
+    expect(live.writes).toEqual([])
+    announcer.turn()
+    announcer.final('Відповідь AI: Так.')
+    expect(live.writes).toEqual(['Відповідь AI: Так.'])
+  })
+
+  test('the reply does not stay: emptied ≈ 5 s later, and at once on clear (a wipe), silently', () => {
+    const live = liveRegion()
+    const announcer = createAnnouncer(live.region, live.timers)
+    announcer.turn()
+    announcer.final('Відповідь AI: Довга відповідь.')
+    live.advance(CLEAR_AFTER_MS - 1)
+    expect(live.text()).toBe('Відповідь AI: Довга відповідь.')
+    live.advance(1)
+    expect(live.text()).toBe('')
+
+    announcer.say('Збережено в щоденник')
+    announcer.clear()
+    expect(live.text()).toBe('')
+    expect(live.pending()).toBe(0)
+    // Emptying is not a write (test #42 counts non-empty ones only).
+    expect(live.writes).toEqual(['Відповідь AI: Довга відповідь.', 'Збережено в щоденник'])
+  })
+
+  test('the same line twice in a row is emptied first, so it is heard again; blank lines are not written', () => {
+    const live = liveRegion()
+    const announcer = createAnnouncer(live.region, live.timers)
+    announcer.say('Можна надіслати ще раз')
+    announcer.say('Можна надіслати ще раз')
+    expect(live.text()).toBe('')
+    live.advance(100)
+    expect(live.text()).toBe('Можна надіслати ще раз')
+    expect(live.writes).toHaveLength(2)
+    announcer.say('   ')
+    expect(live.writes).toHaveLength(2)
+  })
+})
+
+test('keyboard: the inset is what the keyboard covers of the layout viewport; 150 px counts as a keyboard', () => {
+  // iOS Safari: the layout viewport keeps 844, the visual one is 508 under the keyboard.
+  expect(keyboardInset(844, 508, 0)).toBe(336)
+  // The visual viewport scrolled within the layout one: less of it is covered.
+  expect(keyboardInset(844, 508, 120.4)).toBe(216)
+  // Android Chrome with interactive-widget=resizes-content: both shrink, nothing to lift.
+  expect(keyboardInset(500, 500, 0)).toBe(0)
+  expect(keyboardInset(500, 520, 0)).toBe(0)
+  expect(KEYBOARD_DROP).toBe(150)
+  expect(keyboardShown(800, 650)).toBe(true)
+  expect(keyboardShown(800, 651)).toBe(false)
+  expect(keyboardShown(800, 800)).toBe(false)
+})
+
+test.describe('sky presets', () => {
+  test('only dusk and dawn are presets; anything else is the night, and the crisis is always the night', () => {
+    expect(SKY_KEY).toBe('liora:sky')
+    expect(parseSky('dusk')).toBe('dusk')
+    expect(parseSky('dawn')).toBe('dawn')
+    for (const other of [null, '', 'night', 'DUSK', 'noon', '{"sky":"dusk"}', 1]) expect(parseSky(other)).toBe('night')
+    expect(skyAttribute('night', false)).toBeNull()
+    expect(skyAttribute('dusk', false)).toBe('dusk')
+    expect(skyAttribute('dawn', false)).toBe('dawn')
+    expect(skyAttribute('dusk', true)).toBeNull()
+    expect(skyAttribute('dawn', true)).toBeNull()
+  })
+
+  test('no preset layer is lighter than the night: bases under its lightest base, each haze under its own', () => {
+    const css = readFileSync(resolve(test.info().project.testDir, '..', '..', 'src', 'styles', 'stage.css'), 'utf8')
+    const block = (selector: string): Record<string, number[]> => {
+      const start = css.indexOf(`${selector} {`)
+      expect(start, selector).toBeGreaterThanOrEqual(0)
+      const body = css.slice(start, css.indexOf('}', start))
+      return Object.fromEntries([...body.matchAll(/--(sky-[a-z-]+):\s*(\d+)\s+(\d+)\s+(\d+)/g)].map((m) => [m[1]!, [Number(m[2]), Number(m[3]), Number(m[4])]]))
+    }
+    const lin = (c: number): number => (c / 255 <= 0.03928 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4)
+    const lum = ([r, g, b]: number[]): number => 0.2126 * lin(r!) + 0.7152 * lin(g!) + 0.0722 * lin(b!)
+    const contrast = (a: number, b: number): number => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+    const BASES = ['sky-top', 'sky-mid', 'sky-bottom', 'sky-glow-teal', 'sky-glow-violet']
+    const HAZES = ['sky-haze-teal', 'sky-haze-violet', 'sky-haze-amber']
+
+    const night = block(':root')
+    expect(Object.keys(night).sort()).toEqual([...BASES, ...HAZES].sort())
+    const nightBase = Math.max(...BASES.map((k) => lum(night[k]!)))
+    // --color-text-dim on the night's lightest base: the margin the presets may not eat into.
+    expect(contrast(lum([132, 145, 141]), nightBase)).toBeGreaterThanOrEqual(4.5)
+    for (const preset of ['dusk', 'dawn']) {
+      const sky = block(`html[data-sky='${preset}']`)
+      expect(Object.keys(sky).sort(), preset).toEqual([...BASES, ...HAZES].sort())
+      for (const k of BASES) expect(lum(sky[k]!), `${preset} ${k}`).toBeLessThanOrEqual(nightBase)
+      for (const k of HAZES) expect(lum(sky[k]!), `${preset} ${k}`).toBeLessThanOrEqual(lum(night[k]!))
+    }
+  })
+})
+
 // ── Source rules that keep the CSP and the core honest (§10.5) ───────────────────────────────
 
 test.describe('source rules', () => {
@@ -2097,5 +2267,24 @@ test.describe('source rules', () => {
 
   test('the paused number is spelled nowhere in src', () => {
     expect(offenders(sources(''), new RegExp(PAUSED))).toEqual([])
+  })
+
+  test('sky presets: one module knows the key; the landing never reads it; /chat/ offers the three skies', () => {
+    const keyHolders = offenders(sources(''), /liora:sky/).map((o) => o.split(':')[0])
+    expect(keyHolders.every((p) => p === 'src/ui/sky.ts'), keyHolders.join(', ')).toBe(true)
+    const repo = resolve(test.info().project.testDir, '..', '..')
+    const landing = readFileSync(join(repo, 'src', 'main.ts'), 'utf8')
+    expect(landing).not.toMatch(/ui\/sky/)
+    expect(readFileSync(join(repo, 'index.html'), 'utf8')).not.toMatch(/data-sky|name="sky"/)
+    const chat = readFileSync(join(repo, 'chat', 'index.html'), 'utf8')
+    const radios = [...chat.matchAll(/<input[^>]*name="sky"[^>]*value="([a-z]+)"/g)].map((m) => m[1])
+    expect(radios).toEqual(['night', 'dusk', 'dawn'])
+    expect(chat).toContain('data-sky-pick')
+  })
+
+  test('page life lives in the leave guard: pagehide and pageshow are listened to in one place', () => {
+    const listeners = offenders(sources('chat'), /addEventListener\(\s*['"](?:pagehide|pageshow|beforeunload)['"]/).map((o) => o.split(':')[0])
+    expect(listeners.length).toBeGreaterThan(0)
+    expect(listeners.every((p) => p === 'src/chat/ui/leave-guard.ts'), listeners.join(', ')).toBe(true)
   })
 })

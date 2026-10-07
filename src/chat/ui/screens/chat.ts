@@ -1,8 +1,14 @@
 // The conversation screen (spec §3.6, §3.7): a new conversation with the scenario switch and «Не
 // зберігати», then the conversation with its session row, transcript and composer.
+//
+// Leaving the screen (any other State.s) empties its transcript — the answer in progress and its
+// scheduled write first (I3) — and takes the composer and the session row out of the DOM, not just
+// out of sight (§6.2: in the crisis there is no field to type into). They come back, the same
+// nodes, when the screen is entered again; the typed text survives only while the conversation
+// does (theses and back, a consent), not its end.
 
 import type { Action, ChatState, Model } from '../../core/state'
-import { canSendNow, hasReply, hasUserMessage, scenariosOf } from '../../core/state'
+import { canSendNow, hasReply, hasUserMessage, scenariosOf, sessionOf } from '../../core/state'
 import { LONG_CONVERSATION_MESSAGES, SERVER_TRIM_CODE_POINTS, canSend, totalCodePoints } from '../../core/limits'
 import type { ScenarioOut } from '../../core/types'
 import {
@@ -19,8 +25,9 @@ import {
   scenarioAbout,
   tooLong,
 } from '../copy'
-import { byEl, fromTemplate, screenOf, setAttr, setText, show } from '../dom'
+import { byEl, fromTemplate, headingOf, screenOf, setAttr, setText, show } from '../dom'
 import { createComposer, type Composer } from '../composer'
+import { createScrollAnchor } from '../scroll-anchor'
 import { Transcript, type StreamView } from '../transcript'
 import { authBanner, type Screen } from './text'
 import { fillProvider } from './consent'
@@ -34,7 +41,20 @@ export type ChatScreen = Screen &
     jumpToEnd(): void
   }>
 
-export function chatScreen(dispatch: (action: Action) => void, chrome: () => Readonly<{ top: number; bottom: number }>, onFlush: () => void): ChatScreen {
+/** A node that leaves the DOM and comes back to the same place (a comment marks the spot). */
+function detachable(node: HTMLElement): Readonly<{ detach(): void; attach(): void }> {
+  const marker = document.createComment(node.dataset.el ?? '')
+  return {
+    detach() {
+      if (node.isConnected) node.replaceWith(marker)
+    },
+    attach() {
+      if (!node.isConnected && marker.isConnected) marker.replaceWith(node)
+    },
+  }
+}
+
+export function chatScreen(dispatch: (action: Action) => void, onPulse: () => void): ChatScreen {
   const root = screenOf('chat')
   const el = <T extends HTMLElement = HTMLElement>(name: string): T => byEl<T>(name, root)
   const session = el('session')
@@ -44,11 +64,26 @@ export function chatScreen(dispatch: (action: Action) => void, chrome: () => Rea
   const line = el('chat-line')
   const block = el('chat-block')
   const status = el('composer-status')
-  const jump = el('jump')
+  const talk = el<HTMLOListElement>('talk')
   let scenarioKey = ''
   let lastModel: Model | null = null
 
-  const transcript = new Transcript(el<HTMLOListElement>('talk'), { onFlush, chromeHeights: chrome })
+  const anchor = createScrollAnchor({
+    header: document.querySelector<HTMLElement>('[data-header]')!,
+    session,
+    composer: el('composer'),
+    talk,
+    jump: el('jump'),
+    jumpText: el('jump-text'),
+    focusAfterJump: () => (composer.element.hidden ? headingOf(root) : root.querySelector<HTMLElement>('textarea')),
+  })
+  const transcript = new Transcript(talk, {
+    onPulse,
+    onWrite: () => anchor.update(),
+    onSent: (sent, answer) => anchor.sent(sent, answer),
+  })
+  const sessionSlot = detachable(session)
+  const composerSlot = detachable(el('composer'))
   const composer = createComposer(
     el('composer'),
     () => {
@@ -88,26 +123,6 @@ export function chatScreen(dispatch: (action: Action) => void, chrome: () => Rea
     return null
   }
 
-  const updateJump = (): void => {
-    const model = lastModel
-    if (model === null || model.state.s !== 'chat' || root.hidden) {
-      show(jump, false)
-      return
-    }
-    const talk = el('talk')
-    const lastItem = talk.lastElementChild as HTMLElement | null
-    if (lastItem === null) {
-      show(jump, false)
-      return
-    }
-    const composerTop = composer.element.hidden ? window.innerHeight : composer.element.getBoundingClientRect().top
-    const below = lastItem.getBoundingClientRect().bottom - 4 > composerTop
-    const streaming = model.state.turn.p === 'streaming'
-    setText(el('jump-text'), streaming ? 'Далі відповідь' : 'До кінця')
-    show(jump, below && hasUserMessage(model.state.session, model.state.pending))
-  }
-  window.addEventListener('scroll', updateJump, { passive: true })
-
   const screen: ChatScreen = {
     composer,
     transcript,
@@ -116,10 +131,19 @@ export function chatScreen(dispatch: (action: Action) => void, chrome: () => Rea
       if (state.s === 'chat' && state.pending?.status === 'sending' && state.pending.text === text) composer.clear()
     },
     jumpToEnd() {
-      const talk = el('talk')
-      const lastItem = talk.lastElementChild as HTMLElement | null
-      lastItem?.scrollIntoView({ block: 'end', behavior: 'auto' })
-      updateJump()
+      anchor.jumpToEnd()
+    },
+    leave(next) {
+      // On a phone the field may hold the keyboard open: let it close before the field goes.
+      const active = document.activeElement
+      if (active instanceof HTMLElement && root.contains(active)) active.blur()
+      transcript.reset()
+      anchor.reset()
+      sessionSlot.detach()
+      composerSlot.detach()
+      // The conversation is over (saved, ended, crisis, signed out…): so is what was typed for it.
+      if (sessionOf(next.state) === null) composer.clear()
+      lastModel = null
     },
     render(model, entered) {
       lastModel = model
@@ -129,7 +153,12 @@ export function chatScreen(dispatch: (action: Action) => void, chrome: () => Rea
       const started = hasUserMessage(s, state.pending)
       const scenarios = scenariosOf(ctx)
       const scenario = scenarios.find((x) => x.id === s.scenario) ?? scenarios[0]!
-      if (entered) transcript.reset()
+      if (entered) {
+        sessionSlot.attach()
+        composerSlot.attach()
+        transcript.reset()
+        anchor.reset()
+      }
 
       fillProvider(model, root)
       // «Новий вхід не відбувся…» stays over the new conversation it led to (§3.3).
@@ -216,7 +245,8 @@ export function chatScreen(dispatch: (action: Action) => void, chrome: () => Rea
       setText(status, statusText)
       show(status, statusText !== '')
 
-      updateJump()
+      // The «↓» pill: only once the person has written something (§3.7.6).
+      anchor.context({ shown: started, streaming: state.turn.p === 'streaming' })
     },
     focusTarget(model) {
       const state = model.state as ChatState

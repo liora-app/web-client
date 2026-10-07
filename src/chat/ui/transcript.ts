@@ -4,10 +4,14 @@
 //   new conversation (or a changed opening message) re-renders the list.
 // - Text goes in through textContent and Text.appendData only (I8), split into <p> on "\n\n".
 // - The answer being streamed is written once per frame (requestAnimationFrame), every 250 ms in a
-//   hidden tab, every 300 ms without motion. Its target is the state's `partial`; the DOM catches up.
-// - On any end but `done` (crisis, error, a cut stream before its retry, «Зупинити», pagehide) the
-//   scheduled write is cancelled and the answer's <li> leaves the DOM before anything else (I3).
+//   hidden tab (rAF stands still there, so a frame already asked for is swapped for the timer), every
+//   300 ms without motion. Its target is the state's `partial`; the DOM catches up.
+// - On any end but `done` (crisis, error, «Зупинити», pagehide, the screen leaving) the scheduled
+//   write is cancelled, the target emptied and the answer's <li> leaves the DOM before anything else
+//   (I3). A cut stream before its retry keeps the slot, but its text goes at once, not a frame later.
 //   On `done` the rest is written at once and the <li> becomes a confirmed message in place.
+// - Where the page scrolls is scroll-anchor.ts: the transcript only says what was sent and when
+//   text was written.
 
 import type { Msg, Pending } from '../core/state'
 import { busyWait, requestIdLine, turnError, waitLabel } from './copy'
@@ -41,10 +45,12 @@ type Para = { readonly paras: Text[] }
 type Item = Readonly<{ li: HTMLLIElement; role: Msg['role']; content: string; text: Para }>
 
 export type TranscriptHooks = Readonly<{
-  /** Every write of streamed text (the presence pulses with it, at most 4 times a second). */
-  onFlush?: () => void
-  /** Space the sticky layers take: header, session row, composer (scroll anchor, §3.7.6). */
-  chromeHeights?: () => Readonly<{ top: number; bottom: number }>
+  /** While text streams in, at most 4 times a second (the presence pulses with it, §5.7). */
+  onPulse?: () => void
+  /** After every write of streamed text and every sync of the list (the «↓» pill looks again). */
+  onWrite?: () => void
+  /** The person's message just went; the answer's slot, if there is one yet, stands under it. */
+  onSent?: (sent: HTMLLIElement, answer: HTMLLIElement | null) => void
 }>
 
 const LABEL: Readonly<Record<Msg['role'], string>> = { assistant: 'AI', user: 'Ви' }
@@ -116,8 +122,7 @@ export class Transcript {
   private waitSince = 0
   private waitKey = ''
   private lastPulse = 0
-  private anchor: HTMLLIElement | null = null
-  private scrollTarget: HTMLLIElement | null = null
+  private sentLi: HTMLLIElement | null = null
   private view: TranscriptView | null = null
 
   constructor(list: HTMLOListElement, hooks: TranscriptHooks = {}) {
@@ -125,6 +130,13 @@ export class Transcript {
     this.hooks = hooks
     window.addEventListener('online', () => this.connectionChanged())
     window.addEventListener('offline', () => this.connectionChanged())
+    // A frame asked for just before the tab went hidden would wait until the tab is shown again.
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && this.scheduled?.kind === 'raf') {
+        this.cancelFlush()
+        this.scheduleFlush()
+      }
+    })
   }
 
   /** The newest text shown for the answer in progress (for the announcer on `done`). */
@@ -147,26 +159,33 @@ export class Transcript {
     this.syncPending(view, previous)
     if (stream !== null) this.syncStream(stream)
     this.syncTicker(view)
-    // After the answer's slot exists: its min-height is what lets the message reach the top.
-    if (this.scrollTarget !== null) {
-      const li = this.scrollTarget
-      this.scrollTarget = null
-      if (li.isConnected) li.scrollIntoView({ block: 'start', behavior: motionAllowed() ? 'smooth' : 'auto' })
+    // After the answer's slot exists: the room under the message is what lets it reach the top.
+    if (this.sentLi !== null) {
+      const li = this.sentLi
+      this.sentLi = null
+      if (li.isConnected) this.hooks.onSent?.(li, this.streamLi)
     }
+    this.hooks.onWrite?.()
   }
 
-  /** Clears the list (a new conversation, or a screen that no longer shows it). */
+  /** Clears the list (a new conversation, or a screen that no longer shows it). The answer in
+   *  progress goes first, with its scheduled write (I3). */
   reset(): void {
     this.dropStream()
     this.items = []
     this.lastMessages = null
     this.pendingLi = null
     this.pendingKey = ''
-    this.anchor = null
-    this.scrollTarget = null
+    this.sentLi = null
     this.view = null
     this.list.replaceChildren()
     this.syncTicker(null)
+  }
+
+  /** pagehide: the answer in progress is aborted with the page, so its text must not be what a
+   *  page restored from the bfcache shows. The state drops it as well once the abort comes back. */
+  dropStreamNow(): void {
+    this.dropStream()
   }
 
   // ── confirmed messages ──
@@ -245,9 +264,9 @@ export class Transcript {
       this.pendingLi = li
       this.pendingText = text
       this.pendingKey = key
-      const sentNow = pending.status === 'sending' && previous?.pending?.status !== 'sending'
-      if (sentNow) this.anchorTo(li)
     }
+    // The first send and «Надіслати ще раз» alike: the message goes to the top (§3.7.6).
+    if (pending.status === 'sending' && previous?.pending?.status !== 'sending') this.sentLi = this.pendingLi
     this.renderStatus(this.pendingLi, view)
   }
 
@@ -325,7 +344,6 @@ export class Transcript {
       this.streamText = text
       this.streamId = stream.id
       this.target = ''
-      this.sizeAnchor()
     }
     const li = this.streamLi
     const waiting = stream.phase !== 'streaming'
@@ -343,10 +361,16 @@ export class Transcript {
     } else {
       show(wait, false)
     }
-    // A retry starts over: the partial answer of the cut attempt is gone (turn/reset).
     if (stream.partial !== this.target) {
+      const grows = stream.partial.startsWith(this.target)
       this.target = stream.partial
-      this.scheduleFlush()
+      if (grows) {
+        this.scheduleFlush()
+      } else {
+        // A retry starts over (turn/reset): the cut attempt's text leaves now, not a frame later.
+        this.cancelFlush()
+        this.flush()
+      }
     }
   }
 
@@ -399,10 +423,12 @@ export class Transcript {
     this.scheduled = null
     if (this.streamLi === null) return
     writeText(textBox(this.streamLi), this.streamText, this.target)
+    this.hooks.onWrite?.()
+    if (this.target === '') return
     const now = performance.now()
     if (now - this.lastPulse >= 250) {
       this.lastPulse = now
-      this.hooks.onFlush?.()
+      this.hooks.onPulse?.()
     }
   }
 
@@ -414,23 +440,5 @@ export class Transcript {
     this.streamText = { paras: [] }
     this.streamId = -1
     this.waitKey = ''
-  }
-
-  // ── scroll anchor (§3.7.6) ──
-
-  private anchorTo(li: HTMLLIElement): void {
-    if (this.anchor !== null && this.anchor !== li) this.anchor.style.removeProperty('min-height')
-    this.anchor = null
-    this.scrollTarget = li
-  }
-
-  /** The new answer gets the room under the person's message, so it grows into empty space. */
-  private sizeAnchor(): void {
-    if (this.streamLi === null || this.pendingLi === null) return
-    for (const item of this.items) item.li.style.removeProperty('min-height')
-    const chrome = this.hooks.chromeHeights?.() ?? { top: 0, bottom: 0 }
-    const room = window.innerHeight - chrome.top - chrome.bottom - this.pendingLi.offsetHeight - 48
-    if (room > 0) this.streamLi.style.setProperty('min-height', `${Math.round(room)}px`)
-    this.anchor = this.streamLi
   }
 }

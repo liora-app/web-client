@@ -1,5 +1,6 @@
-// Entry of chat/index.html (spec §9.1): styles, «Пауза» and «Звук», the light in its slot, and the
-// state machine of src/chat/core driven through store → render → effects.
+// Entry of chat/index.html (spec §9.1): styles, «Пауза» and «Звук», the sky preset, the light in its
+// slot, the on-screen keyboard, and the state machine of src/chat/core driven through store →
+// render → effects.
 
 import '../../styles/fonts.css'
 import '../../styles/tokens.css'
@@ -12,6 +13,7 @@ import '../../styles/chat.css'
 import { bootGL } from '../../gl/core/boot'
 import type { PresenceHandle } from '../../gl/presence'
 import { initMotionToggle } from '../../ui/motion'
+import { initSky } from '../../ui/sky'
 import { initSound } from '../../ui/sound'
 import { createApi } from '../core/api'
 import { draftOf, leaveGuard, pendingOf, sessionOf, type Action, type Model } from '../core/state'
@@ -19,13 +21,18 @@ import type { ConsentKind } from '../core/types'
 import { createAnnouncer } from './announcer'
 import { conversationText, copyText, thesesText } from './clipboard'
 import { createEffects } from './effects'
+import { initKeyboard } from './keyboard'
 import { createLeaveGuard } from './leave-guard'
 import { applyPresence } from './presence'
 import { createView, type View } from './render'
 import { createStore } from './store'
 
+// The sky first: the fewer frames of the night before a chosen preset, the better (§9.2).
+const sky = initSky(document.querySelector<HTMLElement>('[data-sky-pick]'))
 initMotionToggle(document.querySelector<HTMLButtonElement>('[data-motion-toggle]'))
+// The page sets the chord and the silence itself (presence.ts): no chapters to follow here.
 const sound = initSound({ follow: 'manual' })
+initKeyboard()
 
 const canvas = document.querySelector<HTMLCanvasElement>('[data-gl-canvas]')
 const slot = document.querySelector<HTMLElement>('[data-presence-slot]')
@@ -45,7 +52,18 @@ const gl =
 // Called through an arrow: a detached window.fetch throws "Illegal invocation".
 const api = createApi({ fetch: (input, init) => window.fetch(input, init) })
 const announcer = createAnnouncer(document.querySelector<HTMLElement>('[data-announcer]'))
-const leave = createLeaveGuard()
+// Page life (§5.6): pagehide aborts everything in flight ('pagehide'); the bfcache asks GET /me.
+const leave = createLeaveGuard({
+  onPageHide() {
+    effects.pageHide()
+    view.chat.transcript.dropStreamNow()
+    announcer.clear()
+  },
+  onPageShow(persisted) {
+    effects.pageShow()
+    if (persisted) dispatch({ type: 'page/show', persisted: true })
+  },
+})
 
 let view: View
 const store = createStore(() => ({ render: view.render, run: effects.run, guard: leave.set }))
@@ -58,7 +76,7 @@ const effects = createEffects({
   leave,
   composer: (text) => view.chat.composer.put(text),
 })
-view = createView(dispatch, gl, sound)
+view = createView(dispatch, { gl, sound, sky })
 
 // ── One delegated handler for every [data-act] on the page and in the dialogs ──
 
@@ -219,14 +237,6 @@ document.addEventListener('change', (event) => {
   if (!(input instanceof HTMLInputElement)) return
   if (input.dataset.act === 'scenario' && input.checked) dispatch({ type: 'chat/scenario', id: input.value })
   if (input.dataset.act === 'revisit-toggle' && input.dataset.id) dispatch({ type: 'revisit/toggle', id: input.dataset.id })
-})
-
-// ── Page life (spec §5.6) ──
-
-window.addEventListener('pagehide', () => effects.pageHide())
-window.addEventListener('pageshow', (event) => {
-  effects.pageShow()
-  if (event.persisted) dispatch({ type: 'page/show', persisted: true })
 })
 
 store.start()

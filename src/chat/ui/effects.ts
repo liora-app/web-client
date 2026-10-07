@@ -83,7 +83,7 @@ export function createEffects(deps: EffectDeps): Effects {
     const model = deps.model()
     switch (outcome.kind) {
       case 'done':
-        if (outcome.text.trim() !== '') announcer.say(sayAnswer(outcome.text))
+        if (outcome.text.trim() !== '') announcer.final(sayAnswer(outcome.text))
         return
       case 'crisis':
         // The crisis screen takes focus on its h1; no announcement over it (§6.2).
@@ -93,7 +93,7 @@ export function createEffects(deps: EffectDeps): Effects {
       default: {
         const state = model.state
         if (state.s === 'chat' && state.pending?.status === 'failed' && state.pending.error !== null) {
-          announcer.say(`Не надіслано. ${turnError(state.pending.error, model.ctx.csrfFailures, null, state.session.scenario === 'revisit').why}`)
+          announcer.final(`Не надіслано. ${turnError(state.pending.error, model.ctx.csrfFailures, null, state.session.scenario === 'revisit').why}`)
         }
       }
     }
@@ -103,9 +103,11 @@ export function createEffects(deps: EffectDeps): Effects {
     turn?.abort('user')
     const ctl = new AbortController()
     turn = ctl
+    // At most two writes to the live region for this turn: one while it runs, one at its end.
+    announcer.turn()
     let gotToken = false
     const thinking = window.setTimeout(() => {
-      if (!gotToken && turn === ctl) announcer.say(SAY_THINKING)
+      if (!gotToken && turn === ctl) announcer.progress(SAY_THINKING)
     }, 700)
     void runTurn(
       {
@@ -133,7 +135,7 @@ export function createEffects(deps: EffectDeps): Effects {
               break
             case 'busy-wait':
               dispatch({ type: 'turn/busy-wait', id: effect.id, until: progress.until, retry: progress.retry })
-              announcer.say(sayRetry(Math.max(1, Math.round((progress.until - Date.now()) / 1000))))
+              announcer.progress(sayRetry(Math.max(1, Math.round((progress.until - Date.now()) / 1000))))
               break
             case 'retry':
               dispatch({ type: 'turn/retry', id: effect.id, cause: progress.cause, attempt: progress.attempt })
@@ -181,7 +183,7 @@ export function createEffects(deps: EffectDeps): Effects {
 
   function abort(target: 'turn' | 'summarize' | 'all'): void {
     if (target === 'turn' || target === 'all') {
-      if (turn !== null && target === 'turn' && deps.model().state.s === 'chat') announcer.say(SAY_STOPPED)
+      if (turn !== null && target === 'turn' && deps.model().state.s === 'chat') announcer.final(SAY_STOPPED)
       turn?.abort('user')
       turn = null
     }

@@ -16,10 +16,12 @@
   }
 }
 
-/* Focus never hides under the sticky header, session row or composer (WCAG 2.2 SC 2.4.11). */
+/* Focus never hides under the sticky header, session row or composer (WCAG 2.2 SC 2.4.11). The
+   heights are measured (src/chat/ui/scroll-anchor.ts); --kb is the on-screen keyboard the composer
+   stands on in iOS Safari (src/chat/ui/keyboard.ts). */
 html {
   scroll-padding-top: calc(var(--header-h) + var(--session-h) + 0.5rem);
-  scroll-padding-bottom: calc(var(--composer-h) + 0.5rem);
+  scroll-padding-bottom: calc(var(--composer-h) + var(--kb, 0px) + 0.5rem);
 }
 
 /* `hidden` wins over every display rule on this page (screens, buttons, banners). */
@@ -196,6 +198,16 @@ html[data-motion='on'] .session .orb--mini::after {
 
 html[data-gl='on'] .presence .orb {
   opacity: 0;
+}
+
+/* Phone, away from a new conversation: the scene is paused (src/chat/ui/render.ts), and a paused
+   frame would not follow the slot's size. The still orb stands in for it. */
+html[data-slot='still'] .presence__canvas {
+  opacity: 0;
+}
+
+html[data-slot='still'] .presence .orb {
+  opacity: 1;
 }
 
 .orb--mini {
@@ -992,6 +1004,14 @@ html[data-gl='on'] .presence .orb {
   margin-top: 1.25rem;
 }
 
+/* The send anchor (§3.7.6, src/chat/ui/scroll-anchor.ts): the answer under the message just sent
+   gets the rest of the screen, so the message can reach the top and the answer grows into empty
+   space: 100svh less the sticky layers, the gaps around the pair (scroll padding and margin, the
+   gap between the two, the composer's margin) and the sent message (--sent-h). */
+.said--room {
+  min-height: max(0px, calc(100svh - var(--header-h) - var(--session-h) - var(--composer-h) - 2.75rem - var(--sent-h, 0px)));
+}
+
 .said--ai + .said--you {
   margin-top: 2.25rem;
 }
@@ -1390,6 +1410,68 @@ html[data-screen='chat'] .chat__text {
   .composer__send {
     right: 4px;
     bottom: 2px;
+  }
+}
+
+/* The on-screen keyboard is up (html[data-kb], src/chat/ui/keyboard.ts), or a phone lies on its
+   side (max-height: 30em): little height is left, so the header and the session row scroll with
+   the page, under the field stays only the mono line, and the composer neither keeps the safe area
+   (over the keyboard it would be empty space) nor a long fade. The same rules twice: a media query
+   and an attribute cannot share one selector. The header keeps a positioned box (absolute, at the
+   top of the page) and the session row a relative one, for their ::before bands. */
+html[data-kb] {
+  scroll-padding-top: 0.5rem;
+}
+
+html[data-kb] .chat-header {
+  position: absolute;
+}
+
+html[data-kb] .session {
+  position: relative;
+  top: auto;
+}
+
+html[data-kb] .composer {
+  padding-bottom: 0.5rem;
+}
+
+html[data-kb] .composer::before {
+  top: -0.75rem;
+  background: linear-gradient(0deg, var(--color-bg) calc(100% - 0.75rem), rgb(4 7 8 / 0));
+}
+
+html[data-kb] .composer__note,
+html[data-kb] .composer__keys {
+  display: none;
+}
+
+@media (max-height: 30em) {
+  html {
+    scroll-padding-top: 0.5rem;
+  }
+
+  .chat-page .chat-header {
+    position: absolute;
+  }
+
+  .session {
+    position: relative;
+    top: auto;
+  }
+
+  .composer {
+    padding-bottom: 0.5rem;
+  }
+
+  .composer::before {
+    top: -0.75rem;
+    background: linear-gradient(0deg, var(--color-bg) calc(100% - 0.75rem), rgb(4 7 8 / 0));
+  }
+
+  .composer__note,
+  .composer__keys {
+    display: none;
   }
 }
 
@@ -1932,6 +2014,13 @@ html[data-screen='chat'] .chat__text {
   border: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* The record picker has a search field: with the keyboard up its list stays above it (--vvh is the
+   visual viewport's height while the keyboard is up, src/chat/ui/keyboard.ts). From 48em it is a
+   centred dialog again (below). */
+.sheet--pick {
+  height: var(--vvh, 100dvh);
 }
 
 .sheet[open] {

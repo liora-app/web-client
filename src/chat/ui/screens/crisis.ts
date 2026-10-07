@@ -14,6 +14,8 @@ type Crisis = Extract<State, { s: 'crisis' }>
 export function crisisScreen(): Screen {
   const root = screenOf('crisis')
   return {
+    // A new conversation after the crisis: the old one leaves the page with the screen.
+    leave: () => byEl<HTMLOListElement>('crisis-talk', root).replaceChildren(),
     render(model: Model, entered: boolean) {
       if (!entered) return
       const { helplines, stale } = model.state as Crisis
