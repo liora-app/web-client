@@ -1044,6 +1044,8 @@ test.describe('sign-in and consent', () => {
     api.on('GET /consents', { json: consents([...KINDS], VERSION, null) })
     await openChat(page, '/chat/', 'consent')
     await expect(page.locator('[data-el="consent-no-provider"]')).toBeVisible()
+    await expect(page.locator('[data-el="consent-no-country"]')).toBeHidden()
+    await expect(page.locator('[data-el="consent-reload"]')).toBeVisible()
     await expect(page.locator('[data-el="consent-checks"]')).toBeHidden()
     await expect(page.locator('[data-el="consent-agree"]')).toBeHidden()
     expect(api.count('POST /consents')).toBe(0)
@@ -1093,11 +1095,14 @@ test.describe('sign-in and consent', () => {
     expect(await text(note)).toBe('Liora не зберігає цю розмову: якщо закрити чи оновити сторінку, текст зникне. Текст обробляє постачальник AI.')
     await sheetAndConfirms('постачальник AI', 'постачальнику AI')
 
-    // The consent itself still needs the country: no boxes to agree to.
+    // The consent itself still needs the country: no boxes to agree to. The data did load, so the
+    // line says what is missing, and no «Спробувати ще раз»: a second GET would bring the same.
     api.on('GET /consents', { json: consents([...KINDS], VERSION, { name: NAME, country: '' }) })
     await page.reload()
     await onScreen(page, 'consent')
-    await expect(page.locator('[data-el="consent-no-provider"]')).toBeVisible()
+    await expect(page.locator('[data-el="consent-no-country"]')).toBeVisible()
+    await expect(page.locator('[data-el="consent-no-provider"]')).toBeHidden()
+    await expect(page.locator('[data-el="consent-reload"]')).toBeHidden()
     await expect(page.locator('[data-el="consent-checks"]')).toBeHidden()
     const lead = page.locator('section[data-screen="consent"] p', { hasText: 'Відповіді й тези створює' })
     expect(await text(lead)).toContain(`а постачальник AI — ${NAME}. Щоб AI міг відповідати`)

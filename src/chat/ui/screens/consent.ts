@@ -93,10 +93,15 @@ export function consentScreen(): Screen & { checked(): ConsentKind[]; toggleLate
 
       // A provider without a country is named in the text, but not one to agree to (§3.5).
       const noProvider = !state.loading && state.fresh && !transferAskable(consents)
-      show(byEl('consent-no-provider', root), noProvider || state.error?.code === 'provider_missing')
+      const blocked = noProvider || state.error?.code === 'provider_missing'
+      // The name came and the country did not: that is the server's setting, and a second GET
+      // /consents brings the same — no «Спробувати ще раз» that promises otherwise.
+      const unlocated = consents !== null && consents.llm_provider !== null && consents.llm_provider.country === ''
+      show(byEl('consent-no-provider', root), blocked && !unlocated)
+      show(byEl('consent-no-country', root), blocked && unlocated)
       show(checks, !noProvider)
       show(byEl('consent-agree', root), !noProvider)
-      show(byEl('consent-reload', root), noProvider || state.error?.code === 'consents_load_failed')
+      show(byEl('consent-reload', root), (noProvider && !unlocated) || state.error?.code === 'consents_load_failed')
       setText(byEl('consent-agree', root), state.mode === 'resume' ? 'Погоджуюся — продовжити' : 'Погоджуюся — почати')
       setAttr(byEl('consent-agree', root), 'aria-busy', state.submitting || state.loading ? 'true' : null)
 
