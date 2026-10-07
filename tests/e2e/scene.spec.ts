@@ -40,6 +40,36 @@ test.describe('WebGL scene', () => {
     expect(problems).toEqual([])
   })
 
+  test('the glass outline is smooth, not a staircase', GPU, async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', 'one viewport is enough for the outline')
+    await page.goto('/')
+    await waitForScene(page)
+    await expect.poll(() => litSamples(page), { timeout: 8_000 }).toBeGreaterThanOrEqual(2)
+    await page.waitForTimeout(3500) // past the ignition: the glass is at full strength
+
+    // Rows through the diagonal part of the outline (only the glass drawn), where aliasing shows as
+    // steps. From the bright rim outward to the last lit pixel: how many pixels lie between 90 % and
+    // 10 % of the rim. A hard edge has none.
+    const ramps = await page.evaluate(() => {
+      const hero = getComputedStyle(document.querySelector('.hero') as HTMLElement)
+      const cy = parseFloat(hero.getPropertyValue('--light-y'))
+      const r = parseFloat(hero.getPropertyValue('--light-d')) / 2
+      return [30, 37, 45, 52, 60].map((deg) => {
+        const row = window.__lioraScene?.edge(cy - r * Math.sin((deg * Math.PI) / 180)) ?? []
+        let last = row.length - 1
+        while (last > 0 && row[last] <= 4) last--
+        const window_ = row.slice(Math.max(0, last - 16), last + 1)
+        const peak = Math.max(...window_)
+        const from = last - (window_.length - 1) + window_.lastIndexOf(peak)
+        let ramp = 0
+        for (let i = from + 1; i <= last + 1; i++) if (row[i] < 0.9 * peak && row[i] > 0.1 * peak) ramp++
+        return ramp
+      })
+    })
+    const sorted = [...ramps].sort((a, b) => a - b)
+    expect(sorted[2], `pixels in the outline ramp per row: ${ramps.join(', ')}`).toBeGreaterThanOrEqual(2)
+  })
+
   test('canvas is decorative and never takes input', async ({ page }) => {
     await page.goto('/')
     const canvas = page.locator('canvas')
