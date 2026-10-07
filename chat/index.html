@@ -113,9 +113,6 @@
 
           <!-- ============ not-invited ============ -->
           <section class="screen" data-screen="not-invited" hidden>
-            <div class="banner" data-el="ni-banner" role="status" tabindex="-1" hidden>
-              <p class="banner__text" data-el="ni-banner-text"></p>
-            </div>
             <p class="tag">Доступ за запрошенням</p>
             <div data-el="ni-guest">
               <h1 class="display-2 screen__title" tabindex="-1">Поки що вхід — за запрошеннями</h1>
@@ -153,6 +150,7 @@
                 <li><button type="button" data-act="account" aria-haspopup="dialog">Акаунт</button></li>
                 <li><button type="button" data-act="logout">Вийти</button></li>
               </ul>
+              <p class="field-error" data-el="ni-op-error" role="alert"></p>
             </div>
             <div class="helpblock">
               <h2 class="row__title">Якщо ви прийшли, бо зараз важко</h2>
@@ -247,6 +245,10 @@
               <button class="button button--secondary" type="button" data-act="consent-reload" data-el="consent-reload" hidden>Спробувати ще раз</button>
             </p>
             <p class="field-error" data-el="consent-error" role="alert"></p>
+            <p class="screen__actions" data-el="consent-reload-row" hidden>
+              <button class="button button--secondary" type="button" data-act="copy" data-el="consent-copy">Скопіювати текст розмови</button>
+              <button class="button button--secondary" type="button" data-act="reload">Оновити сторінку</button>
+            </p>
             <ul class="arrows" role="list">
               <li><button type="button" data-act="consent-later" aria-expanded="false" aria-controls="consent-later">Не зараз</button></li>
             </ul>
@@ -428,6 +430,10 @@
               <button class="button button--primary" type="button" data-act="summarize-retry" data-el="sum-retry">Скласти ще раз</button>
               <button class="button button--secondary" type="button" data-act="end-no-theses" aria-haspopup="dialog" data-el="sum-end-button" hidden>Завершити без тез</button>
             </p>
+            <p class="screen__actions" data-el="sum-reload-row" hidden>
+              <button class="button button--secondary" type="button" data-act="copy">Скопіювати текст розмови</button>
+              <button class="button button--secondary" type="button" data-act="reload">Оновити сторінку</button>
+            </p>
             <ul class="arrows" role="list">
               <li data-el="sum-cancel"><button type="button" data-act="summarize-cancel">Скасувати й повернутися до розмови</button></li>
               <li data-el="sum-back" hidden><button type="button" data-act="summarize-cancel">Повернутися до розмови</button></li>
@@ -464,7 +470,7 @@
               <div class="tags__add">
                 <label class="visually-hidden" for="review-tag-input">Новий тег</label>
                 <input class="field__input field__input--tag" id="review-tag-input" type="text" autocomplete="off" placeholder="наприклад, робота" aria-describedby="review-tag-hint review-tag-error" data-el="review-tag-input" />
-                <button class="button button--secondary" type="button" data-act="tag-add">Додати</button>
+                <button class="button button--secondary" type="button" data-act="tag-add" data-el="review-tag-add">Додати</button>
               </div>
               <p class="small" id="review-tag-hint">До 10 тегів, кожен до 40 символів.</p>
               <p class="field-error" id="review-tag-error" data-el="review-tag-error" role="status"></p>
@@ -478,6 +484,11 @@
               <button class="button button--secondary" type="button" data-act="review-discard" aria-haspopup="dialog" data-el="review-discard">Видалити тези</button>
             </div>
             <p class="field-error" data-el="review-error" role="alert"></p>
+            <p class="small" data-el="review-request-id" hidden></p>
+            <p class="screen__actions" data-el="review-reload-row" hidden>
+              <button class="button button--secondary" type="button" data-act="copy-theses">Скопіювати тези</button>
+              <button class="button button--secondary" type="button" data-act="reload">Оновити сторінку</button>
+            </p>
             <ul class="arrows" role="list">
               <li><button type="button" data-act="review-regenerate" aria-haspopup="dialog">Скласти заново</button></li>
               <li><button type="button" data-act="review-back">Повернутися до розмови</button></li>
@@ -656,7 +667,14 @@
       </div>
       <h2 class="sheet__title" id="pick-dialog-title">До яких записів повернутися?</h2>
       <p>Оберіть від 1 до 5. Їхні назви, тези й теги AI отримає разом із розмовою — а отже, і постачальник AI, як сказано в згоді.</p>
+      <div class="field pick__search" data-el="pick-search" hidden>
+        <label class="field__label" for="pick-search-input">Пошук у щоденнику</label>
+        <input class="field__input" id="pick-search-input" type="search" autocomplete="off" enterkeyhint="search" placeholder="Слово з назви чи тези" data-el="pick-q" />
+      </div>
       <p class="status-line" data-el="pick-status" role="status"></p>
+      <ul class="arrows" role="list" data-el="pick-retry" hidden>
+        <li><button type="button" data-act="revisit-retry">Спробувати ще раз</button></li>
+      </ul>
       <ul class="pick__list" role="list" data-el="pick-list" data-no-stoplist></ul>
       <ul class="arrows" role="list" data-el="pick-more" hidden>
         <li><button type="button" data-act="revisit-more">Показати ще</button></li>
@@ -847,6 +865,7 @@
       </ul>
       <p data-if="talk">Поточна розмова теж зникне.</p>
       <p class="field-error" data-op-error role="alert"></p>
+      <p class="small" data-op-id hidden></p>
       <div class="confirm__actions">
         <button class="button button--danger" type="button" data-act="accept">Так, видалити все</button>
         <button class="button button--secondary" type="button" data-act="close" data-focus>Скасувати</button>

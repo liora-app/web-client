@@ -1,4 +1,10 @@
 // Theses (spec §7.1–7.3): the wait while the AI drafts them, then the draft edited in place.
+//
+// summarizing: an llm_busy retry is a countdown, not an error (`error` null, `busy` > 0, `until`):
+// «Скласти ще раз» is not offered beside it (I2). After a 429 the manual retry waits for `until`.
+// review: while `saving` is 'unknown' the draft is read-only — the retry first compares the newest
+// record with the body that went out (§7.3). A 422 lands on the field the core mapped it to through
+// the index tables of the filtered body (§7.2). «Повернути» has no timer; one thesis always stays.
 
 import { BULLET_COUNTER_FROM, MAX_BULLET, MAX_BULLETS, MAX_TITLE, TITLE_COUNTER_FROM, codePoints, newTagIssue, type Draft } from '../../core/limits'
 import type { Action, Model, State } from '../../core/state'
@@ -21,26 +27,25 @@ export function summarizingScreen(): Screen {
   const paint = (): void => {
     if (last === null || last.state.s !== 'summarizing') return
     const state = last.state as Summarizing
+    const now = Date.now()
     const waitingBusy = state.error === null && state.busy > 0 && state.until !== null
-    const statusText =
-      state.error !== null
-        ? summarizeError(state.error)
-        : waitingBusy
-          ? busyWait(Math.max(0, Math.ceil((state.until! - Date.now()) / 1000)))
-          : ''
-    setText(el('sum-status'), statusText)
     const error = state.error
     const code = error?.code ?? ''
-    const generic = error !== null && !['llm_busy', 'llm_failed', 'timeout', 'validation_error', 'payload_too_large', 'rate_limited', 'network', 'upstream_unavailable'].includes(code)
-    const id = generic ? requestIdLine(error!.requestId) : null
+    const left = state.until === null ? null : Math.max(0, Math.ceil((state.until - now) / 1000))
+    const text = error !== null ? summarizeError(error, last.ctx.csrfFailures, code === 'rate_limited' ? left : null) : null
+    setText(el('sum-status'), text !== null ? text.why : waitingBusy ? busyWait(left ?? 0) : '')
+    const id = text?.showId === true ? requestIdLine(error!.requestId) : null
     setText(el('sum-request-id'), id ?? '')
     show(el('sum-request-id'), id !== null)
-    const canRetry = error !== null && code !== 'validation_error' && code !== 'payload_too_large'
-    show(el('sum-retry-actions'), error !== null && (canRetry || code === 'payload_too_large'))
+    const reload = text?.reload === true
+    // 422 and 413: the same body would get the same answer, so no «Скласти ще раз» (§4.3).
+    const canRetry = error !== null && !reload && code !== 'validation_error' && code !== 'payload_too_large'
+    show(el('sum-retry-actions'), canRetry || code === 'payload_too_large')
     show(el('sum-retry'), canRetry)
-    const cooling = state.until !== null && Date.now() < state.until && code === 'rate_limited'
+    const cooling = code === 'rate_limited' && state.until !== null && now < state.until
     setAttr(el('sum-retry'), 'aria-disabled', cooling ? 'true' : null)
     show(el('sum-end-button'), code === 'payload_too_large')
+    show(el('sum-reload-row'), reload)
     show(el('sum-cancel'), error === null)
     show(el('sum-back'), error !== null)
     show(el('sum-end'), error !== null && code !== 'payload_too_large')
@@ -152,6 +157,8 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
       input.readOnly = state.saving !== 'idle'
       show(input.closest<HTMLElement>('.thesis__field')!, !bullet.removed)
       const remove = li.querySelector<HTMLElement>('.thesis__remove')!
+      const restore = li.querySelector<HTMLElement>('[data-act="bullet-restore"]')!
+      setAttr(restore, 'aria-disabled', state.saving !== 'idle' || active >= MAX_BULLETS ? 'true' : null)
       show(remove, !bullet.removed)
       setAttr(remove, 'aria-label', `Прибрати тезу ${n}`)
       const lastOne = !bullet.removed && active === 1
@@ -181,6 +188,7 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
       const remove = li.querySelector<HTMLElement>('.tagpill__remove')!
       remove.dataset.id = tag.id
       remove.setAttribute('aria-label', `Прибрати тег «${tag.name}»`)
+      setAttr(remove, 'aria-disabled', state.saving !== 'idle' ? 'true' : null)
       const issue = state.issues.find((i) => i.field === tag.id)
       if (issue) li.classList.add('tagpill--invalid')
       tags.append(li)
@@ -252,6 +260,7 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
       renderBullets(state)
       renderTags(state)
       tagInput.readOnly = state.saving !== 'idle'
+      setAttr(el('review-tag-add'), 'aria-disabled', state.saving !== 'idle' ? 'true' : null)
 
       const noSave = state.session.noSave
       show(el('review-nosave'), noSave)
@@ -261,7 +270,14 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
       const save = el('review-save')
       setText(save, state.saving === 'saving' ? 'Зберігаємо…' : state.saving === 'unknown' ? 'Спробувати ще раз' : 'Зберегти в щоденник')
       setAttr(save, 'aria-busy', state.saving === 'saving' ? 'true' : null)
-      setText(el('review-error'), state.error !== null ? saveError(state.error) : '')
+      const text = state.error !== null ? saveError(state.error, model.ctx.csrfFailures) : null
+      setText(el('review-error'), text?.why ?? '')
+      const id = text?.showId === true ? requestIdLine(state.error!.requestId) : null
+      setText(el('review-request-id'), id ?? '')
+      show(el('review-request-id'), id !== null)
+      // A repeated csrf_failed: copy the theses, then reload (§4.3).
+      show(el('review-reload-row'), text?.reload === true)
+      setAttr(el('review-discard'), 'aria-disabled', state.saving === 'saving' ? 'true' : null)
 
       // A failed check or a 422: focus the first field that is wrong (§7.2).
       if (state.issues !== lastIssues && state.issues.length > 0) {

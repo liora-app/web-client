@@ -14,7 +14,7 @@ import type { PresenceHandle } from '../../gl/presence'
 import { initMotionToggle } from '../../ui/motion'
 import { initSound } from '../../ui/sound'
 import { createApi } from '../core/api'
-import { leaveGuard, type Action, type Model } from '../core/state'
+import { draftOf, leaveGuard, pendingOf, sessionOf, type Action, type Model } from '../core/state'
 import type { ConsentKind } from '../core/types'
 import { createAnnouncer } from './announcer'
 import { conversationText, copyText, thesesText } from './clipboard'
@@ -66,15 +66,16 @@ function topOverlay(model: Model) {
   return model.overlay[model.overlay.length - 1]
 }
 
+/** «Скопіювати текст розмови» / «Скопіювати тези» on whichever screen still holds them (§3.8). */
 async function copy(button: HTMLElement, kind: 'talk' | 'theses'): Promise<void> {
   const { state } = store.model()
   let text = ''
   if (kind === 'theses') {
-    const draft = state.s === 'review' ? state.draft : state.s === 'session-expired' || state.s === 'not-invited' ? state.draft : null
+    const draft = draftOf(state)
     if (draft) text = thesesText(draft)
   } else {
-    const session = state.s === 'chat' ? state.session : state.s === 'session-expired' || state.s === 'not-invited' ? state.stale : null
-    const pending = state.s === 'chat' || state.s === 'session-expired' || state.s === 'not-invited' ? state.pending : null
+    const session = sessionOf(state)
+    const pending = pendingOf(state)
     if (session !== null || pending !== null) text = conversationText(session?.messages ?? [], pending)
   }
   if (text === '' || !(await copyText(text))) return
@@ -89,6 +90,8 @@ function act(name: string, target: HTMLElement, event: Event): void {
   const model = store.model()
   const { state } = model
   if (target.getAttribute('aria-disabled') === 'true' && name !== 'send') return
+  // The account operation (or the save) is on its way: a second press sends nothing.
+  if (target.getAttribute('aria-busy') === 'true') return
   if (view.review.act(name, target)) return
   switch (name) {
     case 'leave-home':
@@ -186,7 +189,15 @@ function act(name: string, target: HTMLElement, event: Event): void {
     case 'relogin':
       return dispatch({ type: 'confirm/open', kind: 'relogin' })
     case 'reload':
-      return dispatch({ type: 'confirm/open', kind: 'leave', leaveTo: 'reload' })
+      // A repeated csrf_failed (§4.3): through «Піти з розмови?» when something would be lost.
+      if (leaveGuard(state)) return dispatch({ type: 'confirm/open', kind: 'leave', leaveTo: 'reload' })
+      window.location.reload()
+      return
+    case 'revisit-retry': {
+      const top = topOverlay(model)
+      if (top?.o === 'revisit-pick') dispatch({ type: 'revisit/search', q: top.q })
+      return
+    }
     case 'copy':
       void copy(target, 'talk')
       return
@@ -199,6 +210,7 @@ function act(name: string, target: HTMLElement, event: Event): void {
 document.addEventListener('click', (event) => {
   const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-act]') : null
   if (target === null || target instanceof HTMLInputElement) return
+  view.dialogs.noteOpener(target)
   act(target.dataset.act ?? '', target, event)
 })
 

@@ -1,13 +1,17 @@
 // Native <dialog>s opened with showModal(), kept in line with model.overlay (spec §2.5, §3.1
 // «Діалоги»). The browser gives the focus trap, Esc and the inert page; focus coming back is ours:
-// to the button that opened the dialog, else «Акаунт», else the screen's h1 (I6). A new screen
-// closes every dialog without that return: focus goes to the new screen's h1 instead.
+// to the button that opened the dialog, else into the dialog still open under it, else «Акаунт»,
+// else the screen's h1 (I6). A new screen closes every dialog without that return: focus goes to
+// the new screen's h1 instead (render.ts).
+//
+// The stack is at most two deep, and only as account → confirm(logout | delete-account | revoke):
+// closing the confirm leaves the account sheet open with the focus on the button that opened it.
 
-import type { Action, Model, Overlay } from '../core/state'
-import { hasReply, hasUserMessage } from '../core/state'
-import { accountOpError, dayMonth, shortDate } from './copy'
-import { allEl, byEl, fromTemplate, headingOf, setText, show } from './dom'
+import type { Action, Model, Overlay, PickOverlay } from '../core/state'
+import { hasReply, hasUserMessage, leaveGuard, pendingOf, sessionOf } from '../core/state'
 import type { SafeLine } from '../core/helplines'
+import { accountOpError, dayMonth, requestIdLine, shortDate } from './copy'
+import { allEl, byEl, fromTemplate, headingOf, setAttr, setText, show } from './dom'
 
 type Kind = Overlay['o']
 
@@ -18,7 +22,13 @@ export type Dialogs = Readonly<{
   helpOpen(): boolean
   /** «Продовжити» was pressed with nothing chosen: the picker shows its alert (spec §3.6). */
   pickTried(): void
+  /** The control the person just pressed: the opener of a dialog it opens. Safari does not focus
+   *  a clicked button, so document.activeElement alone would lose it. */
+  noteOpener(el: HTMLElement): void
 }>
+
+/** Debounce of the search in the record picker (§3.6). */
+const SEARCH_DEBOUNCE_MS = 300
 
 export function fillLines(list: HTMLElement, block: HTMLElement, lines: readonly SafeLine[]): void {
   list.replaceChildren()
@@ -37,6 +47,11 @@ export function fillLines(list: HTMLElement, block: HTMLElement, lines: readonly
   show(block, lines.length > 0)
 }
 
+/** The person wrote something that is still on the page (help: «Ваша розмова… нікуди не зникла»). */
+function hasTalk(model: Model): boolean {
+  return hasUserMessage(sessionOf(model.state), pendingOf(model.state))
+}
+
 export function createDialogs(dispatch: (action: Action) => void): Dialogs {
   const elements: Record<Kind, HTMLDialogElement> = {
     account: document.querySelector<HTMLDialogElement>('[data-dialog="account"]')!,
@@ -45,9 +60,13 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
     confirm: document.querySelector<HTMLDialogElement>('[data-dialog="confirm"]')!,
   }
   const confirmBody = byEl('confirm-body')
+  const pickRoot = elements['revisit-pick']
+  const search = byEl<HTMLInputElement>('pick-q', pickRoot)
   let stack: Open[] = []
   let pickTried = false
   let last: Model | null = null
+  let noted: HTMLElement | null = null
+  let searchTimer = 0
 
   // Esc: the state decides (the confirm of a crisis restart treats it as «Скасувати» too).
   for (const el of Object.values(elements)) {
@@ -66,6 +85,18 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
     }
   }
 
+  // The picker's search: GET /summaries?q= 300 ms after the last keystroke (§3.6).
+  search.addEventListener('input', () => {
+    window.clearTimeout(searchTimer)
+    searchTimer = window.setTimeout(() => dispatch({ type: 'revisit/search', q: search.value }), SEARCH_DEBOUNCE_MS)
+  })
+  search.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.isComposing) return
+    event.preventDefault()
+    window.clearTimeout(searchTimer)
+    dispatch({ type: 'revisit/search', q: search.value })
+  })
+
   const confirmKey = (o: Overlay): string | null =>
     o.o !== 'confirm' ? null : o.kind === 'revoke' ? `revoke-${o.revoke ?? ''}` : o.kind
 
@@ -77,13 +108,13 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
 
   function refreshConfirm(m: Model): void {
     const { state, ctx } = m
-    const session = state.s === 'chat' || state.s === 'summarizing' || state.s === 'review' ? state.session : null
-    const pending = state.s === 'chat' ? state.pending : null
+    const session = sessionOf(state)
     const userMessages = session?.messages.filter((x) => x.role === 'user').length ?? 0
     const conditions: Record<string, boolean> = {
       short: userMessages < 2,
       nosave: session?.noSave === true,
-      talk: hasUserMessage(session, pending),
+      // «Поточна розмова теж зникне» / «…закриється»: there is something to lose (I7).
+      talk: leaveGuard(state),
       'can-summarize': state.s === 'chat' && hasReply(state.session) && !state.session.noSave,
     }
     for (const node of Array.from(confirmBody.querySelectorAll<HTMLElement>('[data-if]'))) {
@@ -91,51 +122,74 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
     }
     const provider = ctx.consents?.llm_provider?.name ?? ''
     for (const node of allEl('provider', confirmBody)) setText(node, provider)
+    const op = ctx.op
+    const text = op !== null && op.error !== null ? accountOpError(op.name, op.error) : null
     const opError = confirmBody.querySelector<HTMLElement>('[data-op-error]')
-    if (opError) {
-      const op = ctx.op
-      setText(opError, op !== null && op.error !== null ? accountOpError(op.name, op.error) : '')
+    if (opError) setText(opError, text?.why ?? '')
+    const opId = confirmBody.querySelector<HTMLElement>('[data-op-id]')
+    if (opId) {
+      const id = text?.showId === true && op?.error ? requestIdLine(op.error.requestId) : null
+      setText(opId, id ?? '')
+      show(opId, id !== null)
     }
     for (const button of Array.from(confirmBody.querySelectorAll<HTMLButtonElement>('[data-act="accept"]'))) {
-      button.setAttribute('aria-busy', String(ctx.op?.busy === true))
+      setAttr(button, 'aria-busy', ctx.op?.busy === true ? 'true' : null)
     }
   }
 
   function refreshAccount(m: Model): void {
     const { ctx } = m
-    setText(byEl('account-email', elements.account), ctx.me?.email ?? '')
+    const root = elements.account
+    setText(byEl('account-email', root), ctx.me?.email ?? '')
     const provider = ctx.consents?.llm_provider?.name ?? ''
-    for (const node of allEl('provider', elements.account)) setText(node, provider)
-    for (const node of Array.from(elements.account.querySelectorAll<HTMLElement>('[data-grant-date]'))) {
+    for (const node of allEl('provider', root)) setText(node, provider)
+    for (const node of Array.from(root.querySelectorAll<HTMLElement>('[data-grant-date]'))) {
       const granted = ctx.consents?.granted.find((g) => g.kind === node.dataset.grantDate)
       setText(node, granted ? `надано ${shortDate(granted.granted_at)}` : 'не надано')
+      // «Відкликати» only for what was given.
       const button = node.closest('.grants__item')?.querySelector<HTMLElement>('button')
       if (button) show(button.closest<HTMLElement>('.arrows') ?? button, granted !== undefined)
     }
     const op = ctx.op
+    // «Вийти» without a confirm (nothing to lose) reports here; a stacked confirm reports itself.
     const own = op !== null && op.error !== null && op.name === 'logout' && m.overlay.length === 1
-    setText(byEl('account-op-error', elements.account), own && op?.error ? accountOpError(op.name, op.error) : '')
+    setText(byEl('account-op-error', root), own && op?.error ? accountOpError(op.name, op.error).why : '')
+    const logout = root.querySelector<HTMLElement>('[data-act="logout"]')
+    if (logout) setAttr(logout, 'aria-busy', op?.name === 'logout' && op.busy ? 'true' : null)
   }
 
   function refreshHelp(m: Model): void {
     const helplines = m.ctx.helplines
-    fillLines(byEl('help-lines', elements.help), byEl('help-lines-block', elements.help), helplines.status === 'ok' ? helplines.value.lines : [])
-    const state = m.state
-    const session = state.s === 'chat' || state.s === 'summarizing' || state.s === 'review' ? state.session : null
-    show(byEl('help-kept', elements.help), hasUserMessage(session, state.s === 'chat' ? state.pending : null))
+    const root = elements.help
+    fillLines(byEl('help-lines', root), byEl('help-lines-block', root), helplines.status === 'ok' ? helplines.value.lines : [])
+    show(byEl('help-kept', root), hasTalk(m))
   }
 
   function refreshPick(m: Model): void {
-    const top = m.overlay.find((o) => o.o === 'revisit-pick')
-    if (top === undefined || top.o !== 'revisit-pick') return
-    const root = elements['revisit-pick']
+    const top = m.overlay.find((o): o is PickOverlay => o.o === 'revisit-pick')
+    if (top === undefined) return
+    const root = pickRoot
     show(byEl('pick-gone', root), top.gone)
-    setText(byEl('pick-status', root), top.loading ? 'Завантажуємо записи…' : top.failed ? 'Не вдалося завантажити збережені тези.' : '')
-    const list = byEl('pick-list', root)
+    // The search is there only when the diary has more than one page (or a search is running).
+    const diary = m.ctx.diary
+    const paged = diary.status === 'ok' && diary.value.nextCursor !== null
+    show(byEl('pick-search', root), paged || top.q !== '')
     const items = top.list?.items ?? []
-    const known = new Set(Array.from(list.querySelectorAll<HTMLElement>('[data-id]')).map((n) => n.dataset.id))
-    const wanted = new Set(items.map((i) => i.id))
-    if (known.size !== wanted.size || [...wanted].some((id) => !known.has(id))) {
+    const nothing = !top.loading && !top.failed && top.list !== null && items.length === 0 && top.q !== ''
+    setText(
+      byEl('pick-status', root),
+      top.loading
+        ? 'Завантажуємо записи…'
+        : top.failed
+          ? 'Не вдалося завантажити збережені тези.'
+          : nothing
+            ? `За запитом «${top.q}» нічого не знайшлося.`
+            : '',
+    )
+    show(byEl('pick-retry', root), top.failed && !top.loading)
+    const list = byEl('pick-list', root)
+    const known = Array.from(list.querySelectorAll<HTMLElement>('[data-id]')).map((n) => n.dataset.id)
+    if (known.length !== items.length || items.some((item, i) => known[i] !== item.id)) {
       list.replaceChildren()
       for (const item of items) {
         const li = fromTemplate<HTMLLIElement>('pick')
@@ -171,13 +225,20 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
     target?.focus()
   }
 
+  /** I6: the opener; else the dialog still open under the closed one; else «Акаунт»; else the h1. */
   function returnFocus(opener: HTMLElement | null): void {
-    const inOpenDialog = (node: HTMLElement): boolean => {
+    const usable = (node: HTMLElement): boolean => {
+      if (!node.isConnected || node.closest('[hidden]') !== null) return false
       const dialog = node.closest('dialog')
-      return dialog !== null && !dialog.open
+      return dialog === null ? stack.length === 0 : dialog.open && stack[stack.length - 1]?.el === dialog
     }
-    if (opener !== null && opener.isConnected && !inOpenDialog(opener) && opener.closest('[hidden]') === null) {
+    if (opener !== null && usable(opener)) {
       opener.focus()
+      return
+    }
+    const below = stack[stack.length - 1]
+    if (below !== undefined) {
+      initialFocus(below.el)
       return
     }
     const account = document.querySelector<HTMLElement>('[data-act="account"].account-toggle')
@@ -189,11 +250,20 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
     if (screen) headingOf(screen)?.focus()
   }
 
+  function openerNow(): HTMLElement | null {
+    const active = document.activeElement
+    if (active instanceof HTMLElement && active !== document.body) return active
+    return noted !== null && noted.isConnected ? noted : null
+  }
+
   return {
     helpOpen: () => stack.some((o) => o.kind === 'help'),
     pickTried() {
       pickTried = true
       if (last !== null) refreshPick(last)
+    },
+    noteOpener(el) {
+      noted = el
     },
     sync(next, screenChanged) {
       last = next
@@ -204,6 +274,7 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
       while (stack.length > keep) {
         const top = stack.pop()!
         if (top.el.open) top.el.close()
+        if (top.kind === 'revisit-pick') window.clearTimeout(searchTimer)
         if (!screenChanged) returnFocus(top.opener)
       }
       if (wanted.every((o) => o.o !== 'revisit-pick')) pickTried = false
@@ -211,9 +282,10 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
       for (let i = stack.length; i < wanted.length; i++) {
         const overlay = wanted[i]!
         const el = elements[overlay.o]
-        const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null
+        const opener = openerNow()
         const key = confirmKey(overlay)
         if (key !== null) fillConfirm(key)
+        if (overlay.o === 'revisit-pick') search.value = overlay.q
         stack.push({ kind: overlay.o, el, opener, confirm: key })
         if (overlay.o === 'confirm') refreshConfirm(next)
         if (overlay.o === 'account') refreshAccount(next)
@@ -222,6 +294,7 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
         if (!el.open) el.showModal()
         initialFocus(el)
       }
+      noted = null
       // The confirm that switches its content in place (end ↔ end-no-theses).
       for (const [i, open] of stack.entries()) {
         const overlay = wanted[i]!

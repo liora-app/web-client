@@ -93,7 +93,7 @@ export function createEffects(deps: EffectDeps): Effects {
       default: {
         const state = model.state
         if (state.s === 'chat' && state.pending?.status === 'failed' && state.pending.error !== null) {
-          announcer.say(`Не надіслано. ${turnError(state.pending.error, model.ctx.csrfFailures, null).why}`)
+          announcer.say(`Не надіслано. ${turnError(state.pending.error, model.ctx.csrfFailures, null, state.session.scenario === 'revisit').why}`)
         }
       }
     }

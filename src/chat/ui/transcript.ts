@@ -123,6 +123,8 @@ export class Transcript {
   constructor(list: HTMLOListElement, hooks: TranscriptHooks = {}) {
     this.list = list
     this.hooks = hooks
+    window.addEventListener('online', () => this.connectionChanged())
+    window.addEventListener('offline', () => this.connectionChanged())
   }
 
   /** The newest text shown for the answer in progress (for the announcer on `done`). */
@@ -252,32 +254,39 @@ export class Transcript {
   private renderStatus(li: HTMLLIElement, view: TranscriptView): void {
     const pending = view.pending!
     const status = li.querySelector<HTMLElement>('.said__status')!
-    if (pending.status === 'sending') {
-      show(status, false)
-      return
-    }
-    show(status, true)
     const flag = status.querySelector<HTMLElement>('.said__flag')!
     const why = status.querySelector<HTMLElement>('.said__why')!
     const id = status.querySelector<HTMLElement>('.said__id')!
     const slot = (name: string): HTMLElement => status.querySelector<HTMLElement>(`[data-slot="${name}"]`)!
     const resend = slot('resend').querySelector('button')!
+    const only = (...names: string[]): void => {
+      for (const name of ['resend', 'edit', 'pick', 'busy-cancel', 'copy', 'reload']) show(slot(name), names.includes(name))
+    }
+    if (pending.status === 'sending') {
+      // llm_busy: the countdown is in the AI's slot, «-> Скасувати» under the message (§4.3).
+      const busy = view.stream?.phase === 'busy-wait'
+      show(status, busy)
+      if (!busy) return
+      show(flag, false)
+      show(why, false)
+      show(id, false)
+      only('busy-cancel')
+      return
+    }
+    show(status, true)
+    show(flag, true)
     if (pending.status === 'stopped') {
       setText(flag, 'Відповідь зупинено')
       setText(why, '')
       show(why, false)
       show(id, false)
-      show(slot('resend'), true)
-      show(slot('edit'), true)
-      show(slot('pick'), false)
-      show(slot('copy'), false)
-      show(slot('reload'), false)
+      only('resend', 'edit')
       setAttr(resend, 'aria-disabled', null)
       return
     }
     const error = pending.error
     const seconds = view.cooldownUntil === null ? null : Math.max(0, Math.ceil((view.cooldownUntil - Date.now()) / 1000))
-    const text = error === null ? { why: '', reload: false, showId: false } : turnError(error, view.csrfFailures, seconds)
+    const text = error === null ? { why: '', reload: false, showId: false } : turnError(error, view.csrfFailures, seconds, view.revisit)
     setText(flag, 'Не надіслано')
     setText(why, text.why)
     show(why, text.why !== '')
@@ -286,12 +295,18 @@ export class Transcript {
     show(id, idLine !== null)
     const notFound = view.revisit && error?.code === 'not_found'
     const tooLarge = error?.code === 'payload_too_large'
-    show(slot('resend'), !text.reload && !notFound && !tooLarge)
-    show(slot('edit'), !text.reload && !tooLarge)
-    show(slot('pick'), notFound)
-    show(slot('copy'), text.reload)
-    show(slot('reload'), text.reload)
-    setAttr(resend, 'aria-disabled', view.cooldownUntil !== null ? 'true' : null)
+    if (text.reload) only('copy', 'reload')
+    else if (tooLarge) only()
+    else if (notFound) only('pick', 'edit')
+    else only('resend', 'edit')
+    // Offline: «Надіслати ще раз» comes back with the `online` event (§4.3); a 429 waits its countdown.
+    const offline = error?.code === 'network' && navigator.onLine === false
+    setAttr(resend, 'aria-disabled', view.cooldownUntil !== null || offline ? 'true' : null)
+  }
+
+  /** online / offline: the unsent message's «Надіслати ще раз» follows the connection. */
+  connectionChanged(): void {
+    if (this.view?.pending && this.pendingLi?.isConnected) this.renderStatus(this.pendingLi, this.view)
   }
 
   private clearStatus(li: HTMLLIElement): void {

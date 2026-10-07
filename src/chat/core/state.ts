@@ -645,7 +645,8 @@ function signedInScreen(state: State): boolean {
   return state.s !== 'signed-out' && state.s !== 'account-deleted' && state.s !== 'fatal'
 }
 
-function sessionOf(state: State): Session | null {
+/** The conversation a screen holds (read-only on some of them). */
+export function sessionOf(state: State): Session | null {
   switch (state.s) {
     case 'chat':
     case 'summarizing':
@@ -661,7 +662,8 @@ function sessionOf(state: State): Session | null {
   }
 }
 
-function pendingOf(state: State): Pending | null {
+/** The person's unsent message a screen holds. */
+export function pendingOf(state: State): Pending | null {
   switch (state.s) {
     case 'chat':
     case 'consent':
@@ -675,7 +677,8 @@ function pendingOf(state: State): Pending | null {
   }
 }
 
-function draftOf(state: State): Draft | null {
+/** The draft of theses a screen holds (or the one a consent will save). */
+export function draftOf(state: State): Draft | null {
   if (state.s === 'review') return state.draft
   if (state.s === 'consent') return state.resume?.kind === 'save' ? state.resume.draft : null
   if (state.s === 'session-expired' || state.s === 'not-invited') return state.draft

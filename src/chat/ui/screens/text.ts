@@ -4,7 +4,7 @@
 
 import type { Model, State } from '../../core/state'
 import { hasUserMessage } from '../../core/state'
-import { longDateTime, requestIdLine, signInBanner, stillSignedIn } from '../copy'
+import { accountOpError, longDateTime, requestIdLine, signInBanner, stillSignedIn } from '../copy'
 import { byEl, screenOf, setText, show } from '../dom'
 import { renderStatic } from '../transcript'
 
@@ -71,7 +71,14 @@ export function notInvitedScreen(): Screen {
       show(kept, hasTalk || state.draft !== null)
       setText(copy, state.draft !== null ? 'Скопіювати тези' : 'Скопіювати текст розмови')
       copy.dataset.act = state.draft !== null ? 'copy-theses' : 'copy'
-      if (entered) renderStatic(talk, state.stale?.messages ?? [], state.pending)
+      if (entered) {
+        renderStatic(talk, state.stale?.messages ?? [], state.pending)
+        byEl<HTMLDetailsElement>('ni-details', root).open = false
+      }
+      // «-> Вийти» failed (the account sheet shows its own error when it is open).
+      const op = model.ctx.op
+      const opText = op !== null && op.error !== null && op.name === 'logout' && model.overlay.length === 0 ? accountOpError(op.name, op.error).why : ''
+      setText(byEl('ni-op-error', root), opText)
     },
   }
 }
@@ -140,12 +147,18 @@ export function deletedScreen(): Screen {
 
 export function fatalScreen(): Screen {
   const root = screenOf('fatal')
+  const connection = (): void => {
+    const offline = navigator.onLine === false
+    show(byEl('fatal-online', root), !offline)
+    show(byEl('fatal-offline', root), offline)
+  }
+  // «Схоже, немає інтернету» follows the connection while the screen is up (§3.9).
+  window.addEventListener('online', connection)
+  window.addEventListener('offline', connection)
   return {
     render(model) {
       const { error } = model.state as On<'fatal'>
-      const offline = navigator.onLine === false
-      show(byEl('fatal-online', root), !offline)
-      show(byEl('fatal-offline', root), offline)
+      connection()
       const id = requestIdLine(error.requestId)
       const line = byEl('fatal-request-id', root)
       setText(line, id ?? '')

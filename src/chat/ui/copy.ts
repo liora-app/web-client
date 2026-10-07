@@ -70,20 +70,59 @@ export function stillSignedIn(code: AuthCode, email: string): string {
   return `Новий вхід не відбувся. Ви й далі в акаунті ${email}.`
 }
 
-// ── Turn errors under the person's message (§4.2, §4.3) ──────────────────────────────────────
+// ── Errors (§4.2, §4.3): one dictionary, chosen by the code ──────────────────────────────────
 
+/** For internal, http_error, bad_request, method_not_allowed, json_invalid and any unknown code. */
 export const GENERIC = 'Щось пішло не так на нашому боці. Спробуйте ще раз.'
+export const NO_CONNECTION = 'Не вдалося — немає зʼєднання. Спробуйте ще раз.'
+export const SERVER_DOWN = 'Сервер зараз не відповідає. Спробуйте за хвилину.'
+export const FORBIDDEN = 'Цю дію зараз виконати не можна.'
+export const CSRF_FIRST = 'Не вдалося надіслати через технічну перевірку безпеки. Спробуйте ще раз.'
+export const CSRF_RELOAD = 'Оновіть сторінку. Розмова при цьому зникне — спершу її можна скопіювати.'
 
-export type TurnErrorText = Readonly<{
+export type ErrorText = Readonly<{
   why: string
-  /** «Оновіть сторінку» instead of «Надіслати ще раз» (a repeated 403 csrf_failed). */
+  /** «Оновіть сторінку» instead of a retry (a repeated 403 csrf_failed). */
   reload: boolean
   /** Show «Код запиту» under the line. */
   showId: boolean
 }>
 
-export function turnError(error: UiError, csrfFailures: number, retryInSeconds: number | null): TurnErrorText {
-  const line = (why: string, showId = false): TurnErrorText => ({ why, reload: false, showId })
+const line = (why: string, showId = false): ErrorText => ({ why, reload: false, showId })
+
+/** Codes the server sends with a 502/503 of its own; any other 502–504 (an empty body from Caddy,
+ *  auth_unavailable, a code we do not know) reads as «Сервер зараз не відповідає» (§4.3). */
+const OWN_GATEWAY_CODES: ReadonlySet<string> = new Set(['llm_busy', 'llm_failed'])
+
+function gateway(error: UiError): boolean {
+  if (error.code === 'upstream_unavailable') return true
+  return error.status !== null && error.status >= 502 && error.status <= 504 && !OWN_GATEWAY_CODES.has(error.code)
+}
+
+/** What every request shares: the gateway, CSRF, a bare 403, and the codes that only mean «our
+ *  bug» (404 is generic everywhere except a revisit turn). Null: the place decides. */
+function shared(error: UiError, csrfFailures: number): ErrorText | null {
+  if (gateway(error)) return line(SERVER_DOWN)
+  switch (error.code) {
+    case 'csrf_failed':
+      return csrfFailures > 1 ? { why: CSRF_RELOAD, reload: true, showId: false } : line(CSRF_FIRST)
+    case 'forbidden':
+      return line(FORBIDDEN)
+    case 'internal':
+    case 'http_error':
+    case 'bad_request':
+    case 'method_not_allowed':
+    case 'json_invalid':
+    case 'not_found':
+    case 'invalid_timezone':
+      return line(GENERIC, true)
+    default:
+      return null
+  }
+}
+
+/** Under the person's message in the conversation (§3.7.2, §4.3). */
+export function turnError(error: UiError, csrfFailures: number, retryInSeconds: number | null, revisit = false): ErrorText {
   switch (error.code) {
     case 'network':
       return line('Немає зʼєднання.')
@@ -105,20 +144,13 @@ export function turnError(error: UiError, csrfFailures: number, retryInSeconds: 
       )
     case 'validation_error':
       return line('Повідомлення не пройшло перевірку. Спробуйте скоротити або змінити його.')
-    case 'csrf_failed':
-      return csrfFailures > 1
-        ? { why: 'Оновіть сторінку. Розмова при цьому зникне — спершу її можна скопіювати.', reload: true, showId: false }
-        : line('Не вдалося надіслати через технічну перевірку безпеки. Спробуйте ще раз.')
-    case 'forbidden':
-      return line('Цю дію зараз виконати не можна.')
     case 'not_found':
-      return line('Одного з обраних записів уже немає в щоденнику.')
+      // Only a revisit turn has ids the server can miss; anywhere else a 404 is our bug.
+      return revisit ? line('Одного з обраних записів уже немає в щоденнику.') : line(GENERIC, true)
     case 'payload_too_large':
       return line('Розмова стала задовгою, щоб надіслати її цілком.')
-    case 'upstream_unavailable':
-      return line('Сервер зараз не відповідає. Спробуйте за хвилину.')
     default:
-      return line(GENERIC, true)
+      return shared(error, csrfFailures) ?? line(GENERIC, true)
   }
 }
 
@@ -158,48 +190,44 @@ export function counter(length: number, max: number): string {
 
 // ── Theses (§7.1–7.3) ────────────────────────────────────────────────────────────────────────
 
-export function summarizeError(error: UiError): string {
+/** The line on `summarizing` (§7.1, §4.3). `retryInSeconds`: what is left of a 429 countdown. */
+export function summarizeError(error: UiError, csrfFailures: number, retryInSeconds: number | null): ErrorText {
   switch (error.code) {
     case 'llm_busy':
-      return 'AI досі зайнятий. Спробуйте за хвилину — розмова на місці.'
+      return line('AI досі зайнятий. Спробуйте за хвилину — розмова на місці.')
     case 'llm_failed':
     case 'timeout':
-      return 'AI не зміг скласти тези. Спробуйте ще раз — розмова на місці.'
+      return line('AI не зміг скласти тези. Спробуйте ще раз — розмова на місці.')
     case 'validation_error':
-      return 'Не вдалося скласти тези з цієї розмови.'
+      return line('Не вдалося скласти тези з цієї розмови.')
     case 'payload_too_large':
-      return 'Розмова завелика навіть для тез. Її можна лише завершити без тез.'
+      return line('Розмова завелика навіть для тез. Її можна лише завершити без тез.')
     case 'rate_limited':
-      return 'За хвилину можна надіслати до 20 повідомлень разом із тезами. Скласти ще раз можна буде за хвилину.'
+      return line(
+        retryInSeconds !== null && retryInSeconds > 0
+          ? `За хвилину можна надіслати до 20 повідомлень разом із тезами. Скласти тези знову можна через ${retryInSeconds} с.`
+          : 'За хвилину можна надіслати до 20 повідомлень разом із тезами. Можна скласти тези ще раз.',
+      )
     case 'network':
-      return 'Не вдалося — немає зʼєднання. Спробуйте ще раз.'
-    case 'upstream_unavailable':
-      return 'Сервер зараз не відповідає. Спробуйте за хвилину.'
-    case 'csrf_failed':
-      return 'Не вдалося надіслати через технічну перевірку безпеки. Спробуйте ще раз.'
-    case 'forbidden':
-      return 'Цю дію зараз виконати не можна.'
+      return line(NO_CONNECTION)
     default:
-      return GENERIC
+      return shared(error, csrfFailures) ?? line(GENERIC, true)
   }
 }
 
-export function saveError(error: UiError): string {
+/** Next to «Зберегти в щоденник» (§7.3). A 422 that maps to a field is shown on the field. */
+export function saveError(error: UiError, csrfFailures: number): ErrorText {
   switch (error.code) {
     case 'save_unknown':
-      return 'Не вдалося підтвердити збереження. Ваші правки на місці.'
+      return line('Не вдалося підтвердити збереження. Ваші правки на місці.')
     case 'network':
-      return 'Не вдалося — немає зʼєднання. Спробуйте ще раз.'
+      return line(NO_CONNECTION)
     case 'rate_limited':
-      return 'Забагато запитів поспіль. Спробуйте за хвилину — ваші правки на місці.'
-    case 'upstream_unavailable':
-      return 'Сервер зараз не відповідає. Спробуйте за хвилину.'
-    case 'csrf_failed':
-      return 'Не вдалося надіслати через технічну перевірку безпеки. Спробуйте ще раз.'
-    case 'forbidden':
-      return 'Цю дію зараз виконати не можна.'
+      return line('Забагато запитів поспіль. Спробуйте за хвилину — ваші правки на місці.')
+    case 'validation_error':
+      return line(GENERIC, true)
     default:
-      return GENERIC
+      return shared(error, csrfFailures) ?? line(GENERIC, true)
   }
 }
 
@@ -227,18 +255,47 @@ export const CONSENT_UNCHECKED = 'Позначте всі три пункти �
 export const CONSENT_SAVE_FAILED = 'Не вдалося зберегти згоду. Спробуйте ще раз.'
 export const CONSENT_LOAD_FAILED = 'Не вдалося завантажити умови. Спробуйте ще раз.'
 
-export function accountOpError(name: 'logout' | 'delete-account' | 'revoke', error: UiError): string {
+/** Under «Погоджуюся» (§3.5, §4.3). The unchecked boxes and a missing provider have their own
+ *  places; a network failure says so; 5xx, 422 and the rest — «Не вдалося зберегти згоду». */
+export function consentError(error: UiError, csrfFailures: number): ErrorText | null {
+  switch (error.code) {
+    case 'unchecked':
+    case 'provider_missing':
+      return null
+    case 'consents_load_failed':
+      return line(CONSENT_LOAD_FAILED)
+    case 'network':
+      return line(NO_CONNECTION)
+    case 'csrf_failed':
+    case 'forbidden':
+      return shared(error, csrfFailures)
+    default:
+      return line(CONSENT_SAVE_FAILED)
+  }
+}
+
+export type AccountOp = 'logout' | 'delete-account' | 'revoke'
+
+/** In the dialog of the operation, or next to «Вийти» (§8.4–8.6, §4.3). */
+export function accountOpError(name: AccountOp, error: UiError): ErrorText {
   if (name === 'logout') {
-    return error.code === 'network'
-      ? 'Не вдалося вийти — немає зʼєднання. Спробуйте ще раз.'
-      : 'Не вдалося вийти. Оновіть сторінку й спробуйте ще раз.'
+    return line(
+      error.code === 'network'
+        ? 'Не вдалося вийти — немає зʼєднання. Спробуйте ще раз.'
+        : 'Не вдалося вийти. Оновіть сторінку й спробуйте ще раз.',
+    )
   }
   if (name === 'delete-account') {
-    if (error.code === 'delete_unknown') return 'Не вдалося підтвердити видалення. Спробуйте ще раз — повторний запит нічого не зламає.'
-    if (error.code === 'network') return 'Не вдалося — немає зʼєднання. Спробуйте ще раз.'
-    return GENERIC
+    // Network, our timeout, a gateway without a body: the account may be gone already, and a
+    // repeat is safe (§8.5).
+    if (error.code === 'delete_unknown') return line('Не вдалося підтвердити видалення. Спробуйте ще раз — повторний запит нічого не зламає.', true)
+    if (error.code === 'network') return line(NO_CONNECTION)
+    return shared(error, 0) ?? line(GENERIC, true)
   }
-  return 'Не вдалося відкликати згоду. Спробуйте ще раз.'
+  if (error.code === 'network') return line(NO_CONNECTION)
+  if (error.code === 'validation_error') return line(CONSENT_SAVE_FAILED)
+  if (error.code === 'csrf_failed' || error.code === 'forbidden') return shared(error, 0)!
+  return line('Не вдалося відкликати згоду. Спробуйте ще раз.')
 }
 
 export function requestIdLine(id: string | null): string | null {
@@ -286,11 +343,13 @@ export function shortDate(iso: string): string {
   return new Intl.DateTimeFormat('uk', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date)
 }
 
-/** «7 жовтня 2026, 14:52» */
+/** «7 жовтня 2026, 14:52» (Intl alone gives «7 жовтня 2026 р. о 14:52»). */
 export function longDateTime(iso: string): string {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return ''
-  return new Intl.DateTimeFormat('uk', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date)
+  const day = new Intl.DateTimeFormat('uk', { day: 'numeric', month: 'long', year: 'numeric' }).format(date).replace(/\s*р\.$/, '')
+  const time = new Intl.DateTimeFormat('uk', { hour: '2-digit', minute: '2-digit' }).format(date)
+  return `${day}, ${time}`
 }
 
 /** дд.мм */
