@@ -19,6 +19,32 @@
   --sky-haze-amber: 170 102 46;
 }
 
+/* Sky presets: /chat/ only (src/ui/sky.ts sets the attribute after an explicit choice; the landing
+   never does, and the crisis takes it off). No layer is lighter than the night's: each base colour
+   stays at or under the night's lightest base (L ≈ 0.014, text-dim ≥ 5:1 on it), each haze under the
+   night's own (relative luminance, checked in tests/e2e/chat-core.spec.ts). */
+html[data-sky='dusk'] {
+  --sky-top: 16 10 22; /* #100a16, plum */
+  --sky-mid: 7 5 9;
+  --sky-bottom: 5 4 5;
+  --sky-glow-teal: 34 16 36; /* the top-right glow turns violet */
+  --sky-glow-violet: 36 16 20; /* and the bottom-left one ember */
+  --sky-haze-teal: 96 64 120;
+  --sky-haze-violet: 118 50 84;
+  --sky-haze-amber: 184 90 34;
+}
+
+html[data-sky='dawn'] {
+  --sky-top: 8 14 26; /* #080e1a, deep blue */
+  --sky-mid: 5 7 11;
+  --sky-bottom: 4 5 6;
+  --sky-glow-teal: 22 30 52;
+  --sky-glow-violet: 36 20 28; /* a rose edge low on the left */
+  --sky-haze-teal: 64 100 150;
+  --sky-haze-violet: 104 58 86;
+  --sky-haze-amber: 176 96 60;
+}
+
 .stage {
   position: fixed;
   inset: 0;

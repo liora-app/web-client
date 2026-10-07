@@ -2014,6 +2014,27 @@ html[data-screen='chat'] .chat__text {
   justify-self: start;
 }
 
+/* «Вигляд → Фон»: the scenario pills' look for the three skies (src/ui/sky.ts). */
+.sky-pick {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.sky-pick__legend {
+  margin-bottom: 0.5rem;
+  padding: 0;
+  font-size: var(--step--1);
+  color: var(--color-text-soft);
+}
+
+.sky-pick__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .sheet__note {
   margin-top: auto;
   font-family: var(--font-mono);

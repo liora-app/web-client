@@ -646,6 +646,19 @@
             </li>
           </ul>
         </div>
+        <!-- The sky preset (src/ui/sky.ts): kept in this browser only after a choice; «Ніч» forgets it. -->
+        <div class="sheet__row">
+          <h3 class="sheet__label">Вигляд</h3>
+          <fieldset class="sky-pick" data-sky-pick aria-describedby="sky-note">
+            <legend class="sky-pick__legend">Фон</legend>
+            <div class="sky-pick__list">
+              <label class="pill"><input class="pill__input" type="radio" name="sky" value="night" checked /><span class="pill__text">Ніч</span></label>
+              <label class="pill"><input class="pill__input" type="radio" name="sky" value="dusk" /><span class="pill__text">Сутінки</span></label>
+              <label class="pill"><input class="pill__input" type="radio" name="sky" value="dawn" /><span class="pill__text">Світанок</span></label>
+            </div>
+          </fieldset>
+          <p class="small" id="sky-note">Вибір памʼятає цей браузер, на сервер він не потрапляє.</p>
+        </div>
         <div class="sheet__row">
           <button class="button button--secondary" type="button" data-act="logout">Вийти</button>
           <p class="field-error" data-el="account-op-error" role="alert"></p>
