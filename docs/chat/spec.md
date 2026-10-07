@@ -2369,7 +2369,7 @@ spa-fallback, тоді як Caddy на проді робить редирект.
 
 | Файл | Що тестує | Де ганяємо |
 |---|---|---|
-| `tests/e2e/chat.spec.ts` | Сторінку проти моків API: `page.route` і синтетичний SSE | CI: проєкти `desktop` і `mobile`, той самий job і `--grep-invert @gpu`. Локально — ще й `iphone-webkit`. |
+| `tests/e2e/chat.spec.ts` | Сторінку проти моків API: `page.route` і синтетичний SSE | CI: проєкти `desktop` і `mobile`, той самий job і `--grep-invert "@gpu\|@stack"`. Локально — ще й `iphone-webkit`. |
 | `tests/e2e/chat-core.spec.ts` | Чисте ядро, без фікстури `page` | Лише `desktop`: `test.skip(testInfo.project.name !== 'desktop')`. |
 | `tests/e2e/chat.stack.spec.ts` | Справжній стек | Лише локально. Кожен тест має тег `@stack`, а `test.skip` спрацьовує, якщо `process.env.E2E_STACK !== '1'` або `baseURL` не `http://localhost:8088`. Тому в CI і проти проду ці тести не йдуть ніколи. |
 | `tests/e2e/chat-fixtures.ts` | Обвʼязка: `mockApi`, `sse()`, fetch-shim, аудит сховищ, спільний stop-list | — |
@@ -2383,7 +2383,7 @@ spa-fallback, тоді як Caddy на проді робить редирект.
 npm run build
 npx tsc --noEmit -p tsconfig.json
 # як у CI
-npx playwright test tests/e2e/chat.spec.ts tests/e2e/chat-core.spec.ts --project=desktop --project=mobile --grep-invert @gpu
+npx playwright test tests/e2e/chat.spec.ts tests/e2e/chat-core.spec.ts --project=desktop --project=mobile --grep-invert "@gpu|@stack"
 # локально: Origin у WebKit (§5.1)
 npx playwright test tests/e2e/chat.spec.ts --project=iphone-webkit
 # @stack, PowerShell
@@ -2796,7 +2796,7 @@ expect(audit).toMatchObject({ session: 0, idb: 0, caches: 0, sw: 0, cookie: '' }
 **Команди** (вивід кожної — у PR):
 - [ ] `npm run build`;
 - [ ] `npx tsc --noEmit -p tsconfig.json`;
-- [ ] `npx playwright test --project=desktop --project=mobile --grep-invert @gpu` (як у CI);
+- [ ] `npx playwright test --project=desktop --project=mobile --grep-invert "@gpu|@stack"` (як у CI);
 - [ ] `npx playwright test --project=iphone-webkit tests/e2e/chat.spec.ts` (локально);
 - [ ] `@stack` за §11.8 (локально, 1 воркер).
 

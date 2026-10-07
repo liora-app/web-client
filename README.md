@@ -1,6 +1,6 @@
 # web-client — liora-app
 
-> Головна сторінка Liora: статичний лендінг з процедурною WebGL-сценою.
+> Лендінг Liora (`/`) і веб-чат з AI (`/chat/`): дві сторінки однієї збірки Vite з процедурною WebGL-сценою.
 
 Частина організації [`liora-app`](https://github.com/liora-app). Карта всіх репо, процес і рішення —
 у [devops](https://github.com/liora-app/devops).
@@ -8,8 +8,17 @@
 ## Статус
 
 Лендінг — [ADR-006](https://github.com/liora-app/devops/blob/main/docs/adr/ADR-006-web-landing.md) (Proposed):
-Vite 8 + TypeScript 6 + three.js, без UI-фреймворку. Веб-версія самого застосунку (Expo for web) —
-окреме рішення. Лендінг не звертається до API і не займає шлях `/api/*`.
+Vite 8 + TypeScript 6 + three.js, без UI-фреймворку. Веб-чат з AI —
+[ADR-007](https://github.com/liora-app/devops/blob/main/docs/adr/ADR-007-web-chat-in-web-client.md) (Proposed):
+друга сторінка тієї ж збірки, той самий стек, без нових залежностей. Специфікація чату —
+[`docs/chat/spec.md`](docs/chat/spec.md), контракт API — [`docs/chat/api-contract.md`](docs/chat/api-contract.md).
+
+| Сторінка | Що це | Звернення до API, cookies |
+|---|---|---|
+| `/` (`index.html`) | Лендінг: hero і глави 01–07. CTA «Розмова з AI →» і клік по кулі ведуть на `/chat/`. | Жодних. Сама cookies не ставить і не читає; `/?auth_error=…` переводить на `/chat/?auth_error=…` без запиту. |
+| `/chat/` (`chat/index.html`) | Розмова з AI: вхід, згода, сценарії, стрім відповіді (SSE), кризовий режим, тези, меню акаунта. | Лише same-origin `/api/v1` через `fetch`. Сесійний cookie (httpOnly) ставить сервер після входу. Транскрипт — лише в памʼяті вкладки. |
+
+Шлях `/api/*` належить `server`. У сховищі браузера можуть бути лише ключі `liora:motion` і `liora:sky`.
 
 ## Швидкий старт
 
@@ -25,23 +34,50 @@ npm run dev          # http://localhost:5173
 
 | Команда | Що робить |
 |---|---|
-| `npm run dev` | Dev-сервер Vite (5173) |
-| `npm run build` | `tsc` (перевірка типів) + збірка в `dist/` |
-| `npm run preview` | Віддає `dist/` на 4173 |
+| `npm run dev` | Dev-сервер Vite (5173): `/` і `/chat/`, без CSP (Vite вставляє стилі через JS) |
+| `npm run build` | `tsc` (перевірка типів) + збірка обох сторінок у `dist/` (`dist/index.html`, `dist/chat/index.html`) |
+| `npm run preview` | Віддає `dist/` на 4173 з тими самими CSP, `Permissions-Policy` і `Referrer-Policy`, що на проді, і `no-store` на `/chat/` |
 | `npm run test:e2e:install` | Один раз: Chromium і WebKit для Playwright |
-| `npm run test:e2e` | Збирає, піднімає preview і проганяє Playwright (desktop, mobile, iPhone/WebKit), 3 воркери; WebKit — один |
+| `npm run test:e2e` | Збирає, піднімає preview і проганяє весь Playwright (desktop, mobile, iPhone/WebKit). **Лише з дозволу власника:** кожен воркер — браузер з WebGL, і ПК власника від цього зависав. Локально 1 воркер, у CI — 2 |
 | `E2E_BASE_URL=<url> npx playwright test` | Той самий набір проти вже запущеного сайту (контейнер, прод), без збірки й preview |
+
+Тести ядра чату (`tests/e2e/chat-core.spec.ts`) — чистий TypeScript без браузера і без сервера. Адреса
+`127.0.0.1:9` лише вимикає `webServer` у `playwright.config.ts`, жодна сторінка не відкривається:
+
+```bash
+E2E_BASE_URL=http://127.0.0.1:9 npx playwright test tests/e2e/chat-core.spec.ts --project=desktop --workers=1
+```
+
+Тести з тегом `@stack` ганяються лише локально, проти compose-стеку з `devops` на `http://localhost:8088`
+(саме `localhost`: CSRF звіряє origin дослівно), з `LLM_PROVIDER=fake`, 1 воркером і без `@gpu`. Без
+`E2E_STACK=1` кожен такий тест пропускає себе сам, а CI відкидає тег (ADR-007):
+
+```bash
+E2E_STACK=1 E2E_BASE_URL=http://localhost:8088 npx playwright test --grep @stack --grep-invert @gpu --workers=1
+```
 
 ## Як влаштовано
 
 ```
-index.html            весь текст сторінки (DOM, SEO, доступність): hero і глави 01–07
-src/main.ts           вхід: навігація, поява, «розшифровування» міток, пауза, запуск сцени
+index.html            весь текст лендінгу (DOM, SEO, доступність): hero і глави 01–07
+src/main.ts           вхід лендінгу: /?auth_error= → /chat/, навігація, поява, «розшифровування» міток,
+                      пауза, запуск сцени
+chat/index.html       весь статичний текст /chat/: екрани, діалоги, <template> для реплік
+src/chat/core/        логіка чату без DOM, window і three.js (ADR-007; її можна перенести в мобілку):
+                      api.ts (same-origin /api/v1), sse.ts (кадри SSE з тіла POST), turn.ts (хід:
+                      watchdog-и й повтори), state.ts (машина станів, чиста), errors.ts (помилки за
+                      error.code), helplines.ts (whitelist кризових контактів), limits.ts, country.ts,
+                      types.ts (DTO з server/openapi.json)
+src/chat/ui/          екрани чату: main.ts (вхід сторінки), store.ts → render.ts → effects.ts, screens/,
+                      transcript.ts, composer.ts, dialogs.ts, announcer.ts (live-регіон), presence.ts
+                      (куля в слоті персонажа), leave-guard.ts, keyboard.ts, scroll-anchor.ts, copy.ts
+                      (динамічні тексти), dom.ts (лише textContent)
 src/ui/               motion.ts (пауза / reduced motion), nav.ts (aria-current, HUD глави),
-                      menu.ts (меню глав < 85em, нативний <dialog>), sound.ts + sound-engine.ts
+                      menu.ts (меню глав < 64em, нативний <dialog>), sound.ts + sound-engine.ts
                       («Звук»: генеративний пад, вимкнений за замовчуванням, лінивий чанк),
                       reveal.ts, steps.ts (приклад сесії йде за кроком), decode.ts,
-                      hero-light.ts (де стоїть світло hero — спільне для CSS і сцени)
+                      hero-light.ts (де стоїть світло hero — спільне для CSS і сцени),
+                      sky.ts (пресети неба /chat/, ключ liora:sky)
 src/gl/               WebGL-шар — окремий лінивий чанк з three.js
   core/               спільне для кожної сцени (лендінг, згодом чат):
     boot.ts           чи запускати сцену; стан у <html data-gl="loading|on|off" data-gl-reason>;
@@ -61,9 +97,12 @@ src/gl/               WebGL-шар — окремий лінивий чанк з
   shaders/            GLSL
 src/styles/           токени, база, небо й шари (stage.css; кольори неба — --sky-* на :root), шапка,
                       компоненти, глави
-tests/e2e/            Playwright: контент, стоп-лист, шари, клавіатура, axe, сцена, фолбеки
-scripts/ci-e2e.sh     e2e у CI: Chromium, без тестів з тегом @gpu
-Dockerfile, deploy/   образ для хоста: збірка на node:24-alpine → статика на caddy:2, порт 8080
+tests/e2e/            Playwright: контент, стоп-лист, шари, клавіатура, axe, сцена, фолбеки;
+                      chat-core.spec.ts — ядро чату без браузера
+scripts/ci-e2e.sh     e2e у CI: Chromium, без тестів з тегами @gpu і @stack
+Dockerfile, deploy/   образ для хоста: збірка на node:24-alpine → статика на caddy:2, порт 8080;
+                      deploy/Caddyfile ставить CSP і Permissions-Policy на все, no-store на /chat/
+docs/chat/            специфікація /chat/ і контракт API
 public/og.jpg         картинка для прев'ю посилань (1200×630, кадр hero)
 ```
 
@@ -85,8 +124,11 @@ public/og.jpg         картинка для прев'ю посилань (1200
   7 схід (фінал). Крок 4 «Рішення за вами» (`data-gl-decide`) гасить дві з пʼяти тез. Граф
   щоденника має ті самі вузли, що й статичне SVG `.diary__sky`. Розкладка (колонка чи широка) — від `64em`.
 - **Шрифти:** Martian Mono (заголовки й мітки) і Onest (текст), обидва з `@fontsource-variable`.
-- **Жодних сторонніх запитів:** шрифти локальні (`@fontsource-variable`), аналітики й cookies немає.
-  Це перевіряє тест.
+- **Жодних сторонніх запитів:** шрифти локальні (`@fontsource-variable`), аналітики немає. Лендінг сам
+  cookies не ставить і в API не ходить; сесійний cookie зʼявляється лише після входу в чат. Це перевіряють тести.
+- **CSP одна на весь сайт** (ADR-007): `default-src 'self'`, без inline-скриптів і стилів, без `data:`.
+  Тому в коді немає `innerHTML`, `cssText` і `setAttribute('style')`, динамічні значення йдуть лише через
+  `style.setProperty('--x', …)`, класи й `data-*`, а текст моделі — лише через `textContent`.
 - Діагностика для тестів і ручної перевірки: `window.__lioraScene.stats()` у консолі (тир, частинки,
   стан, сигнал `fire`, draw calls).
 
@@ -97,9 +139,10 @@ public/og.jpg         картинка для прев'ю посилань (1200
 - Задачі — Issues цього репо + дошка організації «Liora».
 - CI — спільний: [`devops/.github/workflows/reusable-checks.yml`](https://github.com/liora-app/devops/blob/main/.github/workflows/reusable-checks.yml).
   У CI e2e йдуть без GPU: Chromium (desktop і mobile), без тестів з тегом `@gpu` — їм потрібен
-  робочий WebGL2-контекст (`scripts/ci-e2e.sh`). Повний набір — `npm run test:e2e` локально перед PR.
+  робочий WebGL2-контекст — і без `@stack` (`scripts/ci-e2e.sh`). CI запускається на кожен PR, зокрема
+  стекований. Повний набір локально — `npm run test:e2e`, лише з дозволу власника (див. вище).
 - **Деплой:** merge у `main` → `deploy-dispatch.yml` → деплой у [devops](https://github.com/liora-app/devops) ([ADR-004](https://github.com/liora-app/devops/blob/main/docs/adr/ADR-004-deploy-via-devops-dispatch.md)).
   На хості `docker compose up -d --build web-client` збирає `Dockerfile` цього репо; edge-Caddy віддає
-  лендінг на `/`, `/api/*` іде на `server` (ADR-006). Ручний передеплой `main`:
+  лендінг на `/` і чат на `/chat/`, `/api/*` іде на `server` (ADR-006, ADR-007). Ручний передеплой `main`:
   `gh workflow run deploy-dispatch.yml -R liora-app/web-client`. Після деплою —
   `E2E_BASE_URL=https://tryliora.duckdns.org npx playwright test --project=desktop --project=mobile`.
