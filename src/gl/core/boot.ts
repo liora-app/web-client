@@ -3,9 +3,45 @@
 //   data-gl="on"       WebGL2 context alive and the first frame is on screen
 //   data-gl="off"      static CSS backdrop; data-gl-reason says why
 // The page is complete without the scene: all text lives in the DOM, the canvas is decorative.
+// Which scene runs is the page's choice (BootOptions.load); the reasons to stay static are the same
+// for every scene. This module lands in the page's entry chunk: type-only imports from the GL side,
+// so three.js stays in the lazy scene chunk.
 
-import { motionAllowed, onMotionChange, systemReducesMotion } from '../ui/motion'
-import type { SceneHandle } from './scene'
+import { motionAllowed, onMotionChange, systemReducesMotion } from '../../ui/motion'
+import type { TierName } from './quality'
+
+export interface SceneCallbacks {
+  onFirstFrame(): void
+  onContextLost(): void
+  onContextRestored(): void
+  onTooSlow(): void
+}
+
+export interface SceneHandle {
+  pause(): void
+  resume(): void
+  destroy(): void
+}
+
+export interface SceneOptions {
+  /** Forces a quality tier (pickTier({ force })); without it: ?tier, then the device. */
+  tier?: TierName
+  /** Replaces the tier's DPR cap; the frame governor may still lower it. */
+  dprCap?: number
+  /** The element whose box the scene fills (the chat's slot). The landing scene ignores it: its
+   *  canvas is the full-screen .scene layer. */
+  sizeTo?: HTMLElement
+}
+
+/** What a lazily imported scene module (../scene, the chat's ../presence) exports. */
+export interface SceneModule {
+  createScene(canvas: HTMLCanvasElement, callbacks: SceneCallbacks, options?: SceneOptions): Promise<SceneHandle>
+}
+
+export interface BootOptions extends SceneOptions {
+  /** Loads the scene module as its own chunk: () => import('./gl/scene'). */
+  load: () => Promise<SceneModule>
+}
 
 export type GlReason =
   | 'reduced-motion'
@@ -65,7 +101,7 @@ function afterFirstPaint(task: () => void): void {
   else window.addEventListener('load', schedule, { once: true })
 }
 
-export function bootGL(canvas: HTMLCanvasElement): void {
+export function bootGL(canvas: HTMLCanvasElement, { load, ...sceneOptions }: BootOptions): void {
   let handle: SceneHandle | null = null
   let starting = false
   let drawn = false
@@ -108,6 +144,23 @@ export function bootGL(canvas: HTMLCanvasElement): void {
     sync()
   }
 
+  const callbacks: SceneCallbacks = {
+    onFirstFrame: () => {
+      drawn = true
+      sync()
+    },
+    onContextLost: () => {
+      contextLost = true
+      drawn = false // 'on' again only after the first restored frame (see the top of this file)
+      sync()
+    },
+    onContextRestored: () => {
+      contextLost = false
+      sync()
+    },
+    onTooSlow: () => fail('slow'),
+  }
+
   const start = async (): Promise<void> => {
     // The facts may have changed while waiting for an idle moment.
     if (offReason()) {
@@ -122,23 +175,8 @@ export function bootGL(canvas: HTMLCanvasElement): void {
       return
     }
     try {
-      const { createScene } = await import('./scene')
-      handle = await createScene(canvas, {
-        onFirstFrame: () => {
-          drawn = true
-          sync()
-        },
-        onContextLost: () => {
-          contextLost = true
-          drawn = false // 'on' again only after the first restored frame (see the top of this file)
-          sync()
-        },
-        onContextRestored: () => {
-          contextLost = false
-          sync()
-        },
-        onTooSlow: () => fail('slow'),
-      })
+      const { createScene } = await load()
+      handle = await createScene(canvas, callbacks, sceneOptions)
     } catch (error) {
       console.error('[liora] WebGL scene failed to start', error)
       starting = false

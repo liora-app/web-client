@@ -9,15 +9,28 @@ export interface Tier {
   /** Out-of-focus discs drifting past the camera (large points: fill-rate, not vertices). */
   bokeh: number
   dprCap: number
+  /** Multisampling of the default framebuffer (core/renderer.ts). 0 on every tier for now: the
+   *  landing smooths its edges in the shaders. 4 is for a scene with hard edges (phase 4). */
+  msaa: 0 | 4
+  /** Character mesh detail (phase 4; nothing reads it yet). */
+  charLod: 'low' | 'high'
+  /** Environment map size in pixels (phase 4; nothing reads it yet). */
+  envSize: number
 }
 
 const TIERS: Record<TierName, Tier> = {
-  high: { name: 'high', particles: 36000, bokeh: 240, dprCap: 1.75 },
-  medium: { name: 'medium', particles: 22000, bokeh: 150, dprCap: 1.5 },
-  low: { name: 'low', particles: 12000, bokeh: 80, dprCap: 1.25 },
+  high: { name: 'high', particles: 36000, bokeh: 240, dprCap: 1.75, msaa: 0, charLod: 'high', envSize: 256 },
+  medium: { name: 'medium', particles: 22000, bokeh: 150, dprCap: 1.5, msaa: 0, charLod: 'high', envSize: 128 },
+  low: { name: 'low', particles: 12000, bokeh: 80, dprCap: 1.25, msaa: 0, charLod: 'low', envSize: 64 },
 }
 
-export function pickTier(): Tier {
+export interface PickTierOptions {
+  /** Set by the page that boots the scene (the chat: 'low'); wins over ?tier and the device. */
+  force?: TierName
+}
+
+export function pickTier({ force }: PickTierOptions = {}): Tier {
+  if (force) return TIERS[force]
   // ?tier=low|medium|high: a manual override for slow machines and for checking a tier by hand.
   const forced = new URLSearchParams(window.location.search).get('tier')
   if (forced === 'low' || forced === 'medium' || forced === 'high') return TIERS[forced]

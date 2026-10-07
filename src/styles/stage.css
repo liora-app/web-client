@@ -3,7 +3,21 @@
      .hero__orb static light (sections.css), shown while the scene is not on
      .scene     transparent WebGL canvas: the light, particles, bokeh (src/gl)
      .vignette  darkens the edges over the light
-   html[data-gl] is set by src/gl/boot.ts: loading → on, or off with a reason. */
+   html[data-gl] is set by src/gl/core/boot.ts: loading → on, or off with a reason. */
+
+/* The sky's colours: the night (the only sky the landing has). R G B channels, so each layer can
+   fade its colour to alpha 0. A sky preset overrides these and nothing else; the lightest sky under
+   text has to stay at L ≈ 0.02 or darker (tokens.css: --color-text-dim keeps 4.5:1 there). */
+:root {
+  --sky-top: 7 16 18; /* #071012 */
+  --sky-mid: 4 7 8; /* #040708 */
+  --sky-bottom: 3 5 5; /* #030505 */
+  --sky-glow-teal: 13 34 38; /* #0d2226, top right */
+  --sky-glow-violet: 18 15 28; /* #120f1c, bottom left */
+  --sky-haze-teal: 38 112 112;
+  --sky-haze-violet: 78 62 150;
+  --sky-haze-amber: 170 102 46;
+}
 
 .stage {
   position: fixed;
@@ -12,9 +26,9 @@
   overflow: hidden;
   pointer-events: none;
   background:
-    radial-gradient(120% 85% at 74% -5%, #0d2226 0%, rgb(13 34 38 / 0) 62%),
-    radial-gradient(90% 70% at 10% 105%, #120f1c 0%, rgb(18 15 28 / 0) 70%),
-    linear-gradient(180deg, #071012 0%, #040708 55%, #030505 100%);
+    radial-gradient(120% 85% at 74% -5%, rgb(var(--sky-glow-teal)) 0%, rgb(var(--sky-glow-teal) / 0) 62%),
+    radial-gradient(90% 70% at 10% 105%, rgb(var(--sky-glow-violet)) 0%, rgb(var(--sky-glow-violet) / 0) 70%),
+    linear-gradient(180deg, rgb(var(--sky-top)) 0%, rgb(var(--sky-mid)) 55%, rgb(var(--sky-bottom)) 100%);
 }
 
 .stage__haze {
@@ -28,20 +42,20 @@
 .stage__haze--teal {
   left: -30vmax;
   top: -38vmax;
-  background: radial-gradient(closest-side, rgb(38 112 112 / 0.42), rgb(38 112 112 / 0));
+  background: radial-gradient(closest-side, rgb(var(--sky-haze-teal) / 0.42), rgb(var(--sky-haze-teal) / 0));
 }
 
 .stage__haze--violet {
   right: -42vmax;
   top: 12vh;
-  background: radial-gradient(closest-side, rgb(78 62 150 / 0.26), rgb(78 62 150 / 0));
+  background: radial-gradient(closest-side, rgb(var(--sky-haze-violet) / 0.26), rgb(var(--sky-haze-violet) / 0));
 }
 
 /* The warm light rises as the page comes to its end (--progress is set by src/ui/nav.ts). */
 .stage__haze--amber {
   left: 5vw;
   bottom: -62vmax;
-  background: radial-gradient(closest-side, rgb(170 102 46 / 0.34), rgb(170 102 46 / 0));
+  background: radial-gradient(closest-side, rgb(var(--sky-haze-amber) / 0.34), rgb(var(--sky-haze-amber) / 0));
   opacity: calc(0.35 + var(--progress, 0) * 0.65);
 }
 

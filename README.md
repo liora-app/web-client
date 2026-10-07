@@ -43,15 +43,22 @@ src/ui/               motion.ts (пауза / reduced motion), nav.ts (aria-curr
                       reveal.ts, steps.ts (приклад сесії йде за кроком), decode.ts,
                       hero-light.ts (де стоїть світло hero — спільне для CSS і сцени)
 src/gl/               WebGL-шар — окремий лінивий чанк з three.js
-  boot.ts             чи запускати сцену; стан у <html data-gl="loading|on|off" data-gl-reason>
-  scene.ts            прозорий канвас: мережа нейронів (частинки + 3D-соми), скляна сфера, ореол, боке;
-                      8 станів; цикл, пауза, втрата контексту
-  quality.ts          тири (частинки, боке, DPR; ?tier=low|medium|high) і губернатор кадрів
+  core/               спільне для кожної сцени (лендінг, згодом чат):
+    boot.ts           чи запускати сцену; стан у <html data-gl="loading|on|off" data-gl-reason>;
+                      bootGL(canvas, { load, tier?, dprCap?, sizeTo? }): яку сцену вантажити, вирішує сторінка;
+                      лежить у вхідному чанку, без three.js
+    renderer.ts       createRenderer(canvas, { msaa }): єдине місце, де створюється WebGLRenderer
+    quality.ts        тири (частинки, боке, DPR, msaa / charLod / envSize; pickTier({ force }) → ?tier=low|medium|high
+                      → пристрій) і губернатор кадрів
+    palette.ts        кольори WebGL (дзеркало tokens.css)
+  scene.ts            сцена лендінгу: прозорий канвас, мережа нейронів (частинки + 3D-соми), скляна сфера,
+                      ореол, боке; 8 станів; цикл, пауза, втрата контексту
   scroll.ts           скрол → стан сцени; «тихі» зони (data-gl-quiet)
   neural.ts           мережі нейронів: соми, аксони, дендрити, хвиля сигналу
   shapes.ts           місце кожної частинки в кожному стані (ядро, ланцюг, тези, граф щоденника)
   shaders/            GLSL
-src/styles/           токени, база, небо й шари (stage.css), шапка, компоненти, глави
+src/styles/           токени, база, небо й шари (stage.css; кольори неба — --sky-* на :root), шапка,
+                      компоненти, глави
 tests/e2e/            Playwright: контент, стоп-лист, шари, клавіатура, axe, сцена, фолбеки
 scripts/ci-e2e.sh     e2e у CI: Chromium, без тестів з тегом @gpu
 Dockerfile, deploy/   образ для хоста: збірка на node:24-alpine → статика на caddy:2, порт 8080

@@ -16,7 +16,7 @@ test.describe('WebGL scene', () => {
     await page.goto('/')
     await waitForScene(page)
 
-    // Lazy scene (boot.ts afterFirstPaint): the chunk is requested only after the load event.
+    // Lazy scene (core/boot.ts afterFirstPaint): the chunk is requested only after the load event.
     const timing = await page.evaluate(() => {
       const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming
       const chunk = performance.getEntriesByType('resource').find((entry) => /\/assets\/scene-[^/]+\.js$/.test(entry.name))

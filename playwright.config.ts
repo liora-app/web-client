@@ -44,7 +44,7 @@ export default defineConfig({
     },
     {
       name: 'iphone-webkit',
-      // WebKit on Windows rasterises WebGL on the CPU (src/gl/quality.ts): one page at a time.
+      // WebKit on Windows rasterises WebGL on the CPU (src/gl/core/quality.ts): one page at a time.
       workers: 1,
       use: { ...devices['iPhone 15'] },
     },
