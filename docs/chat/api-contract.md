@@ -14,7 +14,7 @@ Installed: fastapi 0.142.2, starlette 1.7.0, uvicorn 0.54.0.
 - Nothing serves /chat/ yet; W vite builds only index.html.
 
 ## 1. Routes under /api/v1
-Global: routers S\app\main.py:167-175; openapi at /api/v1/openapi.json + /api/v1/docs in non-prod only (main.py:155-163). Bodies extra="forbid" (schemas.py:60-61). Auth: `Authorization: Bearer` wins, invalid bearer = 401 no cookie fallback; else session cookie (auth/deps.py:52-78). CSRF only for cookie-auth POST/PUT/PATCH/DELETE (deps.py:28,74-75). Consent gate require_consents (deps.py:109-124) also re-checks allowlist (non-dev). Order: malformed JSON 422 json_invalid first; then dependencies (auth, CSRF, allowlist, consents) before schema 422. 413 middleware runs first (limits.py:16-55). Every response: X-Request-ID, X-Content-Type-Options nosniff, Referrer-Policy no-referrer, Cache-Control no-store unless set. CORS only if CORS_ORIGINS set; prod is same-origin.
+Global: routers S\app\main.py:167-175; openapi at /api/v1/openapi.json + /api/v1/docs in non-prod only (main.py:155-163). Bodies extra="forbid" (schemas.py:60-61). Auth: `Authorization: Bearer` wins, invalid bearer = 401 no cookie fallback; else session cookie (auth/deps.py:52-78). CSRF only for cookie-auth POST/PUT/PATCH/DELETE (deps.py:28,74-75). Consent gate require_consents checks required consents; no email allowlist (ADR-008, 2026-10-08). Order: malformed JSON 422 json_invalid first; then dependencies (auth, CSRF, consents) before schema 422. 413 middleware runs first (limits.py:16-55). Every response: X-Request-ID, X-Content-Type-Options nosniff, Referrer-Policy no-referrer, Cache-Control no-store unless set. CORS only if CORS_ORIGINS set; prod is same-origin.
 
 Meta (public):
 - GET /healthz -> 200 {"status":"ok","db":"ok"} | 503 {"status":"degraded","db":"down"} (NOT the error envelope).
@@ -25,7 +25,7 @@ Auth (/auth):
 - GET /auth/google/start?next=<path> — top-level navigation only. 302 to Google (openid email, PKCE S256, state, nonce, prompt=select_account), sets `liora_oauth`. Not configured -> currently 503 JSON {"error":{"code":"auth_unavailable",...}} (auth.py:86-87) — PLANNED server change: redirect to the web app with `auth_error=auth_unavailable`.
 - GET /auth/google/callback (not in spec) -> always 302 to the web app.
 - POST /auth/google/mobile {id_token} — mobile only.
-- POST /auth/dev — only APP_ENV dev|test AND AUTH_DEV_LOGIN=true, and only hostname localhost|127.0.0.1|testserver. Body {email (lowercased, <=320, regex ^[^@\s\x00]+@[^@\s\x00]+\.[^@\s\x00]+$), client:"web"|"mobile" default web} -> 200 AuthTokenOut{token,expires_at,user:{id,email,created_at}}; web sets the cookie. No CSRF, no allowlist; dev users skip allowlist in the consent gate.
+- POST /auth/dev — only APP_ENV dev|test AND AUTH_DEV_LOGIN=true, and only hostname localhost|127.0.0.1|testserver. Body {email (lowercased, <=320, regex ^[^@\s\x00]+@[^@\s\x00]+\.[^@\s\x00]+$), client:"web"|"mobile" default web} -> 200 AuthTokenOut{token,expires_at,user:{id,email,created_at}}; web sets the cookie. No CSRF; consent gates still apply to protected actions.
 - POST /auth/logout -> always 204 idempotent; clears cookie if sent; live cookie + bad Origin -> 403 csrf_failed.
 
 Account/consent:
@@ -38,11 +38,11 @@ Account/consent:
 - GET /export?format=json|md -> attachment liora-export-YYYYMMDD.json|md.
 
 Chat (no DB writes):
-- POST /chat/turn — auth+CSRF+3 consents+allowlist. Body TurnRequest {scenario (required), messages:[{role:"user"|"assistant", content:str 1..4000}] 1..200 items, last must be user, revisit_summary_ids: uuid[] max 5 — required non-empty iff scenario=="revisit", forbidden otherwise}. Lengths are Python code points (JS .length is stricter). Server trims oldest history beyond 24000 chars for the LLM only.
-  Observed order: 401 -> 403 csrf_failed -> 403 not_invited -> 403 consent_required -> 422 -> keyword crisis (200 SSE crisis) -> 404 foreign revisit id -> 429 rate_limited -> 503 llm_busy -> 200 SSE.
+- POST /chat/turn — auth+CSRF+3 consents. Body TurnRequest {scenario (required), messages:[{role:"user"|"assistant", content:str 1..4000}] 1..200 items, last must be user, revisit_summary_ids: uuid[] max 5 — required non-empty iff scenario=="revisit", forbidden otherwise}. Lengths are Python code points (JS .length is stricter). Server trims oldest history beyond 24000 chars for the LLM only.
+  Observed order: 401 -> 403 csrf_failed -> 403 consent_required -> 422 -> keyword crisis (200 SSE crisis) -> 404 foreign revisit id -> 429 rate_limited -> 503 llm_busy -> 200 SSE.
 - POST /chat/summarize — same gates; {scenario, messages} (no last-user rule) -> 200 SummaryDraftOut{title<=120, bullets 3..5 each <=500, tags<=5 each <=40}. Stores nothing. Errors: 409 crisis_stop details {helplines}, 429, 503 llm_busy Retry-After 5, 502 llm_failed ("The AI could not answer, try again" | "The AI returned an unusable summary, try again"). Save: map tags to {name, source:"ai"}; "don't save" = just don't POST.
 
-Journal: writes auth+CSRF+data_processing+age_18+allowlist; reads auth only.
+Journal: writes auth+CSRF+data_processing+age_18; reads auth only.
 - POST /summaries -> 201 SummaryOut. Body {scenario, title stripped 1..120 no NUL, bullets 1..5 each 1..500, tags <=10 of {name 1..40, source "ai"|"user" default user}}.
 - GET /summaries?q&tag&cursor&limit(1..50, 20) -> {items, next_cursor}. GET/PATCH/DELETE /summaries/{id} (PATCH replaces whole lists; >=1 field). GET /tags -> [{id,name,count}]. GET /reviews/weekly?week_start&tz (only tz input; 422 invalid_timezone).
 - SummaryOut {id, scenario, title, bullets[], tags:[{id,name,source}], created_at, edited_at|null}.
@@ -57,7 +57,7 @@ helplines object: verified_at "2026-10-05", review_every_days 30, sources[], not
 ## 3. Errors: {"error":{"code","message","details"?}}
 Validation details [{field:"messages.0.content", message}] (no input echo; path drops body/query/path; empty -> "request").
 Starlette mapping: 400 bad_request, 401 unauthenticated, 403 forbidden, 404 not_found, 405 method_not_allowed, 413 payload_too_large, else http_error.
-Codes: 401 unauthenticated "Sign in required" · 403 csrf_failed · 403 not_invited "Access is by invitation only" · 403 consent_required details {missing,policy_version} · 404 not_found · 409 policy_outdated {policy_version} · 409 crisis_stop {helplines} (summarize only) · 413 payload_too_large (4,000,000 bytes) · 422 validation_error · 422 invalid_timezone · 429 rate_limited + Retry-After (>=1 s) · 502 llm_failed (summarize) · 503 llm_busy + Retry-After: 5 · 503 auth_unavailable · 500 internal.
+Codes: 401 unauthenticated "Sign in required" · 403 csrf_failed · 403 not_invited "Google email must be verified" (mobile sign-in only) · 403 consent_required details {missing,policy_version} · 404 not_found · 409 policy_outdated {policy_version} · 409 crisis_stop {helplines} (summarize only) · 413 payload_too_large (4,000,000 bytes) · 422 validation_error · 422 invalid_timezone · 429 rate_limited + Retry-After (>=1 s) · 502 llm_failed (summarize) · 503 llm_busy + Retry-After: 5 · 503 auth_unavailable · 500 internal.
 Caddy: 413 JSON for chunked >4MB; Caddy's own 502/504 have an EMPTY body — never assume JSON.
 
 ## 4. CSRF
@@ -67,10 +67,10 @@ Caddy: 413 JSON for chunked >4MB; Caddy's own 502/504 have an EMPTY body — nev
 Session cookie: `__Host-liora_session` (https) / `liora_session` (http); HttpOnly, SameSite=Lax, Path=/, Secure on https; Max-Age 400 days; real expiry server-side 30 days sliding (refreshed hourly); expired = 401 with cookie present.
 OAuth flow cookie `liora_oauth`: HttpOnly, Lax, Path=/api/v1/auth/google, Max-Age 1200, flow 600 s.
 next=: only a relative same-app path (<=512, starts with "/", not // or /\, no backslash/control/scheme/host), else "/". Redirect = WEB_APP_URL scheme+host + WEB_APP_URL.path + next. Prod WEB_APP_URL https://tryliora.duckdns.org -> next=/chat/ lands on /chat/.
-Auth errors appended as `auth_error=<code>`: access_denied, state_mismatch, expired, not_invited (also unverified email), server_error. Missing/forged flow cookie -> next falls back to "/" (lands on /?auth_error=state_mismatch — the landing, not /chat/).
+Auth errors appended as `auth_error=<code>`: access_denied, state_mismatch, expired, not_invited (unverified email only), server_error. Missing/forged flow cookie -> next falls back to "/" (lands on /?auth_error=state_mismatch — the landing, not /chat/).
 
 ## 6. Access and limits
-ensure_allowed (S\app\auth\accounts.py:17-22): empty AUTH_ALLOWED_EMAILS + non-prod = everyone; prod + empty = nobody; else email must be listed. Checked at sign-in AND on every gated call (turn, summarize, summaries POST/PATCH); a removed user keeps reads/export/delete. AUTH_OPEN_SIGNUP: not found (phase 3). Rate limit 20 turns/min per user, in memory, shared by turn+summarize, not for keyword crises. No daily quota. LLM_MAX_CONCURRENCY=1 global semaphore held for the whole stream; wait up to 20 s then 503 llm_busy Retry-After 5. One uvicorn worker.
+Google sign-in accepts any verified email, including in prod. AUTH_ALLOWED_EMAILS and the invitation checks are removed (ADR-008, 2026-10-08); a leftover environment variable is ignored. Existing sessions keep access subject to authentication, CSRF and consents. No AUTH_OPEN_SIGNUP flag. Rate limit 20 turns/min per user, in memory, shared by turn+summarize, not for keyword crises. No daily quota. LLM_MAX_CONCURRENCY=1 global semaphore held for the whole stream; wait up to 20 s then 503 llm_busy Retry-After 5. One uvicorn worker.
 
 ## 7. OpenAPI
 S\scripts\export_openapi.py writes S\openapi.json (committed); `APP_ENV=test uv run python scripts/export_openapi.py [--check]`. 17 paths, ChatEvent union, ErrorResponse. Server docs/*.md: none; contract prose in S\README.md:8-16 and ADR-005 (session 38-50, API 52-56, auth 58-75, crisis 77-89, consent 91-100, client duties 150-173).
@@ -80,7 +80,7 @@ D\compose.yaml + D\compose.local.yaml (server APP_ENV=dev, AUTH_DEV_LOGIN=true, 
 Run (from D\docs\runbooks\deploy.md:311-313, NOT the collapsed comment at compose.local.yaml:4):
   export POSTGRES_PASSWORD=x LIORA_APP_PASSWORD=x LIORA_MIGRATOR_PASSWORD=x SESSION_SECRET=local LOG_SALT=local PUBLIC_BASE_URL=http://localhost:8088 SITE_ADDRESS=:80 CADDY_HTTP_BIND=127.0.0.1:8088 CADDY_HTTPS_BIND=127.0.0.1:8443 SERVER_HOST_PORT=8002
   docker compose -f compose.yaml -f compose.local.yaml up -d --build --wait
-Ports: Caddy 127.0.0.1:8088->80, :8443->443; API 127.0.0.1:8002; Postgres not published. Target http://localhost:8088 (others fail CSRF). Locally: cookie liora_session, allowlist empty = everyone, Google unconfigured. 20 turns/min/user, 1 LLM slot -> distinct email per worker.
+Ports: Caddy 127.0.0.1:8088->80, :8443->443; API 127.0.0.1:8002; Postgres not published. Target http://localhost:8088 (others fail CSRF). Locally: cookie liora_session, Google unconfigured. 20 turns/min/user, 1 LLM slot -> distinct email per worker.
 Test login: POST /api/v1/auth/dev {"email":"e2e-1@example.com"} (cookie, no Origin needed) -> GET /consents -> POST /consents {policy_version, kinds:[all 3]} with Origin.
 Fake LLM: turn streams «Дякую, що поділилися. Що в цій ситуації зачепило вас найбільше?» word by word (no pings) then done{finish_reason:"stop", usage:{prompt_tokens:42, completion_tokens:n}}; summarize -> title «Розмова про день», 3 bullets, tags ["день","емоції"]. Not scriptable: error/llm_busy/model crisis/pings need client-side mocks. Keyword crisis for real with a synthetic phrase from S\tests\test_crisis.py:27-46 (e.g. «Я не хочу жити.").
 Without Docker: compose.dev.yaml Postgres on 127.0.0.1:55433; `APP_ENV=dev uv run alembic upgrade head`; `APP_ENV=dev AUTH_DEV_LOGIN=true LLM_PROVIDER=fake uv run uvicorn app.main:create_app --factory --port 8787` (server\.env sets the REAL Ollama key — always export LLM_PROVIDER=fake).
