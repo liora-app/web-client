@@ -67,7 +67,7 @@ export function signInBanner(notice: AuthNotice): BannerText {
 /** ?auth_error came, but the old session is alive (§3.3). */
 export function stillSignedIn(code: AuthCode, email: string): string {
   if (code === 'not_invited') {
-    return `Новий вхід не відбувся: тієї адреси немає в списку тестувальників, або Google не підтвердив її. Ви й далі в акаунті ${email}.`
+    return `Новий вхід не відбувся: Google не підтвердив адресу електронної пошти. Ви й далі в акаунті ${email}.`
   }
   return `Новий вхід не відбувся. Ви й далі в акаунті ${email}.`
 }

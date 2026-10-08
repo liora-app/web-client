@@ -974,8 +974,10 @@ test.describe('sign-in and consent', () => {
     await expect(page).toHaveURL(/\/chat\/$/)
     await openChat(page, '/chat/?auth_error=not_invited', 'not-invited')
     await expect(page.locator('[data-el="ni-guest"]')).toBeVisible()
+    await expect(page.locator('[data-el="ni-guest"] h1')).toHaveText('Google не підтвердив вашу адресу')
+    await expect(page.locator('[data-el="ni-guest"]')).not.toContainText('списку тестувальників')
     await expect(page.locator('[data-el="ni-member"]')).toBeHidden()
-    // Only about this sign-in: a tester taken off the list still has an account and a diary (§3.4).
+    // Only about this sign-in: a previously created account and its diary may still exist.
     await expect(page.locator('[data-el="ni-guest"] .prose')).toContainText('Новий акаунт не створено, і під час цього входу вашої адреси ми не записали.')
     await expect(page.locator('[data-el="ni-guest"] .prose')).not.toContainText('Акаунт не створено')
     await expect(page).toHaveURL(/\/chat\/$/)

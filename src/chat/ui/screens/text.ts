@@ -1,4 +1,4 @@
-// The quiet screens: sign-in, access by invitation, session expired, saved, ended, account
+// The quiet screens: sign-in, unverified email, session expired, saved, ended, account
 // deleted, no connection (spec §3.3, §3.4, §3.8, §3.9, §7.5, §7.6, §8.5). Their copy is static in
 // chat/index.html; here only what comes from the state or the API is filled in.
 
