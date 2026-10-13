@@ -437,7 +437,7 @@ test.describe('layers', () => {
     await page.goto('/')
     const tag = page.locator('.hero__tag')
     const spoken = tag.locator('.visually-hidden')
-    await expect(spoken).toHaveText('Закрите тестування') // waits for the label to be split
+    await expect(spoken).toHaveText('Саморефлексія з AI') // waits for the label to be split
     await expect(spoken).toHaveCount(1)
     await expect
       .poll(
@@ -450,7 +450,7 @@ test.describe('layers', () => {
           ),
         { timeout: 5_000 },
       )
-      .toBe('Закрите тестування')
+      .toBe('Саморефлексія з AI')
   })
 
   test('with reduced motion labels are left as they are (no decode, no duplicates)', async ({ page }) => {
@@ -460,18 +460,22 @@ test.describe('layers', () => {
     await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
     const tag = page.locator('.hero__tag')
     await expect(tag.locator('.visually-hidden')).toHaveCount(0)
-    await expect(tag).toHaveText('Закрите тестування')
+    await expect(tag).toHaveText('Саморефлексія з AI')
     // Nothing waits for a scroll to appear.
     const waiting = await page.locator('[data-reveal]').evaluateAll((all) => all.filter((element) => getComputedStyle(element).opacity !== '1').length)
     expect(waiting).toBe(0)
   })
 
-  test('the pause button stops the sky as well, not only the WebGL scene', async ({ page }) => {
+  test('filled buttons stay sharp when the WebGL scene is on', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto('/')
-    const haze = page.locator('.stage__haze--teal')
-    await expect(haze).not.toHaveCSS('animation-name', 'none')
-    await page.locator('[data-motion-toggle]').click()
-    await expect(haze).toHaveCSS('animation-name', 'none')
+    // Exercise the GL-specific cascade without starting a GPU context.
+    await page.evaluate(() => (document.documentElement.dataset.gl = 'on'))
+    for (const selector of ['.hero .cta', '.final .cta', '.final .cta span', '.final__title']) {
+      await expect(page.locator(selector)).toHaveCSS('text-shadow', 'none')
+    }
+    await expect(page.locator('.stage__haze--teal')).toBeHidden()
+    await expect(page.locator('.stage__grain')).toBeHidden()
   })
 
   test('the pause button is visible and named on every screen', async ({ page }) => {

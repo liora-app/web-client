@@ -56,19 +56,19 @@ function measure(): HeroLight | null {
   const w = document.documentElement.clientWidth
   const h = window.innerHeight
   if (WIDE_LAYOUT.matches) {
-    // Default size: the glass radius of the tuned look, GLASS_RADIUS · min(0.4·halfH, 0.26·halfW).
-    const base = Math.min(0.228 * h, 0.1482 * w)
-    const gutter = Math.min(56, Math.max(16, 0.04 * w)) // --gutter: the HUD runs there
+    // A larger hero object, fitted into the remaining lane after the actual glyphs.
+    const base = Math.min(0.3 * h, 0.22 * w)
+    const gutter = Math.min(88, Math.max(24, 0.055 * w))
     const room = w - gutter - (title.right + GAP)
-    const r = Math.max(base * 0.7, Math.min(base, room / 2))
-    const x = Math.min(title.right + GAP + r, w - gutter - r)
-    return { x, y: h * 0.49, d: 2 * r }
+    const r = Math.max(1, Math.min(base, room * 0.43))
+    const x = title.right + GAP + room / 2
+    return { x, y: h * 0.47, d: 2 * r }
   }
   // One column: centred above the title, below the header; smaller on short screens.
-  const base = Math.min(0.1734 * h, 0.2451 * w)
+  const base = Math.min(110, 0.2451 * w)
   const bottom = title.top - 20
-  const r = Math.max(base * 0.55, Math.min(base, (bottom - HEADER) / 2))
-  const y = Math.max(r * 0.9, Math.min(h * 0.25, bottom - r))
+  const r = Math.max(1, Math.min(base, (bottom - HEADER - 52) / 2))
+  const y = bottom - r
   return { x: w / 2, y, d: 2 * r }
 }
 

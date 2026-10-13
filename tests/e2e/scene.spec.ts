@@ -26,8 +26,8 @@ test.describe('WebGL scene', () => {
     expect(timing.chunkStart, 'the scene is a separate lazy chunk').toBeGreaterThan(0)
     expect(timing.chunkStart, 'the scene chunk is requested only after load').toBeGreaterThanOrEqual(timing.loadEnd)
 
-    // The canvas is transparent: lit samples are the light itself (the orb, its halo, bokeh).
-    // The light ignites over ~2.6 s, so poll instead of sampling the first frame.
+    // The canvas is transparent: lit samples come only from the luminous field.
+    // Wait for the entrance fade rather than sampling the first frame.
     await expect.poll(() => litSamples(page), { timeout: 8_000 }).toBeGreaterThanOrEqual(2)
     // The animation loop itself runs (sample() draws its own frame, so check the counter).
     await expect.poll(async () => (await sceneStats(page)).frames, { timeout: 5_000 }).toBeGreaterThan(10)
@@ -36,10 +36,11 @@ test.describe('WebGL scene', () => {
 
     const stats = await sceneStats(page)
     expect(stats.pixelRatio).toBeLessThanOrEqual(2)
-    expect(stats.particles).toBeGreaterThanOrEqual(4000)
-    // Halo, bokeh, particles, soma bodies, glass: no post-processing, no extra passes.
-    expect(stats.draws).toBeGreaterThanOrEqual(4)
-    expect(stats.draws).toBeLessThanOrEqual(6)
+    expect(stats.particles).toBeGreaterThan(0)
+    expect(stats.vertices).toBeGreaterThanOrEqual(20000)
+    // Bounded geometry and five layers; no expensive post-processing passes.
+    expect(stats.draws).toBeLessThanOrEqual(7)
+    expect(stats.draws).toBeGreaterThan(0)
     expect(problems).toEqual([])
   })
 
@@ -49,37 +50,8 @@ test.describe('WebGL scene', () => {
     await waitForScene(page)
     const stats = await sceneStats(page)
     expect(stats.tier).toBe('low')
-    expect(stats.particles).toBe(12000)
-  })
-
-  test('the glass outline is smooth, not a staircase', GPU, async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name !== 'desktop', 'one viewport is enough for the outline')
-    await page.goto('/')
-    await waitForScene(page)
-    await expect.poll(() => litSamples(page), { timeout: 8_000 }).toBeGreaterThanOrEqual(2)
-    await page.waitForTimeout(3500) // past the ignition: the glass is at full strength
-
-    // Rows through the diagonal part of the outline (only the glass drawn), where aliasing shows as
-    // steps. From the bright rim outward to the last lit pixel: how many pixels lie between 90 % and
-    // 10 % of the rim. A hard edge has none.
-    const ramps = await page.evaluate(() => {
-      const hero = getComputedStyle(document.querySelector('.hero') as HTMLElement)
-      const cy = parseFloat(hero.getPropertyValue('--light-y'))
-      const r = parseFloat(hero.getPropertyValue('--light-d')) / 2
-      return [30, 37, 45, 52, 60].map((deg) => {
-        const row = window.__lioraScene?.edge(cy - r * Math.sin((deg * Math.PI) / 180)) ?? []
-        let last = row.length - 1
-        while (last > 0 && row[last] <= 4) last--
-        const window_ = row.slice(Math.max(0, last - 16), last + 1)
-        const peak = Math.max(...window_)
-        const from = last - (window_.length - 1) + window_.lastIndexOf(peak)
-        let ramp = 0
-        for (let i = from + 1; i <= last + 1; i++) if (row[i] < 0.9 * peak && row[i] > 0.1 * peak) ramp++
-        return ramp
-      })
-    })
-    const sorted = [...ramps].sort((a, b) => a - b)
-    expect(sorted[2], `pixels in the outline ramp per row: ${ramps.join(', ')}`).toBeGreaterThanOrEqual(2)
+    expect(stats.vertices).toBeLessThan(30000)
+    expect(stats.particles).toBeLessThan(1000)
   })
 
   test('canvas is decorative and never takes input', async ({ page }) => {
@@ -178,14 +150,14 @@ test.describe('WebGL scene', () => {
     await page.goto('/')
     await waitForScene(page)
     expect((await sceneStats(page)).quiet).toBeLessThan(0.05)
-    expect((await sceneStats(page)).fire, 'the signal runs through the light').toBeGreaterThan(0.5)
+    expect((await sceneStats(page)).activity, 'the sculpture is visible').toBeGreaterThan(0.5)
     await centre(page, '#safety')
     await expect.poll(async () => (await sceneStats(page)).quiet, { timeout: 6_000 }).toBeGreaterThan(0.6)
-    // By the crisis contacts no signal runs: nothing flashes while someone reads the numbers.
-    await expect.poll(async () => (await sceneStats(page)).fire, { timeout: 6_000 }).toBeLessThan(0.05)
+    // By the crisis contacts the sculpture is hidden: nothing moves while someone reads the numbers.
+    await expect.poll(async () => (await sceneStats(page)).activity, { timeout: 6_000 }).toBeLessThan(0.05)
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
     await expect.poll(async () => (await sceneStats(page)).quiet, { timeout: 6_000 }).toBeLessThan(0.1)
-    await expect.poll(async () => (await sceneStats(page)).fire, { timeout: 6_000 }).toBeGreaterThan(0.5)
+    await expect.poll(async () => (await sceneStats(page)).activity, { timeout: 6_000 }).toBeGreaterThan(0.5)
   })
 
   test('high contrast mode pauses the scene and turning it off resumes it', GPU, async ({ page }) => {
@@ -218,12 +190,12 @@ test.describe('WebGL scene', () => {
     await expect(page.locator('.hero__orb')).toHaveCSS('opacity', '1')
     expect(await page.evaluate(() => typeof window.__lioraScene)).toBe('undefined')
 
-    // It gave up inside the start-up window (≤ 12 frames of 3 draws, plus the warm-up), and the
+    // It gave up inside the start-up window (≤ 12 frames of 5 draws, plus warm-up), and the
     // loop really stopped: the main thread is free again.
     const draws = (): Promise<number> => page.evaluate(() => (window as unknown as { __draws: number }).__draws)
     const before = await draws()
     expect(before).toBeGreaterThan(0)
-    expect(before).toBeLessThanOrEqual(60)
+    expect(before).toBeLessThanOrEqual(80)
     await page.waitForTimeout(600)
     expect(await draws()).toBe(before)
 
@@ -248,7 +220,7 @@ test.describe('static backdrop', () => {
     const orb = page.locator('.hero__orb')
     await expect(orb).toBeVisible()
     await expect(orb).toHaveCSS('opacity', '1')
-    // The static page keeps its other lights too: the constellation beside the diary (wide layout).
+    // The static page keeps the light form beside the diary (wide layout).
     if (!isMobile) await expect(page.locator('.diary__sky')).toBeVisible()
     await page.waitForTimeout(1500)
     await expect(html).toHaveAttribute('data-gl', 'off')
@@ -272,6 +244,13 @@ test.describe('static backdrop', () => {
     ] as const) {
       await page.evaluate((value) => (document.documentElement.dataset.gl = value), status)
       await expect(orb).toHaveCSS('opacity', opacity)
+      await expect(page.locator('.mind__still')).toHaveCSS('visibility', status === 'on' ? 'hidden' : 'visible')
+      await expect(page.locator('.diary__sky')).toHaveCSS('opacity', opacity)
+      const drawing = await page.locator('.how__motion').evaluate(element => getComputedStyle(element).backgroundImage)
+      if (status === 'on') expect(drawing).toBe('none')
+      else expect(drawing).toContain('/conversation-still.png')
+      expect(await page.locator('.final__art').evaluate(element => getComputedStyle(element, '::before').visibility))
+        .toBe(status === 'on' ? 'hidden' : 'visible')
     }
   })
 
@@ -286,6 +265,7 @@ test.describe('static backdrop', () => {
     await expect(page.locator('.stage')).toBeHidden()
     await expect(page.locator('.hero__orb')).toBeHidden()
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    await expect(page.locator('.mind__still')).toBeHidden()
     // The pause button keeps a visible icon: an SVG drawn in currentColor, which forced colours map
     // to the system button text (backgrounds would be forced to Canvas and vanish).
     await expect(page.locator('[data-motion-toggle] svg:visible')).toHaveCount(1)
@@ -305,6 +285,8 @@ test.describe('static backdrop', () => {
     await expect(orb).toHaveCSS('opacity', '1')
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
     expect(problems).toEqual([])
+    await expect(page.locator('#mind-title')).toHaveText(/Ближче.*до себе\./)
+    await expect(page.locator('.mind__still')).toBeVisible()
   })
 
   test('if the scene chunk cannot load, the page is still complete', GPU, async ({ page, browserName }) => {
