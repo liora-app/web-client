@@ -5,6 +5,7 @@ import './styles/stage.css'
 import './styles/layout.css'
 import './styles/components.css'
 import './styles/sections.css'
+import './styles/landing.css'
 
 import { bootGL } from './gl/core/boot'
 import { initDecode } from './ui/decode'
@@ -33,7 +34,7 @@ if (authError !== null) {
   initSound()
   initReveal()
   initSteps()
-  initDecode()
+    initDecode()
 
   const canvas = document.querySelector<HTMLCanvasElement>('[data-gl-canvas]')
   // The scene is its own lazy chunk (with three.js), requested only after the page has painted.
