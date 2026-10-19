@@ -811,7 +811,7 @@ test.describe('api', () => {
     ]
     const r = await createApi({ fetch: async () => new Response(JSON.stringify(list), { status: 200 }) }).scenarios()
     expect(r.ok && r.data.map((s) => s.id)).toEqual(['free'])
-    expect(GOOGLE_START).toBe('/api/v1/auth/google/start?next=/chat/')
+    expect(GOOGLE_START).toBe('/api/v1/auth/google/start?next=/')
   })
 })
 

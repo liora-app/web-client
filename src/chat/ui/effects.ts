@@ -226,7 +226,7 @@ export function createEffects(deps: EffectDeps): Effects {
     switch (effect.type) {
       case 'url/clean':
         try {
-          history.replaceState(null, '', '/chat/')
+          history.replaceState(null, '', window.location.pathname)
         } catch {
           // A sandboxed frame may refuse; the code is already read.
         }
