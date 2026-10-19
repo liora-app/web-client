@@ -661,10 +661,10 @@ test.describe('errors', () => {
     await expect(confirm).toContainText('Увійти знову?')
     await axe(page, 'confirm relogin')
     await Promise.all([
-      page.waitForURL(/\/api\/v1\/auth\/google\/start\?next=\/chat\/$/),
+      page.waitForURL(/\/api\/v1\/auth\/google\/start\?next=\/$/),
       confirm.getByRole('button', { name: 'Увійти', exact: true }).click(),
     ])
-    expect(api.of('GET /auth/google/start')[0]!.query.get('next')).toBe('/chat/')
+    expect(api.of('GET /auth/google/start')[0]!.query.get('next')).toBe('/')
   })
 
   test('#8b 401 on the first turn: the unsent message stays, marked, and goes into the copy', async ({ page, api, context }, testInfo) => {

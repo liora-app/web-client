@@ -34,7 +34,7 @@ import {
 
 export const API_BASE = '/api/v1'
 /** Top-level navigation, not fetch: the sign-in leaves this page for Google and comes back. */
-export const GOOGLE_START = `${API_BASE}/auth/google/start?next=/chat/`
+export const GOOGLE_START = `${API_BASE}/auth/google/start?next=/`
 export const exportHref = (format: 'md' | 'json'): string => `${API_BASE}/export?format=${format}`
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>
