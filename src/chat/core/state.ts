@@ -376,7 +376,7 @@ export type Action =
   | Readonly<{ type: 'revoke/fail'; kind: ConsentKind; error: ApiError }>
 
 export type Effect =
-  | Readonly<{ type: 'url/clean' }> // history.replaceState(null, '', window.location.pathname)
+  | Readonly<{ type: 'url/clean' }> // history.replaceState(null, '', location.pathname)
   | Readonly<{ type: 'me'; purpose: Purpose; timeoutMs: number }>
   | Readonly<{ type: 'consents'; purpose: 'boot' | 'fresh' }>
   | Readonly<{ type: 'scenarios' }>
