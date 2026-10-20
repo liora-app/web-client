@@ -2,12 +2,15 @@
 <html lang="uk">
   <head>
     <meta charset="UTF-8" />
+    <!-- First, before any stylesheet: the chosen theme and sky preset on <html> before the first frame. -->
+    <script src="/theme-init.js" data-sky></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>Розмова з AI — Liora</title>
     <meta name="robots" content="noindex" />
     <meta name="description" content="Розмова з AI, а не з людиною. Не терапія й не медична допомога." />
-    <meta name="theme-color" content="#040708" />
-    <meta name="color-scheme" content="dark" />
+    <!-- One theme-color: src/ui/theme.ts sets it from the page's background. -->
+    <meta name="theme-color" content="#121a1b" />
+    <meta name="color-scheme" content="light dark" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body class="chat-page">
@@ -41,6 +44,20 @@
           <button class="media__button sound-toggle" type="button" data-sound-toggle aria-pressed="false" aria-label="Звук" hidden>
             <span class="sound-toggle__wave" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
           </button>
+        </div>
+        <!-- «Вигляд» (src/ui/theme-picker.ts): a menu button, not in .media (that group is motion and
+             sound). Hidden without JS. -->
+        <div class="theme-pick" data-theme-pick hidden>
+          <button class="theme-toggle" type="button" data-theme-toggle data-choice="system" aria-haspopup="menu" aria-expanded="false" aria-controls="theme-menu" aria-label="Вигляд: як у системі">
+            <svg class="theme-toggle__icon theme-toggle__auto" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="5.25" /><path class="theme-toggle__half" d="M8 2.75a5.25 5.25 0 0 1 0 10.5z" /></svg>
+            <svg class="theme-toggle__icon theme-toggle__sun" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="2.75" /><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.06 1.06M11.54 11.54l1.06 1.06M3.4 12.6l1.06-1.06M11.54 4.46l1.06-1.06" /></svg>
+            <svg class="theme-toggle__icon theme-toggle__moon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M13.25 9.6A5.5 5.5 0 0 1 6.4 2.75a5.5 5.5 0 1 0 6.85 6.85z" /></svg>
+          </button>
+          <div class="theme-menu" id="theme-menu" role="menu" aria-label="Вигляд" data-theme-menu hidden>
+            <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="true" tabindex="-1" data-theme-choice="system">Як у системі</button>
+            <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-theme-choice="light">Світла</button>
+            <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-theme-choice="dark">Темна</button>
+          </div>
         </div>
         <!-- Shown only with a session. Same size and place as the landing's «Меню». -->
         <button class="account-toggle" type="button" data-act="account" aria-haspopup="dialog" aria-controls="account-dialog" aria-label="Акаунт" hidden>
@@ -210,7 +227,7 @@
                     <li>Ваші згоди: яка саме, версія умов, коли дано й коли відкликано.</li>
                     <li>Технічні журнали сервера без тексту розмов: який запит надійшов і коли, чим завершився, скільки тривав і скільки тексту обробив AI (у токенах). Замість вашого акаунта в них псевдонім. Журнали з часом перезаписуються.</li>
                     <li>Після видалення акаунта — його номер і дата видалення, щоб видалення не скасувалося при відновленні даних із резервної копії.</li>
-                    <li>У вашому браузері — файл cookie сесії (скриптам сторінки він недоступний) і ваш вибір паузи анімації та фону.</li>
+                    <li>У вашому браузері — файл cookie сесії (скриптам сторінки він недоступний) і ваш вибір паузи анімації, теми та фону.</li>
                   </ul>
                   <p class="row__sum">Повного тексту розмови на сервері Liora немає. Він живе на цій сторінці, поки вона відкрита.</p>
                 </div>
@@ -666,9 +683,18 @@
             </li>
           </ul>
         </div>
-        <!-- The sky preset (src/ui/sky.ts): kept in this browser only after a choice; «Ніч» forgets it. -->
+        <!-- The theme (src/ui/theme.ts) and the sky preset (src/ui/sky.ts): kept in this browser only
+             after a choice; «Як у системі» and «Ніч» forget theirs. The header's «Вигляд» menu shows
+             the same theme. -->
         <div class="sheet__row">
-          <h3 class="sheet__label">Вигляд</h3>
+          <h3 class="sheet__label" id="look-title">Вигляд</h3>
+          <fieldset class="sky-pick" data-theme-radios aria-labelledby="look-title" aria-describedby="sky-note">
+            <div class="sky-pick__list">
+              <label class="pill"><input class="pill__input" type="radio" name="theme" value="system" checked /><span class="pill__text">Як у системі</span></label>
+              <label class="pill"><input class="pill__input" type="radio" name="theme" value="light" /><span class="pill__text">Світла</span></label>
+              <label class="pill"><input class="pill__input" type="radio" name="theme" value="dark" /><span class="pill__text">Темна</span></label>
+            </div>
+          </fieldset>
           <fieldset class="sky-pick" data-sky-pick aria-describedby="sky-note">
             <legend class="sky-pick__legend">Фон</legend>
             <div class="sky-pick__list">

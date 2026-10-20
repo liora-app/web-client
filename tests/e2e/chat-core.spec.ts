@@ -2728,7 +2728,7 @@ test('keyboard: the inset is what the keyboard covers of the layout viewport; 15
 })
 
 test.describe('sky presets', () => {
-  test('only dusk and dawn are presets; anything else is the night, and the crisis is always the night', () => {
+  test('only dusk and dawn are presets; anything else is the plain sky, and the crisis takes the preset off', () => {
     expect(SKY_KEY).toBe('liora:sky')
     expect(parseSky('dusk')).toBe('dusk')
     expect(parseSky('dawn')).toBe('dawn')
@@ -2740,30 +2740,93 @@ test.describe('sky presets', () => {
     expect(skyAttribute('dawn', true)).toBeNull()
   })
 
-  test('no preset layer is lighter than the night: bases under its lightest base, each haze under its own', () => {
-    const css = readFileSync(resolve(test.info().project.testDir, '..', '..', 'src', 'styles', 'stage.css'), 'utf8')
-    const block = (selector: string): Record<string, number[]> => {
-      const start = css.indexOf(`${selector} {`)
+  // ADR-012: the dark theme («вечірня лампа») keeps every layer under text at L ≤ 0.023, the light
+  // one («ранковий папір») at L ≥ 0.76, counted at the worst point: each haze at its full alpha
+  // over the lightest (dark) or darkest (light) base of the preset, and in the light theme the
+  // vignette's edge on top. --color-text-dim keeps 4.5:1 and the field border 3:1 there.
+  test('each theme keeps its three skies on its side of the text: dark ≤ L 0.023, light ≥ L 0.76', () => {
+    const styles = resolve(test.info().project.testDir, '..', '..', 'src', 'styles')
+    const css = readFileSync(join(styles, 'stage.css'), 'utf8')
+    const tokens = readFileSync(join(styles, 'tokens.css'), 'utf8')
+    const body = (text: string, selector: string): string => {
+      const start = text.indexOf(`${selector} {`)
       expect(start, selector).toBeGreaterThanOrEqual(0)
-      const body = css.slice(start, css.indexOf('}', start))
-      return Object.fromEntries([...body.matchAll(/--(sky-[a-z-]+):\s*(\d+)\s+(\d+)\s+(\d+)/g)].map((m) => [m[1]!, [Number(m[2]), Number(m[3]), Number(m[4])]]))
+      return text.slice(start, text.indexOf('}', start))
     }
-    const lin = (c: number): number => (c / 255 <= 0.03928 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4)
-    const lum = ([r, g, b]: number[]): number => 0.2126 * lin(r!) + 0.7152 * lin(g!) + 0.0722 * lin(b!)
+    const props = (selector: string): Record<string, string> =>
+      Object.fromEntries([...body(css, selector).matchAll(/--([a-z-]+):\s*([^;]+);/g)].map((m) => [m[1]!, m[2]!.trim()]))
+    const triples = (selector: string): Record<string, number[]> =>
+      Object.fromEntries(
+        [...body(css, selector).matchAll(/--(sky-[a-z-]+):\s*(\d+)\s+(\d+)\s+(\d+)/g)].map((m) => [m[1]!, [Number(m[2]), Number(m[3]), Number(m[4])]]),
+      )
+    const alphas = (selector: string): Record<string, number> =>
+      Object.fromEntries([...body(css, selector).matchAll(/--haze-a-([a-z]+):\s*([\d.]+)/g)].map((m) => [m[1]!, Number(m[2])]))
+    const color = (value: string): number[] => {
+      const hex = value.match(/^#([0-9a-f]{6})$/i)
+      if (hex) return [0, 2, 4].map((i) => parseInt(hex[1]!.slice(i, i + 2), 16)).concat(1)
+      const rgb = value.match(/^rgb\((\d+) (\d+) (\d+)(?: \/ ([\d.]+))?\)$/)
+      expect(rgb, value).not.toBeNull()
+      return [Number(rgb![1]), Number(rgb![2]), Number(rgb![3]), rgb![4] === undefined ? 1 : Number(rgb![4])]
+    }
+    // The chat's tokens: light-dark(<light>, <dark>).
+    const chat = body(tokens, ':root:not([data-theme-lock])')
+    const token = (name: string, theme: 'light' | 'dark'): number[] => {
+      const m = chat.match(new RegExp(`--${name}:\\s*light-dark\\((#[0-9a-f]{6}|rgb\\([^)]*\\)),\\s*(#[0-9a-f]{6}|rgb\\([^)]*\\))\\)`, 'i'))
+      expect(m, name).not.toBeNull()
+      return color(m![theme === 'light' ? 1 : 2]!)
+    }
+    const over = (fg: number[], alpha: number, bg: number[]): number[] => [0, 1, 2].map((i) => fg[i]! * alpha + bg[i]! * (1 - alpha))
+    const lin = (c: number): number => (c / 255 <= 0.04045 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4)
+    const lum = (c: number[]): number => 0.2126 * lin(c[0]!) + 0.7152 * lin(c[1]!) + 0.0722 * lin(c[2]!)
     const contrast = (a: number, b: number): number => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
     const BASES = ['sky-top', 'sky-mid', 'sky-bottom', 'sky-glow-teal', 'sky-glow-violet']
-    const HAZES = ['sky-haze-teal', 'sky-haze-violet', 'sky-haze-amber']
+    const HAZES = ['teal', 'violet', 'amber']
+    const KEYS = [...BASES, ...HAZES.map((h) => `sky-haze-${h}`)].sort()
+    const SKIES = {
+      dark: { night: ':root', dusk: "html[data-sky='dusk']", dawn: "html[data-sky='dawn']" },
+      light: {
+        night: ":root[data-theme='light']:not([data-theme-lock])",
+        dusk: ":root[data-theme='light'][data-sky='dusk']:not([data-theme-lock])",
+        dawn: ":root[data-theme='light'][data-sky='dawn']:not([data-theme-lock])",
+      },
+    } as const
 
-    const night = block(':root')
-    expect(Object.keys(night).sort()).toEqual([...BASES, ...HAZES].sort())
-    const nightBase = Math.max(...BASES.map((k) => lum(night[k]!)))
-    // --color-text-dim on the night's lightest base: the margin the presets may not eat into.
-    expect(contrast(lum([132, 145, 141]), nightBase)).toBeGreaterThanOrEqual(4.5)
-    for (const preset of ['dusk', 'dawn']) {
-      const sky = block(`html[data-sky='${preset}']`)
-      expect(Object.keys(sky).sort(), preset).toEqual([...BASES, ...HAZES].sort())
-      for (const k of BASES) expect(lum(sky[k]!), `${preset} ${k}`).toBeLessThanOrEqual(nightBase)
-      for (const k of HAZES) expect(lum(sky[k]!), `${preset} ${k}`).toBeLessThanOrEqual(lum(night[k]!))
+    for (const theme of ['dark', 'light'] as const) {
+      const dark = theme === 'dark'
+      const alpha = alphas(SKIES[theme].night)
+      expect(Object.keys(alpha).sort(), `${theme}: the haze alphas`).toEqual([...HAZES].sort())
+      const vignette = token('color-vignette', theme)
+      const dim = lum(token('color-text-dim', theme))
+      const border = lum(token('color-field-border', theme))
+      for (const preset of ['night', 'dusk', 'dawn'] as const) {
+        const sky = triples(SKIES[theme][preset])
+        const label = `${theme} ${preset}`
+        expect(Object.keys(sky).sort(), label).toEqual(KEYS)
+        // The alphas belong to the theme: a preset changes colours only.
+        if (preset !== 'night') expect(Object.keys(alphas(SKIES[theme][preset])), label).toEqual([])
+        const bases = BASES.map((k) => sky[k]!)
+        const extreme = bases.reduce((a, b) => ((dark ? lum(b) > lum(a) : lum(b) < lum(a)) ? b : a))
+        const layers = [...bases, ...HAZES.map((h) => over(sky[`sky-haze-${h}`]!, alpha[h]!, extreme))]
+        // The light vignette darkens the edges a little; the dark one only makes them darker.
+        const seen = dark ? layers : [...layers, ...layers.map((c) => over(vignette, vignette[3]!, c))]
+        for (const [i, c] of seen.entries()) {
+          if (dark) expect(lum(c), `${label} layer ${i}`).toBeLessThanOrEqual(0.023)
+          else expect(lum(c), `${label} layer ${i}`).toBeGreaterThanOrEqual(0.76)
+        }
+        const worst = dark ? Math.max(...seen.map(lum)) : Math.min(...seen.map(lum))
+        expect(contrast(dim, worst), `${label}: --color-text-dim`).toBeGreaterThanOrEqual(4.5)
+        expect(contrast(border, worst), `${label}: --color-field-border`).toBeGreaterThanOrEqual(3)
+      }
+    }
+
+    // The system's light (no choice made) is a copy of the chosen light theme, preset by preset.
+    const SYSTEM = {
+      night: ':root:not([data-theme]):not([data-theme-lock])',
+      dusk: ":root:not([data-theme]):not([data-theme-lock])[data-sky='dusk']",
+      dawn: ":root:not([data-theme]):not([data-theme-lock])[data-sky='dawn']",
+    } as const
+    for (const preset of ['night', 'dusk', 'dawn'] as const) {
+      expect(props(SYSTEM[preset]), `system light ${preset}`).toEqual(props(SKIES.light[preset]))
     }
   })
 })
@@ -2805,9 +2868,10 @@ test.describe('source rules', () => {
     }
   })
 
-  test('localStorage.setItem only in src/ui/motion.ts and src/ui/sky.ts', () => {
+  test('localStorage.setItem only in src/ui/motion.ts, src/ui/sky.ts and src/ui/theme.ts', () => {
     const writers = offenders(sources(''), /localStorage\s*\.\s*setItem\b/).map((o) => o.split(':')[0])
-    expect(writers.every((p) => p === 'src/ui/motion.ts' || p === 'src/ui/sky.ts'), writers.join(', ')).toBe(true)
+    const allowed = ['src/ui/motion.ts', 'src/ui/sky.ts', 'src/ui/theme.ts']
+    expect(writers.every((p) => allowed.includes(p!)), writers.join(', ')).toBe(true)
   })
 
   test('src/chat/**: no fetch mode, keepalive, bearer header, EventSource or storage', () => {
@@ -2853,7 +2917,8 @@ test.describe('source rules', () => {
 
   test('chat/index.html: every text field is left out of the browser’s form restore (autocomplete="off")', () => {
     // Firefox's session store keeps a textarea's text on disk unless it has autocomplete="off"; the
-    // consent screen promises the browser keeps only the session cookie and two choices (§3.5).
+    // consent screen promises the browser keeps only the session cookie and three choices (motion,
+    // theme, sky; §3.5).
     const repo = resolve(test.info().project.testDir, '..', '..')
     const chat = readFileSync(join(repo, 'chat', 'index.html'), 'utf8')
     const tags = [...chat.matchAll(/<textarea\b[^>]*>/g), ...chat.matchAll(/<input\b[^>]*>/g)].map((m) => m[0])
@@ -2878,6 +2943,62 @@ test.describe('source rules', () => {
     const radios = [...chat.matchAll(/<input[^>]*name="sky"[^>]*value="([a-z]+)"/g)].map((m) => m[1])
     expect(radios).toEqual(['night', 'dusk', 'dawn'])
     expect(chat).toContain('data-sky-pick')
+  })
+
+  test('theme: one module knows the key; public/theme-init.js only reads storage and sets two attributes, first in <head> of both pages', () => {
+    const keyHolders = offenders(sources(''), /liora:theme/).map((o) => o.split(':')[0])
+    expect(keyHolders.length).toBeGreaterThan(0)
+    expect(keyHolders.every((p) => p === 'src/ui/theme.ts'), keyHolders.join(', ')).toBe(true)
+
+    const repo = resolve(test.info().project.testDir, '..', '..')
+    const init = readFileSync(join(repo, 'public', 'theme-init.js'), 'utf8')
+    const code = init.replace(/\/\/[^\n]*/g, '')
+    // A classic script before the first frame: small, and nothing but reads and two attributes.
+    expect(init.length).toBeLessThan(1500)
+    for (const pattern of [
+      /\bsetItem\b/,
+      /\bremoveItem\b/,
+      /\.clear\s*\(/,
+      /\bsessionStorage\b/,
+      /\bindexedDB\b/,
+      /\bcookie\b/,
+      /\bfetch\b/,
+      /XMLHttpRequest/,
+      /\bimport\b/,
+      /innerHTML|outerHTML|insertAdjacent|document\.write/,
+      /\.style\b|cssText|setProperty/,
+      /\beval\b|\bFunction\b/,
+      /\.dataset\b/,
+    ]) {
+      expect(code, String(pattern)).not.toMatch(pattern)
+    }
+    expect([...code.matchAll(/localStorage\.getItem\(\s*'([^']+)'\s*\)/g)].map((m) => m[1]).sort()).toEqual(['liora:sky', 'liora:theme'])
+    expect([...new Set([...code.matchAll(/\.setAttribute\(\s*'([^']+)'/g)].map((m) => m[1]))].sort()).toEqual(['data-sky', 'data-theme'])
+    expect([...code.matchAll(/\.setAttribute\(/g)]).toHaveLength([...code.matchAll(/\.setAttribute\(\s*'data-(?:theme|sky)'/g)].length)
+    // The sky only where the page asks for it (the landing never has a preset).
+    expect(code).toMatch(/hasAttribute\('data-sky'\)/)
+
+    for (const [page, sky] of [
+      ['index.html', false],
+      [join('chat', 'index.html'), true],
+    ] as const) {
+      const html = readFileSync(join(repo, page), 'utf8')
+      const head = html.slice(html.indexOf('<head>'), html.indexOf('</head>'))
+      const scripts = head.match(/<script\b[^>]*>/g) ?? []
+      expect(scripts[0], page).toBe(sky ? '<script src="/theme-init.js" data-sky>' : '<script src="/theme-init.js">')
+      // Right after the charset, before every other tag of the head.
+      expect(head.replace(/<!--[\s\S]*?-->/g, '').match(/<(?:meta|link|script|title)\b[^>]*>/g)!.slice(0, 2)[1], page).toBe(scripts[0])
+      expect(head.match(/<meta name="theme-color"/g), page).toHaveLength(1)
+    }
+    // The chat follows the system before any CSS; the landing keeps its night until it gets its own
+    // light theme (ADR-012).
+    const chat = readFileSync(join(repo, 'chat', 'index.html'), 'utf8')
+    expect(chat).toContain('<meta name="color-scheme" content="light dark" />')
+    expect(chat).not.toMatch(/data-theme-lock/)
+    expect(readFileSync(join(repo, 'index.html'), 'utf8')).toMatch(/<html lang="uk" data-theme-lock="dark">/)
+    // Two controls, one choice: the header's menu (three menuitemradio) and the sheet's radios.
+    expect([...chat.matchAll(/role="menuitemradio"[^>]*data-theme-choice="([a-z]+)"/g)].map((m) => m[1])).toEqual(['system', 'light', 'dark'])
+    expect([...chat.matchAll(/<input[^>]*name="theme"[^>]*value="([a-z]+)"/g)].map((m) => m[1])).toEqual(['system', 'light', 'dark'])
   })
 
   test('page life lives in the leave guard: pagehide and pageshow are listened to in one place', () => {

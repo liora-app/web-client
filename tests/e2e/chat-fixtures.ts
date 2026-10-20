@@ -670,7 +670,7 @@ export async function storageAudit(page: Page, secret: string | null = null, con
     title: document.title,
     url: location.href,
   }))
-  expect(audit.local.every((key) => key === 'liora:motion' || key === 'liora:sky'), `storage keys: ${audit.local.join(', ')}`).toBe(true)
+  expect(audit.local.every((key) => key === 'liora:motion' || key === 'liora:sky' || key === 'liora:theme'), `storage keys: ${audit.local.join(', ')}`).toBe(true)
   expect(audit).toMatchObject({ session: 0, idb: 0, caches: 0, sw: 0, cookie: '' })
   if (secret !== null) {
     expect(audit.values.some((value) => value.includes(secret)), 'the message is in localStorage').toBe(false)

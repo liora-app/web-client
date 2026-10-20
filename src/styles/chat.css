@@ -56,7 +56,7 @@ html:has(dialog[open]) {
   padding: 0;
   border: 1px solid var(--color-line-strong);
   border-radius: 999px;
-  background: rgb(4 8 9 / 0.82);
+  background: var(--color-surface);
   color: var(--color-text-soft);
   font-family: var(--font-body);
   font-size: 0.875rem;
@@ -90,6 +90,29 @@ html:has(dialog[open]) {
 
   .account-toggle__word {
     display: inline;
+  }
+}
+
+/* 320 px with a session: wordmark, «Якщо важко», motion and sound, «Вигляд» and «Акаунт» in one
+   row — a narrower edge and gaps, 36 px round buttons (still over the 24 px target size). */
+@media (max-width: 22.5em) {
+  .chat-header {
+    gap: 0.75rem;
+    padding-inline: 1rem;
+  }
+
+  .chat-header .site-header__actions {
+    gap: 0.25rem;
+  }
+
+  .chat-header .help-link {
+    padding: 0 0.7rem;
+  }
+
+  .chat-header .theme-toggle,
+  .chat-header .account-toggle {
+    width: 2.25rem;
+    height: 2.25rem;
   }
 }
 
@@ -170,14 +193,16 @@ html[data-gl='on'] .presence__canvas {
   inset: 22%;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 50% 54%, rgb(255 244 226 / 0.95) 0 5%, rgb(255 197 143 / 0.6) 14%, rgb(255 170 100 / 0.16) 34%, rgb(255 170 100 / 0) 56%),
-    radial-gradient(circle at 34% 28%, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0) 26%),
-    radial-gradient(circle, rgb(10 22 24 / 0) 60%, rgb(143 227 212 / 0.1) 69%, rgb(143 227 212 / 0) 71%);
+    radial-gradient(circle at 50% 54%, var(--orb-core) 0 5%, var(--orb-warm) 14%, var(--orb-halo) 34%, var(--orb-halo-0) 56%),
+    radial-gradient(circle at 34% 28%, var(--orb-shine), var(--orb-shine-0) 26%),
+    radial-gradient(circle, transparent 60%, var(--orb-ring) 69%, var(--orb-ring-0) 71%),
+    radial-gradient(circle at 40% 34%, var(--orb-body) 0%, var(--orb-body-edge) 72%);
   box-shadow:
-    inset 0 0 0 1px rgb(200 240 236 / 0.16),
-    inset -14px -20px 46px rgb(140 120 255 / 0.12),
-    inset 12px 16px 46px rgb(80 220 200 / 0.1),
-    0 0 90px rgb(255 180 110 / 0.16);
+    inset 0 0 0 1px var(--orb-rim),
+    inset -14px -20px 46px var(--orb-violet),
+    inset 12px 16px 46px var(--orb-teal),
+    0 0 90px var(--orb-glow),
+    0 14px 36px var(--orb-shadow);
   transition: opacity var(--dur-slow) var(--ease-out);
 }
 
@@ -187,7 +212,7 @@ html[data-gl='on'] .presence__canvas {
   position: absolute;
   inset: 30%;
   border-radius: 50%;
-  background: radial-gradient(circle, rgb(255 228 196 / 0.55), rgb(255 197 143 / 0) 70%);
+  background: radial-gradient(circle, var(--orb-core-glow), var(--orb-core-glow-0) 70%);
   opacity: 0.6;
 }
 
@@ -223,8 +248,9 @@ html[data-slot='still'] .presence .orb {
   width: 2rem;
   height: 2rem;
   box-shadow:
-    inset 0 0 0 1px rgb(200 240 236 / 0.2),
-    0 0 18px rgb(255 180 110 / 0.18);
+    inset 0 0 0 1px var(--orb-rim-mini),
+    0 0 18px var(--orb-glow-mini),
+    0 4px 10px var(--orb-shadow);
 }
 
 .presence__ai {
@@ -233,7 +259,7 @@ html[data-slot='still'] .presence .orb {
   font-size: var(--step-label);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-teal);
+  color: var(--color-ai);
 }
 
 .presence__state {
@@ -253,6 +279,14 @@ html[data-slot='still'] .presence .orb {
    ended session. The line keeps its place, so nothing moves. Specificity (0,2,1) over --on. */
 html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summarizing'], [data-screen='saved'], [data-screen='crisis'])) .presence__state {
   visibility: hidden;
+}
+
+/* The crisis keeps the person's theme and drops the decoration: no haze, no grain, no vignette
+   (src/chat/ui/render.ts takes the sky preset off). The help contacts stand on the plain sky. */
+html[data-screen='crisis'] .stage__haze,
+html[data-screen='crisis'] .stage__grain,
+html[data-screen='crisis'] .vignette {
+  display: none;
 }
 
 /* Phone: the light above the text — 160 px, in a new conversation too; gone in a running
@@ -357,7 +391,7 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   font-size: max(0.875rem, var(--step--1));
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--color-teal);
+  color: var(--color-ai);
 }
 
 .prose {
@@ -577,37 +611,37 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
 .button--primary {
   min-height: 3rem;
   padding: 0 1.5rem;
-  background: var(--color-light);
-  color: var(--color-bg);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
   font-weight: 600;
 }
 
 .button--primary:hover {
-  background: var(--color-light-strong);
+  background: var(--color-accent-strong);
 }
 
 .button--secondary {
   border-color: var(--color-line-strong);
-  background: rgb(4 8 9 / 0.82);
+  background: var(--color-surface);
   color: var(--color-text);
 }
 
 .button--secondary:hover {
   background:
-    linear-gradient(rgb(238 242 238 / 0.08), rgb(238 242 238 / 0.08)),
-    rgb(4 8 9 / 0.82);
+    linear-gradient(var(--color-hover), var(--color-hover)),
+    var(--color-surface);
 }
 
 .button--danger {
   border-color: var(--color-light);
-  background: rgb(4 8 9 / 0.82);
+  background: var(--color-surface);
   color: var(--color-light);
 }
 
 .button--danger:hover {
   background:
-    linear-gradient(rgb(255 197 143 / 0.12), rgb(255 197 143 / 0.12)),
-    rgb(4 8 9 / 0.82);
+    linear-gradient(var(--color-accent-tint), var(--color-accent-tint)),
+    var(--color-surface);
 }
 
 .button--small {
@@ -627,7 +661,7 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
 }
 
 .button[aria-disabled='true'] {
-  background: rgb(238 242 238 / 0.08);
+  background: var(--color-hover);
   border-color: var(--color-line-strong);
   color: var(--color-text-dim);
   cursor: not-allowed;
@@ -741,7 +775,7 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   width: 22px;
   height: 22px;
   margin: 0.15rem 0 0;
-  accent-color: var(--color-light);
+  accent-color: var(--color-accent);
   cursor: pointer;
 }
 
@@ -821,7 +855,7 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   padding: 0 1.05rem;
   border: 1px solid var(--color-line-strong);
   border-radius: 999px;
-  background: rgb(4 8 9 / 0.82);
+  background: var(--color-surface);
   font-size: 0.9375rem;
   color: var(--color-text-soft);
   cursor: pointer;
@@ -850,7 +884,7 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
 }
 
 .pill--on {
-  border-color: rgb(255 197 143 / 0.55);
+  border-color: var(--color-accent-line);
   color: var(--color-text);
 }
 
@@ -907,7 +941,7 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
 }
 
 .flow {
-  color: var(--color-teal);
+  color: var(--color-ai);
 }
 
 /* The bottom margin keeps the hint clear of the composer's 32 px fade at the end of the page. */
@@ -955,12 +989,12 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
 }
 
 .switch[aria-checked='true'] .switch__track {
-  border-color: var(--color-light);
-  background: var(--color-light);
+  border-color: var(--color-accent);
+  background: var(--color-accent);
 }
 
 .switch[aria-checked='true'] .switch__thumb {
-  background: var(--color-bg);
+  background: var(--color-on-accent);
   translate: 20px 0;
 }
 
@@ -1008,7 +1042,7 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   bottom: -1.25rem;
   left: -100vmax;
   right: -100vmax;
-  background: linear-gradient(180deg, var(--color-bg) calc(100% - 1.25rem), rgb(4 7 8 / 0));
+  background: linear-gradient(180deg, var(--color-bg) calc(100% - 1.25rem), var(--color-fade-0));
   pointer-events: none;
 }
 
@@ -1034,7 +1068,7 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
 }
 
 .session__label {
-  color: var(--color-teal);
+  color: var(--color-ai);
 }
 
 .session__sub {
@@ -1095,7 +1129,7 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
 }
 
 .said--ai .said__who {
-  color: var(--color-teal);
+  color: var(--color-ai);
 }
 
 .said__body {
@@ -1124,7 +1158,7 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
 
 /* The AI's voice: the humanist face in teal (spec §3.7.2); the mono stays for labels. */
 .said--ai .said__text p {
-  color: var(--color-teal);
+  color: var(--color-ai);
 }
 
 /* The caret while the answer comes: a still bar, no blinking (WCAG 2.2.2). */
@@ -1135,7 +1169,7 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   height: 1em;
   margin-left: 2px;
   vertical-align: -0.12em;
-  background: var(--color-teal);
+  background: var(--color-ai);
 }
 
 .said__wait,
@@ -1161,8 +1195,8 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--color-teal);
-  box-shadow: 0 0 10px var(--color-teal);
+  background: var(--color-ai);
+  box-shadow: 0 0 10px var(--color-ai);
 }
 
 html[data-motion='on'] .said--waiting .said__wait::before {
@@ -1280,7 +1314,7 @@ html[data-motion='on'] .said--waiting .said__wait::before {
   bottom: 0;
   left: -100vmax;
   right: -100vmax;
-  background: linear-gradient(0deg, var(--color-bg) calc(100% - 2rem), rgb(4 7 8 / 0));
+  background: linear-gradient(0deg, var(--color-bg) calc(100% - 2rem), var(--color-fade-0));
   pointer-events: none;
 }
 
@@ -1327,9 +1361,9 @@ html[data-screen='chat'] .chat__text {
   min-height: 56px;
   max-height: min(40svh, 15rem);
   padding: 14px 60px 14px 18px;
-  border: 1px solid var(--color-text-dim);
+  border: 1px solid var(--color-field-border);
   border-radius: var(--radius-field);
-  background: rgb(4 8 9 / 0.82);
+  background: var(--color-surface);
   font-family: var(--font-body);
   font-size: 1.0625rem;
   line-height: 1.5;
@@ -1345,7 +1379,7 @@ html[data-screen='chat'] .chat__text {
 
 .composer__input:focus {
   outline: none;
-  border-color: rgb(255 197 143 / 0.55);
+  border-color: var(--color-accent-line);
 }
 
 .composer__send {
@@ -1359,7 +1393,7 @@ html[data-screen='chat'] .chat__text {
   padding: 0;
   border: 1px solid transparent;
   border-radius: 50%;
-  background: rgb(238 242 238 / 0.08);
+  background: var(--color-hover);
   color: var(--color-text-dim);
   cursor: pointer;
   transition:
@@ -1368,8 +1402,8 @@ html[data-screen='chat'] .chat__text {
 }
 
 .composer__send[data-mode='ready'] {
-  background: var(--color-light);
-  color: var(--color-bg);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
 .composer__send[data-mode='stop'] {
@@ -1477,7 +1511,7 @@ html[data-screen='chat'] .chat__text {
   padding: 0 0.9rem;
   border: 1px solid var(--color-line-strong);
   border-radius: 999px;
-  background: rgb(4 8 9 / 0.82);
+  background: var(--color-surface);
   font-family: var(--font-mono);
   font-size: var(--step-label);
   letter-spacing: 0.14em;
@@ -1528,7 +1562,7 @@ html[data-kb] .composer {
 
 html[data-kb] .composer::before {
   top: -0.75rem;
-  background: linear-gradient(0deg, var(--color-bg) calc(100% - 0.75rem), rgb(4 7 8 / 0));
+  background: linear-gradient(0deg, var(--color-bg) calc(100% - 0.75rem), var(--color-fade-0));
 }
 
 html[data-kb] .composer__note,
@@ -1556,7 +1590,7 @@ html[data-kb] .composer__keys {
 
   .composer::before {
     top: -0.75rem;
-    background: linear-gradient(0deg, var(--color-bg) calc(100% - 0.75rem), rgb(4 7 8 / 0));
+    background: linear-gradient(0deg, var(--color-bg) calc(100% - 0.75rem), var(--color-fade-0));
   }
 
   .composer__note,
@@ -1775,9 +1809,9 @@ html[data-kb] .composer__keys {
 .field__input {
   width: 100%;
   padding: 0.75rem 1rem;
-  border: 1px solid var(--color-text-dim);
+  border: 1px solid var(--color-field-border);
   border-radius: var(--radius-field);
-  background: rgb(4 8 9 / 0.82);
+  background: var(--color-surface);
   font-family: var(--font-body);
   font-size: 1.0625rem;
   line-height: 1.5;
@@ -1790,7 +1824,7 @@ html[data-kb] .composer__keys {
 
 .field__input:focus {
   outline: none;
-  border-color: rgb(255 197 143 / 0.55);
+  border-color: var(--color-accent-line);
 }
 
 .field__input:focus-visible {
@@ -2058,7 +2092,7 @@ html[data-kb] .composer__keys {
 
 .confirm::backdrop,
 .sheet::backdrop {
-  background: rgb(4 7 8 / 0.6);
+  background: var(--color-scrim);
 }
 
 .confirm {
@@ -2290,7 +2324,7 @@ html[data-kb] .composer__keys {
   width: 22px;
   height: 22px;
   margin: 0.15rem 0 0;
-  accent-color: var(--color-light);
+  accent-color: var(--color-accent);
 }
 
 .pick__text {

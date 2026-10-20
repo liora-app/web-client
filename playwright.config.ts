@@ -20,6 +20,10 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: TARGET ?? `http://localhost:${PORT}`,
+    // Playwright emulates a light system by default; the chat follows the system (ADR-012), so the
+    // suite pins the dark theme it was written against. Light-theme tests opt in with
+    // test.use({ colorScheme: 'light' }).
+    colorScheme: 'dark',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },

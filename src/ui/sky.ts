@@ -1,15 +1,16 @@
-// Sky presets for /chat/ (spec §8.3 «Вигляд», §9.2): «Ніч» (no attribute, the landing's only sky),
-// «Сутінки» (html[data-sky="dusk"]) and «Світанок» (html[data-sky="dawn"]). stage.css holds the
-// colours; a preset changes the --sky-* custom properties and nothing else.
+// Sky presets for /chat/ (spec §8.3 «Вигляд», §9.2): «Ніч» (no attribute, the plain sky of the
+// theme), «Сутінки» (html[data-sky="dusk"]) and «Світанок» (html[data-sky="dawn"]). stage.css holds
+// the colours, a light and a dark version of each; a preset changes the --sky-* custom properties
+// and nothing else.
 //
 // - liora:sky is read inside try: storage may be blocked, and the night is then the answer.
 // - It is written only after an explicit choice in the radio group; «Ніч» removes the key. Nothing
 //   is written on a visit that does not choose.
-// - The crisis puts the night back for as long as it lasts (setSuppressed): the help contacts
-//   always stand on the night sky. The choice itself is kept and comes back after.
+// - The crisis takes the preset off for as long as it lasts (setSuppressed): the help contacts stand
+//   on the plain sky of the person's theme. The choice itself is kept and comes back after.
 // - The landing never imports this module: there the sky is always the night.
-// A module script cannot set the attribute before the first frame (no inline script under the
-// CSP), so a short frame of the night before a preset is expected.
+// public/theme-init.js (a classic script first in <head>, data-sky on its tag) puts the stored
+// preset on <html> before the first frame; this module only reads the key again and writes it.
 
 export type Sky = 'night' | 'dusk' | 'dawn'
 

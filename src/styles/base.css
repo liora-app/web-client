@@ -9,7 +9,7 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  color-scheme: dark;
+  /* color-scheme comes from tokens.css: dark on the landing, the theme on the chat. */
   background: var(--color-bg);
   scroll-padding-top: var(--header-offset);
 }

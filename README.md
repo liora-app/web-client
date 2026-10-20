@@ -18,7 +18,7 @@ Vite 8 + TypeScript 6 + three.js, без UI-фреймворку. Веб-чат 
 | `/` (`index.html`) | Лендінг: hero і глави 01–07. CTA «Розмова з AI →» і клік по кулі ведуть на `/chat/`. | Жодних. Сама cookies не ставить і не читає; `/?auth_error=…` переводить на `/chat/?auth_error=…` без запиту. |
 | `/chat/` (`chat/index.html`) | Розмова з AI: вхід, згода, сценарії, стрім відповіді (SSE), кризовий режим, тези, меню акаунта. | Лише same-origin `/api/v1` через `fetch`. Сесійний cookie (httpOnly) ставить сервер після входу. Транскрипт — лише в памʼяті вкладки. |
 
-Шлях `/api/*` належить `server`. У сховищі браузера можуть бути лише ключі `liora:motion` і `liora:sky`.
+Шлях `/api/*` належить `server`. У сховищі браузера можуть бути лише ключі `liora:motion`, `liora:sky` і `liora:theme` (`light` | `dark`; без ключа — як у системі). Тему ще до першого кадру ставить `public/theme-init.js` (лише читає), пише її тільки `src/ui/theme.ts`.
 
 ## Швидкий старт
 
@@ -77,7 +77,10 @@ src/ui/               motion.ts (пауза / reduced motion), nav.ts (aria-curr
                       («Звук»: генеративний пад, вимкнений за замовчуванням, лінивий чанк),
                       reveal.ts, steps.ts (приклад сесії йде за кроком), decode.ts,
                       hero-light.ts (де стоїть світло hero — спільне для CSS і сцени),
-                      sky.ts (пресети неба /chat/, ключ liora:sky)
+                      sky.ts (пресети неба /chat/, ключ liora:sky),
+                      theme.ts (світла / темна / як у системі, ключ liora:theme; лендінг поки
+                      закріплений темним: html[data-theme-lock]), theme-picker.ts (кнопка «Вигляд» у
+                      шапці /chat/ і радіо в «Акаунті»)
 src/gl/               WebGL-шар — окремий лінивий чанк з three.js
   core/               спільне для кожної сцени (лендінг, згодом чат):
     boot.ts           чи запускати сцену; стан у <html data-gl="loading|on|off" data-gl-reason>;

@@ -8,6 +8,7 @@ import type { GlControl } from '../../gl/core/boot'
 import type { PresenceHandle } from '../../gl/presence'
 import type { SkyControl } from '../../ui/sky'
 import type { SoundControl } from '../../ui/sound'
+import type { ThemePicker } from '../../ui/theme-picker'
 import { hasUserMessage, sessionOf, type Action, type Model, type State } from '../core/state'
 import { createDialogs, type Dialogs } from './dialogs'
 import { finePointer, headingOf, setAttr, show } from './dom'
@@ -42,9 +43,10 @@ export type ViewDeps = Readonly<{
   gl: GlControl<PresenceHandle> | null
   sound: SoundControl | null
   sky: SkyControl | null
+  theme: ThemePicker | null
 }>
 
-export function createView(dispatch: (action: Action) => void, { gl, sound, sky }: ViewDeps): View {
+export function createView(dispatch: (action: Action) => void, { gl, sound, sky, theme }: ViewDeps): View {
   const html = document.documentElement
   const main = document.querySelector<HTMLElement>('main')!
   const account = document.querySelector<HTMLElement>('.account-toggle')!
@@ -151,8 +153,11 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky 
         window.scrollTo(0, 0)
       }
       setAttr(main, 'aria-busy', s === 'booting' ? 'true' : 'false')
-      // The help contacts always stand on the night sky (§9.2).
+      // The crisis keeps the person's theme but takes off the sky preset (and, in chat.css, the
+      // haze, the grain and the vignette): the help contacts stand on the theme's plain sky (§9.2).
       sky?.setSuppressed(s === 'crisis')
+      // The «Вигляд» menu does not stay open over a new screen — over the crisis above all.
+      theme?.close()
     }
     // «Акаунт» only with a live session: not after a 401 either (§8.1).
     const signedIn = model.ctx.me !== null && s !== 'signed-out' && s !== 'account-deleted' && s !== 'booting' && s !== 'session-expired'

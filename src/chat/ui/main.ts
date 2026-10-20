@@ -1,6 +1,6 @@
-// Entry of chat/index.html (spec §9.1): styles, «Пауза» and «Звук», the sky preset, the light in its
-// slot, the on-screen keyboard, and the state machine of src/chat/core driven through store →
-// render → effects.
+// Entry of chat/index.html (spec §9.1): styles, «Пауза» and «Звук», the theme and the sky preset,
+// the light in its slot, the on-screen keyboard, and the state machine of src/chat/core driven
+// through store → render → effects.
 
 import '../../styles/fonts.css'
 import '../../styles/tokens.css'
@@ -15,6 +15,7 @@ import type { PresenceHandle } from '../../gl/presence'
 import { initMotionToggle } from '../../ui/motion'
 import { initSky } from '../../ui/sky'
 import { initSound } from '../../ui/sound'
+import { initThemePicker } from '../../ui/theme-picker'
 import { createApi } from '../core/api'
 import { draftOf, leaveGuard, pendingOf, sessionOf, type Action, type Model } from '../core/state'
 import type { ConsentKind } from '../core/types'
@@ -28,8 +29,13 @@ import { applyPresence } from './presence'
 import { createView, type View } from './render'
 import { createStore } from './store'
 
-// The sky first: the fewer frames of the night before a chosen preset, the better (§9.2).
+// The theme and the sky preset are on <html> before the first frame (public/theme-init.js); these
+// wire their controls and keep the page in step with a new choice.
 const sky = initSky(document.querySelector<HTMLElement>('[data-sky-pick]'))
+const theme = initThemePicker({
+  root: document.querySelector<HTMLElement>('[data-theme-pick]'),
+  radios: document.querySelector<HTMLElement>('[data-theme-radios]'),
+})
 initMotionToggle(document.querySelector<HTMLButtonElement>('[data-motion-toggle]'))
 // The page sets the chord and the silence itself (presence.ts): no chapters to follow here.
 const sound = initSound({ follow: 'manual' })
@@ -80,7 +86,7 @@ const effects = createEffects({
   leave,
   composer: (text) => view.chat.composer.put(text),
 })
-view = createView(dispatch, { gl, sound, sky })
+view = createView(dispatch, { gl, sound, sky, theme })
 
 // ── One delegated handler for every [data-act] on the page and in the dialogs ──
 

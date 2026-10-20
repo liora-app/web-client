@@ -1,0 +1,147 @@
+// The colour theme (ADR-012): «Як у системі» (the default), «Світла», «Темна».
+//
+// - public/theme-init.js puts html[data-theme] before the first frame (a classic script first in
+//   <head>; the CSP allows no inline one) and only reads. This module is the one writer of
+//   liora:theme: 'light' | 'dark' after an explicit choice, the key removed for «Як у системі».
+//   Nothing is written on a visit that does not choose.
+// - Without data-theme the CSS follows prefers-color-scheme (tokens.css, stage.css).
+// - html[data-theme-lock] pins a page to one theme (the landing, dark, until it has its own light
+//   theme): no choice is read or written there.
+// - A switch cross-fades for 240 ms through a View Transition when motion is allowed, otherwise it is
+//   instant; CSS transitions are off for the switch itself, so no property eases on its own clock.
+// - Every change of the resolved theme is published as window event 'liora:theme' (detail: 'light' |
+//   'dark') for the WebGL light, which swaps uniforms instead of rebuilding its scene.
+
+import { motionAllowed } from './motion'
+
+export type ThemeChoice = 'system' | 'light' | 'dark'
+export type Theme = 'light' | 'dark'
+
+export const THEME_KEY = 'liora:theme'
+export const THEME_EVENT = 'liora:theme'
+
+type ThemeListener = (choice: ThemeChoice, theme: Theme) => void
+
+const root = document.documentElement
+const prefersDark = window.matchMedia('(prefers-color-scheme: dark)')
+const listeners = new Set<ThemeListener>()
+
+/** Anything but 'light' or 'dark' is «Як у системі» (an old or hand-edited value included). */
+export function parseTheme(value: unknown): ThemeChoice {
+  return value === 'light' || value === 'dark' ? value : 'system'
+}
+
+/** The theme the page shows for a choice. */
+export function resolveTheme(choice: ThemeChoice, systemDark: boolean): Theme {
+  return choice === 'system' ? (systemDark ? 'dark' : 'light') : choice
+}
+
+function lockedTo(): Theme | null {
+  const lock = root.dataset.themeLock
+  return lock === 'light' || lock === 'dark' ? lock : null
+}
+
+function readStored(): ThemeChoice | null {
+  try {
+    return parseTheme(localStorage.getItem(THEME_KEY))
+  } catch {
+    return null
+  }
+}
+
+function writeStored(choice: ThemeChoice): void {
+  try {
+    if (choice === 'system') localStorage.removeItem(THEME_KEY)
+    else localStorage.setItem(THEME_KEY, choice)
+  } catch {
+    // Blocked storage: the choice holds for this page view only.
+  }
+}
+
+// The early script has already put the stored choice on <html>; the attribute is the answer even
+// when storage is blocked now. If that script did not run, the stored choice still applies here.
+let choice: ThemeChoice = lockedTo() ? 'system' : parseTheme(root.dataset.theme ?? readStored())
+
+export function themeChoice(): ThemeChoice {
+  return lockedTo() ? lockedTo()! : choice
+}
+
+export function resolvedTheme(): Theme {
+  return lockedTo() ?? resolveTheme(choice, prefersDark.matches)
+}
+
+export function onThemeChange(listener: ThemeListener): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+/** The one meta theme-color follows the page's computed background (already a resolved rgb()). */
+function syncThemeColor(): void {
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+  const color = getComputedStyle(root).backgroundColor
+  if (meta && color && meta.content !== color) meta.content = color
+}
+
+function applyAttribute(): void {
+  const lock = lockedTo()
+  const value = lock ?? (choice === 'system' ? null : choice)
+  if (value === null) delete root.dataset.theme
+  else if (root.dataset.theme !== value) root.dataset.theme = value
+}
+
+function publish(): void {
+  const theme = resolvedTheme()
+  for (const listener of listeners) listener(themeChoice(), theme)
+  window.dispatchEvent(new CustomEvent<Theme>(THEME_EVENT, { detail: theme }))
+}
+
+/** Applies the attribute with every CSS transition off, then lets them back on: the forced style
+ *  flush between the two makes the new colours final before transitions return. */
+function switchInstantly(): void {
+  root.dataset.themeSwitching = ''
+  applyAttribute()
+  void document.body?.offsetHeight
+  delete root.dataset.themeSwitching
+  syncThemeColor()
+}
+
+export function setTheme(next: ThemeChoice): void {
+  if (lockedTo()) return
+  const before = resolvedTheme()
+  choice = next
+  writeStored(next)
+  const after = resolvedTheme()
+  const animate =
+    before !== after && motionAllowed() && !document.hidden && typeof document.startViewTransition === 'function'
+  if (animate) {
+    try {
+      const transition = document.startViewTransition(() => switchInstantly())
+      // A transition skipped or refused (a hidden tab, another one starting) rejects these: the
+      // update still runs, so the theme is right either way.
+      transition.ready.catch(() => {})
+      transition.updateCallbackDone.catch(() => switchInstantly())
+      transition.finished.catch(() => {})
+    } catch {
+      switchInstantly()
+    }
+  } else {
+    switchInstantly()
+  }
+  publish()
+}
+
+let started = false
+
+/** Once per page: puts the stored choice on <html> if the early script could not, sets the
+ *  theme-color and follows the system while the choice is «Як у системі». */
+export function initTheme(): void {
+  if (started) return
+  started = true
+  applyAttribute()
+  syncThemeColor()
+  prefersDark.addEventListener('change', () => {
+    if (lockedTo() || choice !== 'system') return
+    syncThemeColor()
+    publish()
+  })
+}

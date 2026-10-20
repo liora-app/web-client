@@ -2311,13 +2311,13 @@ test.describe('layout', () => {
     await expect(composer(page)).toBeFocused()
   })
 
-  test('#43b the /chat/ header fits at 320 px: wordmark, «Якщо важко», motion and sound, «Акаунт»', async ({ page }, testInfo) => {
+  test('#43b the /chat/ header fits at 320 px: wordmark, «Якщо важко», motion and sound, «Вигляд», «Акаунт»', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile', 'one engine is enough for the fit')
     await page.setViewportSize({ width: 320, height: 640 })
     await openChat(page)
     await page.evaluate(() => document.fonts.ready)
     await expect(accountToggle(page)).toBeVisible()
-    for (const selector of ['.brand', '.help-link', '.media', '.account-toggle']) {
+    for (const selector of ['.brand', '.help-link', '.media', '.theme-toggle', '.account-toggle']) {
       const box = await page.locator(`.site-header ${selector}`).boundingBox()
       expect(box, selector).not.toBeNull()
       expect(box!.x + box!.width, selector).toBeLessThanOrEqual(320)
@@ -2338,9 +2338,10 @@ test.describe('layout', () => {
     await expect(page.locator('.composer__ai')).toBeVisible()
   })
 
-  test('#44 forced colors draw every control’s border; without them the fields’ borders are --color-text-dim', async ({ page }, testInfo) => {
+  test('#44 forced colors draw every control’s border; without them the fields’ borders are --color-field-border', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'one engine is enough for computed styles')
-    const DIM = 'rgb(132, 145, 141)'
+    // --color-field-border of the dark theme (#6f7c78, ≥ 3:1 on its surface and its sky).
+    const FIELD_BORDER = 'rgb(111, 124, 120)'
     const border = (selector: string) =>
       page.locator(selector).first().evaluate((node) => {
         const style = getComputedStyle(node)
@@ -2357,14 +2358,14 @@ test.describe('layout', () => {
     }
     await page.emulateMedia({ forcedColors: 'none' })
     await composer(page).evaluate((node) => (node as HTMLElement).blur())
-    expect((await border('#composer-input')).color).toBe(DIM)
+    expect((await border('#composer-input')).color).toBe(FIELD_BORDER)
     // The switch says its state in text, not only in colour.
     await expect(page.locator('[data-el="nosave-state"]')).toHaveText('Вимкнено')
 
     await exchange(page)
     await toReview(page)
     for (const selector of ['#review-title-input', '#thesis-b0', '#review-tag-input', '#pick-search-input']) {
-      expect((await border(selector)).color, selector).toBe(DIM)
+      expect((await border(selector)).color, selector).toBe(FIELD_BORDER)
     }
   })
 
@@ -2601,6 +2602,216 @@ test.describe('accessibility', () => {
     await onScreen(page, 'crisis')
     await expect(html(page)).not.toHaveAttribute('data-sky')
     await axe(page, 'crisis with the dawn preset chosen')
+  })
+})
+
+// ── The theme (ADR-012): «Як у системі», «Світла», «Темна» ───────────────────────────────────
+
+const PAPER = 'rgb(246, 241, 234)' // --color-bg, light: #f6f1ea
+const LAMP = 'rgb(18, 26, 27)' // --color-bg, dark: #121a1b
+const themeToggle = (page: Page): Locator => page.locator('[data-theme-toggle]')
+const themeMenu = (page: Page): Locator => page.getByRole('menu', { name: 'Вигляд' })
+const themeItem = (page: Page, name: string): Locator => themeMenu(page).getByRole('menuitemradio', { name })
+const storedTheme = (page: Page): Promise<string | null> => page.evaluate(() => localStorage.getItem('liora:theme'))
+/** Every finite animation and transition is over (a theme cross-fade, a menu's entrance): axe
+ *  measures the colours the page settles on, not a frame in between. The endless ones (the haze's
+ *  drift, the light's breath) never finish and are left alone. */
+const settled = (page: Page): Promise<unknown> =>
+  page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => Number.isFinite(Number(a.effect?.getComputedTiming().endTime)))
+        .map((a) => a.finished.catch(() => null)),
+    ),
+  )
+
+test.describe('theme', () => {
+  test('#54 «Вигляд» in the header: the menu switches the theme; after a reload it is on <html> by DOMContentLoaded; «Як у системі» removes the key', async ({ page }) => {
+    // What the page looked like when the parser finished — before any module ran.
+    await page.addInitScript(() => {
+      document.addEventListener('DOMContentLoaded', () => {
+        const root = document.documentElement
+        ;(window as unknown as { __atDcl: unknown }).__atDcl = { theme: root.getAttribute('data-theme'), bg: getComputedStyle(root).backgroundColor }
+      })
+    })
+    const atDcl = (): Promise<unknown> => page.evaluate(() => (window as unknown as { __atDcl: unknown }).__atDcl)
+    await openChat(page)
+    const toggle = themeToggle(page)
+    await expect(toggle).toBeVisible()
+    await expect(toggle).toHaveAccessibleName('Вигляд: як у системі')
+    // The suite emulates a dark system: no choice, the evening.
+    await expect(html(page)).not.toHaveAttribute('data-theme')
+    await expect(html(page)).toHaveCSS('background-color', LAMP)
+    expect(await storedTheme(page)).toBeNull()
+
+    await toggle.click()
+    await expect(themeMenu(page)).toBeVisible()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await expect(themeItem(page, 'Як у системі')).toHaveAttribute('aria-checked', 'true')
+    await expect(themeItem(page, 'Як у системі')).toBeFocused()
+    await themeItem(page, 'Світла').click()
+    await expect(themeMenu(page)).toBeHidden()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(toggle).toBeFocused()
+    await expect(html(page)).toHaveAttribute('data-theme', 'light')
+    await expect(html(page)).toHaveCSS('background-color', PAPER)
+    await expect(toggle).toHaveAccessibleName('Вигляд: світла')
+    expect(await storedTheme(page)).toBe('light')
+    // One theme-color, following the page.
+    await expect(page.locator('meta[name="theme-color"]')).toHaveCount(1)
+    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', PAPER)
+
+    await page.reload()
+    await onScreen(page, 'chat')
+    expect(await atDcl()).toEqual({ theme: 'light', bg: PAPER })
+
+    // By keyboard (WAI-ARIA menu button): ↓ opens on the chosen item, End, Enter.
+    await toggle.focus()
+    await page.keyboard.press('ArrowDown')
+    await expect(themeItem(page, 'Світла')).toBeFocused()
+    await page.keyboard.press('End')
+    await expect(themeItem(page, 'Темна')).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(html(page)).toHaveAttribute('data-theme', 'dark')
+    await expect(html(page)).toHaveCSS('background-color', LAMP)
+    expect(await storedTheme(page)).toBe('dark')
+
+    // «Як у системі» forgets the choice: no key, no attribute, the system decides (dark here).
+    await toggle.click()
+    await themeItem(page, 'Як у системі').click()
+    await expect(html(page)).not.toHaveAttribute('data-theme')
+    expect(await storedTheme(page)).toBeNull()
+    await page.reload()
+    await onScreen(page, 'chat')
+    expect(await atDcl()).toEqual({ theme: null, bg: LAMP })
+    await storageAudit(page)
+  })
+
+  test('#54b the menu and the sheet’s «Вигляд» show one choice; the menu closes on Esc, a click outside, Tab and the crisis, which keeps the theme', async ({ page }) => {
+    const stream = await streamTurns(page)
+    await openChat(page)
+    const toggle = themeToggle(page)
+    const sheet = accountSheet(page)
+
+    // The sheet → the header.
+    await accountToggle(page).click()
+    await expect(sheet.getByRole('radio', { name: 'Як у системі' })).toBeChecked()
+    await sheet.getByRole('radio', { name: 'Темна' }).check()
+    await expect(html(page)).toHaveAttribute('data-theme', 'dark')
+    await expect(sheet.locator('[data-theme-radios] .pill--on')).toHaveText('Темна')
+    await expect(sheet.locator('#sky-note')).toHaveText('Вибір памʼятає цей браузер, на сервер він не потрапляє.')
+    await page.keyboard.press('Escape')
+    await expect(sheet).toBeHidden()
+    await expect(toggle).toHaveAccessibleName('Вигляд: темна')
+    // The header → the sheet.
+    await toggle.click()
+    await expect(themeItem(page, 'Темна')).toHaveAttribute('aria-checked', 'true')
+    await themeItem(page, 'Світла').click()
+    await expect(html(page)).toHaveAttribute('data-theme', 'light')
+    await accountToggle(page).click()
+    await expect(sheet.getByRole('radio', { name: 'Світла' })).toBeChecked()
+    await page.keyboard.press('Escape')
+    await expect(sheet).toBeHidden()
+
+    // Esc gives the focus back to the button.
+    await toggle.click()
+    await expect(themeMenu(page)).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(themeMenu(page)).toBeHidden()
+    await expect(toggle).toBeFocused()
+    // A click outside, on text that takes no focus.
+    await toggle.click()
+    await expect(themeMenu(page)).toBeVisible()
+    await page.locator('[data-el="compose-head"] .tag').click()
+    await expect(themeMenu(page)).toBeHidden()
+    // Tab moves on and closes it.
+    await toggle.click()
+    await expect(themeItem(page, 'Світла')).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(themeMenu(page)).toBeHidden()
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+    // The crisis closes it in the same render and takes the focus; the theme stays, the preset and
+    // the decoration go.
+    await send(page, CRISIS_TEXT)
+    await stream.requests(1)
+    await toggle.click()
+    await expect(themeMenu(page)).toBeVisible()
+    await stream.write(meta() + crisis('keyword'))
+    await onScreen(page, 'crisis')
+    await expect(themeMenu(page)).toBeHidden()
+    await expect(page.locator('#crisis-title')).toBeFocused()
+    await expect(html(page)).toHaveAttribute('data-theme', 'light')
+    await expect(html(page)).toHaveCSS('background-color', PAPER)
+    for (const decoration of ['.stage__haze--teal', '.stage__grain', '.vignette']) await expect(page.locator(decoration)).toBeHidden()
+    await storageAudit(page)
+  })
+})
+
+test.describe('theme: a light system', () => {
+  test.use({ colorScheme: 'light' })
+
+  test('#55 axe in the light theme the system chose: signed-out, consent, a conversation, the menu, the sheets, the crisis', async ({ page, api }) => {
+    api.on('GET /me', fail(401, 'unauthenticated'))
+    await openChat(page, '/chat/', 'signed-out')
+    // No choice stored: the CSS follows the system.
+    await expect(html(page)).not.toHaveAttribute('data-theme')
+    await expect(html(page)).toHaveCSS('background-color', PAPER)
+    await settled(page)
+    await axe(page, 'light: signed-out')
+
+    api.on('GET /me', { json: ME })
+    api.on('GET /consents', { json: consents(['llm_transfer', 'age_18']) })
+    await openChat(page, '/chat/', 'consent')
+    await settled(page)
+    await axe(page, 'light: consent')
+
+    api.on('GET /consents', { json: CONSENTS_OK })
+    api.on('POST /chat/turn', { sse: reply() }, { sse: reply() }, { sse: meta() + crisis('keyword') })
+    await openChat(page)
+    await settled(page)
+    await axe(page, 'light: a new conversation')
+    await exchange(page)
+    await exchange(page, 'Друге синтетичне повідомлення.')
+    await settled(page)
+    await axe(page, 'light: a conversation with two exchanges')
+
+    await themeToggle(page).click()
+    await expect(themeMenu(page)).toBeVisible()
+    await settled(page)
+    await axe(page, 'light: the open «Вигляд» menu')
+    await page.keyboard.press('Escape')
+
+    await accountToggle(page).click()
+    await expect(accountSheet(page)).toBeVisible()
+    await settled(page)
+    await axe(page, 'light: the account sheet')
+    for (const [label, value] of [
+      ['Сутінки', 'dusk'],
+      ['Світанок', 'dawn'],
+    ] as const) {
+      await accountSheet(page).getByRole('radio', { name: label }).check()
+      await expect(html(page)).toHaveAttribute('data-sky', value)
+      await settled(page)
+      await axe(page, `light: the account sheet over the ${value} sky`)
+    }
+    await page.keyboard.press('Escape')
+    await expect(accountSheet(page)).toBeHidden()
+    await axe(page, 'light: a conversation, the dawn sky')
+
+    await page.locator('.help-link').click()
+    await expect(page.locator('#help-dialog')).toBeVisible()
+    await settled(page)
+    await axe(page, 'light: «Якщо важко»')
+    await page.keyboard.press('Escape')
+
+    await send(page, CRISIS_TEXT)
+    await onScreen(page, 'crisis')
+    await expect(html(page)).not.toHaveAttribute('data-sky')
+    await expect(html(page)).toHaveCSS('background-color', PAPER)
+    await settled(page)
+    await axe(page, 'light: the crisis')
   })
 })
 
