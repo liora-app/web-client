@@ -2596,11 +2596,25 @@ test.describe('presentation', () => {
       expect(await tip.evaluate((node) => node.matches(':popover-open'))).toBe(true)
       await expect(tip).toContainText(words)
       await expect(button).toBeFocused()
+      // Open, in the top layer: its text and its edge pass too, not only the closed page.
+      await axe(page, `${words}: open`)
       await page.keyboard.press('Escape')
       await expect(tip).toBeHidden()
       await expect(button).toBeFocused()
     }
     await check(page.getByRole('button', { name: 'Що означає «Не зберігати»' }), page.locator('#nosave-tip'), 'Тези наприкінці можна буде переглянути')
+    // «Інструменти» from the keyboard: Enter opens the menu, Tab walks its items, Esc brings the
+    // focus back to its button.
+    const tools = page.getByRole('button', { name: 'Інструменти' })
+    await tools.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('#composer-tools')).toBeVisible()
+    await page.keyboard.press('Tab')
+    await expect(page.getByRole('button', { name: 'Подихати хвилину' })).toBeFocused()
+    await axe(page, 'the tools menu: open')
+    await page.keyboard.press('Escape')
+    await expect(page.locator('#composer-tools')).toBeHidden()
+    await expect(tools).toBeFocused()
     // The switch says the same without the tip: the hint is its description.
     await expect(page.getByRole('switch', { name: 'Не зберігати цю розмову' })).toHaveAccessibleDescription(/Тези наприкінці можна буде переглянути/)
     await exchange(page, USER)
@@ -3012,6 +3026,26 @@ test.describe('theme', () => {
 
 test.describe('theme: a light system', () => {
   test.use({ colorScheme: 'light' })
+
+  test('#55b axe in the light theme with the toggletips and the tools menu open', async ({ page }) => {
+    await openChat(page)
+    for (const [name, panel] of [
+      ['Що означає «Не зберігати»', '#nosave-tip'],
+      ['Інструменти', '#composer-tools'],
+    ] as const) {
+      await page.getByRole('button', { name }).focus()
+      await page.keyboard.press('Enter')
+      await expect(page.locator(panel)).toBeVisible()
+      await axe(page, `light: ${panel} open`)
+      await page.keyboard.press('Escape')
+      await expect(page.locator(panel)).toBeHidden()
+    }
+    await exchange(page, USER)
+    await page.getByRole('button', { name: 'Про цю розмову' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('#composer-tip')).toBeVisible()
+    await axe(page, 'light: #composer-tip open')
+  })
 
   test('#55 axe in the light theme the system chose: signed-out, consent, a conversation, the menu, the sheets, the crisis', async ({ page, api }) => {
     api.on('GET /me', fail(401, 'unauthenticated'))
