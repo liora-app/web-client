@@ -29,9 +29,11 @@ import {
   UNSENT,
   placeholder,
   scenarioAbout,
+  starters,
   tooLong,
 } from '../copy'
 import { byEl, fromTemplate, headingOf, screenOf, setAttr, setText, show } from '../dom'
+import { motionAllowed, onMotionChange } from '../../../ui/motion'
 import { REPEAT_GAP_MS } from '../announcer'
 import { createComposer, type Composer } from '../composer'
 import { createScrollAnchor } from '../scroll-anchor'
@@ -46,6 +48,8 @@ export type ChatScreen = Screen &
     /** After «Надіслати»: the field empties once the reducer took the message. */
     afterSend(model: Model, text: string): void
     jumpToEnd(): void
+    /** A starter chip: its words go into the field (never sent by themselves). */
+    start(index: number): void
   }>
 
 /** A node that leaves the DOM and comes back to the same place (a comment marks the spot). */
@@ -61,7 +65,11 @@ function detachable(node: HTMLElement): Readonly<{ detach(): void; attach(): voi
   }
 }
 
-export function chatScreen(dispatch: (action: Action) => void, onPulse: () => void): ChatScreen {
+/** The first «Надіслати» takes the new conversation's head away; the transcript glides up into its
+ *  place instead of jumping (a FLIP on the list, spec §3.6). Only with motion. */
+const COLLAPSE_MS = 240
+
+export function chatScreen(dispatch: (action: Action) => void, onPulse: () => void, onType: () => void = () => {}): ChatScreen {
   const root = screenOf('chat')
   const el = <T extends HTMLElement = HTMLElement>(name: string): T => byEl<T>(name, root)
   const session = el('session')
@@ -72,7 +80,16 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
   const block = el('chat-block')
   const status = el('composer-status')
   const talk = el<HTMLOListElement>('talk')
+  const starterBox = el('starters')
   let scenarioKey = ''
+  let starterKey = ''
+  /** The last render showed a conversation already under way (the head gone). */
+  let wasStarted = false
+  /** The glide in flight: «Пауза» or leaving the screen ends it where it is going. */
+  let glide: Animation | null = null
+  onMotionChange((allowed) => {
+    if (!allowed) glide?.finish()
+  })
   let lastModel: Model | null = null
   let shownNotice: ChatState['notice'] = null
   let repeatTimer = 0
@@ -97,10 +114,11 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
     el('composer'),
     () => {
       const text = composer.value()
-      dispatch({ type: 'chat/send', text })
+      dispatch({ type: 'chat/send', text, now: Date.now() })
       if (lastModel) screen.afterSend(lastModel, text)
     },
     () => dispatch({ type: 'chat/stop' }),
+    onType,
   )
 
   const renderScenarios = (items: readonly ScenarioOut[], chosen: string): void => {
@@ -124,6 +142,21 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
     }
   }
 
+  const renderStarters = (scenario: string, visible: boolean): void => {
+    const lines = starters(scenario)
+    if (scenario !== starterKey) {
+      starterKey = scenario
+      starterBox.replaceChildren()
+      for (const [i, line] of lines.entries()) {
+        const chip = fromTemplate<HTMLButtonElement>('starter')
+        chip.dataset.i = String(i)
+        setText(chip, line)
+        starterBox.append(chip)
+      }
+    }
+    show(starterBox, visible && lines.length > 0)
+  }
+
   const streamOf = (state: ChatState): StreamView | null => {
     const t = state.turn
     if (t.p === 'waiting') return { id: t.id, phase: 'waiting', stage: t.stage, partial: '', until: null }
@@ -142,10 +175,18 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
     jumpToEnd() {
       anchor.jumpToEnd()
     },
+    start(index) {
+      const state = lastModel?.state
+      if (state?.s !== 'chat' || hasUserMessage(state.session, state.pending)) return
+      const line = starters(state.session.scenario)[index]
+      if (line !== undefined) composer.insert(line)
+    },
     leave() {
       // On a phone the field may hold the keyboard open: let it close before the field goes.
       const active = document.activeElement
       if (active instanceof HTMLElement && root.contains(active)) active.blur()
+      glide?.finish()
+      glide = null
       transcript.reset()
       anchor.reset()
       sessionSlot.detach()
@@ -155,6 +196,7 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       setText(el('revisit-names'), '')
       clearBanner(el('chat-auth'), el('chat-auth-text'))
       lastModel = null
+      wasStarted = false
     },
     render(model, entered) {
       lastModel = model
@@ -169,7 +211,12 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
         composerSlot.attach()
         transcript.reset()
         anchor.reset()
+        wasStarted = started
       }
+      // The first message: where the list stood before the head goes (the glide's start).
+      const collapsing = started && !wasStarted && motionAllowed() && !document.hidden
+      const fromTop = collapsing ? talk.getBoundingClientRect().top : 0
+      wasStarted = started
 
       fillProvider(model, root)
       // «Новий вхід не відбувся…» stays over the new conversation it led to (§3.3).
@@ -197,7 +244,6 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       const emptyDiary = revisit && diary.status === 'ok' && diary.value.items.length === 0
       const diaryFailed = revisit && diary.status === 'failed'
       setText(el('scenario-text'), emptyDiary ? REVISIT_EMPTY : diaryFailed ? REVISIT_FAILED : scenarioAbout(scenario))
-      show(el('scenario-flow'), s.scenario === 'situation')
       const chosenNames =
         revisit && diary.status === 'ok'
           ? s.revisitIds.map((id) => diary.value.items.find((item) => item.id === id)?.title).filter((t): t is string => t !== undefined)
@@ -210,9 +256,14 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       show(el('diary-retry'), diaryFailed)
       show(el('revisit-free'), emptyDiary)
 
+      // The glide: measured once the head is gone and the session row is in, before the send anchor
+      // scrolls (it reads the list where it ends up, not where it is drawn).
+      const shift = collapsing ? fromTop - talk.getBoundingClientRect().top : 0
+
       // Transcript (§3.7.2).
       transcript.sync({
         messages: s.messages,
+        times: s.times,
         cut: s.cut,
         pending: state.pending,
         stream: streamOf(state),
@@ -220,6 +271,13 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
         cooldownUntil: state.turn.p === 'cooldown' ? state.turn.until : null,
         revisit,
       })
+
+      if (shift > 1) {
+        glide = talk.animate([{ transform: `translate3d(0, ${Math.round(shift)}px, 0)` }, { transform: 'none' }], {
+          duration: COLLAPSE_MS,
+          easing: 'cubic-bezier(0.2, 0, 0, 1)',
+        })
+      }
 
       // «Не зберігати» (§3.6): until the first message.
       show(nosave, !started)
@@ -248,6 +306,8 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       const composerShown = blockText === '' && !emptyDiary
       show(composer.element, composerShown)
       show(el('chat-ai'), !composerShown)
+      // Starters: a new conversation with the field there to take them (§3.6).
+      renderStarters(s.scenario, !started && composerShown)
       composer.setPlaceholder(placeholder(s.scenario, !hasUserMessage(s, null)))
       const inFlight = state.turn.p === 'waiting' || state.turn.p === 'streaming' || state.turn.p === 'busy-wait'
       const blocked = !inFlight && !canSendNow(state) && state.pending === null && !(revisit && s.revisitIds.length === 0)

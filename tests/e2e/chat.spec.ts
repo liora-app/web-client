@@ -28,7 +28,9 @@ import {
   copyFailed,
   saveError,
   scenarioAbout,
+  placeholder,
   signInBanner,
+  starters,
   stillSignedIn,
   summarizeError,
   turnError,
@@ -226,9 +228,11 @@ test.describe('turn', () => {
     await send(page, USER)
     await stream.requests(1)
     const reply = aiMessages(page).nth(1).locator('.said__text')
-    // Two tokens in: three digits, which are not the number yet.
+    // Two tokens in: three digits, which are not the number yet — and digits at the end of the
+    // stream are held back until something else follows them (§3.7.4), so none of them shows.
     await stream.write(meta() + token(`Можна подзвонити на ${PAUSED.slice(0, 1)}`) + token(`${PAUSED.slice(1, 2)} ${PAUSED.slice(2, 3)}`))
-    await expect(reply).toHaveText(`Можна подзвонити на ${PAUSED.slice(0, 2)} ${PAUSED.slice(2, 3)}`)
+    await expect(reply).toHaveText(/^Можна подзвонити на\s*$/)
+    expect((await markup(page)).includes(`${PAUSED.slice(0, 2)} ${PAUSED.slice(2, 3)}`)).toBe(false)
     // The last digit comes in its own token: the answer so far is masked as a whole.
     await stream.write(token(`${PAUSED.slice(3)}, але найперше — 112.`))
     const masked = `Можна подзвонити на ${PAUSED_LINE_NOTE}, але найперше — 112.`
@@ -515,7 +519,7 @@ test.describe('crisis', () => {
     // not even hidden ones, under any record.
     const stale = page.locator('[data-el="crisis-talk"]')
     await expect(stale.locator('li')).not.toHaveCount(0)
-    for (const act of ['resend', 'edit', 'revisit-open', 'stop', 'copy', 'reload']) await expect(stale.locator(`[data-act="${act}"]`), act).toHaveCount(0)
+    for (const act of ['resend', 'edit', 'revisit-open', 'stop', 'copy', 'copy-reply', 'starter', 'tool', 'reload']) await expect(stale.locator(`[data-act="${act}"]`), act).toHaveCount(0)
     await expect(stale.locator('.said__status')).toHaveCount(0)
     await axe(page, 'crisis')
     // I5: nothing sends from here — not even the detached button pressed with text in the detached
@@ -999,7 +1003,7 @@ test.describe('sign-in and consent', () => {
       await expect(page.locator('[data-el="chat-auth-text"]')).toHaveText(stillSignedIn(code, EMAIL))
       const above = await page.evaluate(() => {
         const node = document.querySelector('[data-el="chat-auth"]')!
-        const tag = document.querySelector('section[data-screen="chat"] .tag')!
+        const tag = document.querySelector('section[data-screen="chat"] .scenarios__legend')!
         return (node.compareDocumentPosition(tag) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
       })
       expect(above).toBe(true)
@@ -1090,7 +1094,7 @@ test.describe('sign-in and consent', () => {
       await page.keyboard.press('Escape')
       await expect(sheet).toBeHidden()
     }
-    const note = page.locator('#composer-note .wide-only')
+    const note = page.locator('#composer-note')
 
     api.on('GET /consents', { json: consents([], VERSION, { name: NAME, country: '' }) })
     await openChat(page)
@@ -1116,7 +1120,11 @@ test.describe('sign-in and consent', () => {
     await expect(page.locator('[data-el="consent-reload"]')).toBeHidden()
     await expect(page.locator('[data-el="consent-checks"]')).toBeHidden()
     const lead = page.locator('section[data-screen="consent"] p', { hasText: 'Відповіді й тези створює' })
-    expect(await text(lead)).toContain(`а постачальник AI — ${NAME}. Щоб AI міг відповідати`)
+    expect(await text(lead)).toBe(`Відповіді й тези створює не наш сервер, а постачальник AI — ${NAME}.`)
+    // The details under the one-sentence row (§3.5): what exactly goes to the provider.
+    const more = lead.locator('xpath=following-sibling::details[1]')
+    await expect(more.locator('summary')).toHaveText('Що саме йому передається')
+    await expect(more).toContainText('Щоб AI міг відповідати, йому щоразу передається текст усієї розмови.')
     expect(api.count('POST /consents')).toBe(0)
   })
 
@@ -2203,8 +2211,11 @@ test.describe('layout', () => {
     // ≈ 360 px: the disclosure under the field breaks only at «·» — «не терапія» stays whole.
     await page.setViewportSize({ width: 360, height: 640 })
     expect(await page.locator('.composer__ai span').evaluateAll((spans) => spans.map((span) => span.getClientRects().length))).toEqual([1, 1, 1])
-    // The phone's column for «AI» / «Ви» (§3.7.2).
-    expect(await aiMessages(page).first().evaluate((node) => getComputedStyle(node).columnGap)).toBe('10px')
+    // A reply on a phone (§3.7.2): the small light and «AI» on one row, the text from the column's edge.
+    const answer = aiMessages(page).nth(1)
+    const [mark, who, body] = await Promise.all(['.said__mark', '.said__who', '.said__body'].map((part) => answer.locator(part).boundingBox()))
+    expect(Math.abs(mark!.y + mark!.height / 2 - (who!.y + who!.height / 2))).toBeLessThan(3)
+    expect(Math.abs(body!.x - mark!.x)).toBeLessThan(1)
     await toReview(page)
     // A 40-character tag without a space wraps inside its pill; «Прибрати тег» stays on the screen.
     await page.locator('#review-tag-input').fill('тег'.repeat(13) + 'и')
@@ -2255,7 +2266,7 @@ test.describe('layout', () => {
     expect(await cutOffAtEdges(page), 'the chosen names').toEqual([])
   })
 
-  test('#43e the session row breaks only at «·»: «не терапія» and «Не зберігати» stay whole at 375 and 412 px', async ({ page }, testInfo) => {
+  test('#43e the session row breaks only at «·»: «AI, не людина» and «Не зберігати» stay whole at 375 and 412 px', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile', 'a phone layout')
     await openChat(page)
     await scenarioList(page).getByRole('radio', { name: 'Розбір дня' }).check()
@@ -2267,7 +2278,7 @@ test.describe('layout', () => {
       await page.setViewportSize({ width, height: 800 })
       await page.evaluate(() => document.fonts.ready)
       const parts = await page.locator('.session .keep').evaluateAll((spans) => spans.map((span) => `${span.textContent}: ${span.getClientRects().length}`))
-      expect(parts, `${width} px`).toEqual(['Не зберігати: 1', 'Не людина: 1', 'не терапія: 1'])
+      expect(parts, `${width} px`).toEqual(['AI, не людина: 1', 'Не зберігати: 1'])
     }
   })
 
@@ -2414,6 +2425,11 @@ test.describe('headers and copy', () => {
       for (const tpl of Array.from(document.querySelectorAll<HTMLTemplateElement>('template[data-confirm]'))) holder.append(tpl.content.cloneNode(true))
       document.body.append(holder)
       for (const dialog of Array.from(document.querySelectorAll('dialog'))) if (!dialog.open) dialog.show()
+      // The toggletips and the tools menu (§3.6, §3.7.3) are copy too.
+      for (const tip of Array.from(document.querySelectorAll<HTMLElement>('[popover]'))) {
+        tip.popover = 'manual'
+        if (!tip.matches(':popover-open')) tip.showPopover()
+      }
       // Helpline names and the conversation are data, not our copy.
       for (const node of Array.from(document.querySelectorAll<HTMLElement>('[data-no-stoplist]'))) node.hidden = true
       const labels = Array.from(document.querySelectorAll('[aria-label], [title]')).map(
@@ -2425,6 +2441,164 @@ test.describe('headers and copy', () => {
     expect(text.length).toBeGreaterThan(5_000)
     for (const pattern of FORBIDDEN) expect(text, `forbidden phrase ${pattern}`).not.toMatch(pattern)
     expect(clinicalOffenders(text)).toEqual([])
+    // The scenario lines, the starters and the placeholders of every scenario the page knows,
+    // including the ones this server does not offer yet.
+    const ids = ['free', 'situation', 'day', 'revisit', 'worry', 'hard_talk', 'gratitude', 'evening'] as const
+    const copy = ids
+      .flatMap((id) => [scenarioAbout({ id, title: id, description: '', opening_message: '', needs_summaries: false }), ...starters(id), placeholder(id, true)])
+      .join('\n')
+      .toLowerCase()
+    for (const id of ids) expect(starters(id), id).toHaveLength(3)
+    for (const pattern of FORBIDDEN) expect(copy, `forbidden phrase ${pattern}`).not.toMatch(pattern)
+    expect(clinicalOffenders(copy)).toEqual([])
+  })
+})
+
+// ── Presentation (spec §3.6, §3.7.2–§3.7.4, §3.1 «Рух») ──────────────────────────────────────
+
+test.describe('presentation', () => {
+  test('#56 the person on the right in a bubble, every reply from the left under «AI»; a time under each message, none on the opening', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'the layout of one width; the phone has #43')
+    await openChat(page)
+    await exchange(page, USER)
+    await exchange(page, 'Друге синтетичне повідомлення.')
+    const column = (await talk(page).boundingBox())!
+    for (const li of await userMessages(page).all()) {
+      const bubble = li.locator('.said__text')
+      const box = (await bubble.boundingBox())!
+      expect(column.x + column.width - (box.x + box.width), 'the bubble ends at the column’s right edge').toBeLessThan(2)
+      expect(box.x - column.x, 'the bubble does not start at the left').toBeGreaterThan(40)
+      expect(await bubble.evaluate((node) => getComputedStyle(node).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)')
+      await expect(li.locator('.said__time')).toHaveText(/^\d{2}:\d{2}$/)
+      await expect(li.locator('[data-act="copy-reply"]')).toHaveCount(1)
+      await expect(li.locator('[data-act="copy-reply"]')).toBeHidden()
+    }
+    const replies = aiMessages(page)
+    await expect(replies).toHaveCount(3)
+    // G2: «AI» on every reply, the opening one too — exactly that text.
+    await expect(replies.locator('.said__who')).toHaveText(['AI', 'AI', 'AI'])
+    for (const li of await replies.all()) {
+      const body = (await li.locator('.said__body').boundingBox())!
+      expect(Math.abs(body.x - column.x), 'a reply starts at the column’s left edge').toBeLessThan(2)
+    }
+    // The reply's text is in the page's own colour, not the AI's accent.
+    const colours = await page.evaluate(() => {
+      const probe = document.createElement('span')
+      probe.style.setProperty('color', 'var(--color-text)')
+      document.body.append(probe)
+      const text = getComputedStyle(probe).color
+      probe.remove()
+      const p = document.querySelectorAll('[data-el="talk"] > li.said--ai .said__text p')[1]!
+      return { text, reply: getComputedStyle(p).color }
+    })
+    expect(colours.reply).toBe(colours.text)
+    await expect(replies.first().locator('.said__time')).toBeHidden()
+    await expect(replies.first().locator('[data-act="copy-reply"]')).toBeHidden()
+    await expect(replies.nth(1).locator('.said__time')).toHaveText(/^\d{2}:\d{2}$/)
+    await expect(replies.nth(1).locator('.said__time')).toHaveAttribute('datetime', /^\d{4}-\d{2}-\d{2}T/)
+  })
+
+  test('#57 «Копіювати» under a reply copies that reply, the paused number masked; the read-only copies have none', async ({ page, api, context }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'the clipboard is read in one project')
+    api.on('POST /chat/turn', { sse: reply(NUMBERED_REPLY) }, { sse: meta() + crisis('keyword') })
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    await openChat(page)
+    await exchange(page, USER)
+    const answer = aiMessages(page).nth(1)
+    await expect(answer.locator('.said__text')).toHaveText(NUMBERED_SHOWN)
+    // Its name is its words: «Копіювати», then «Скопійовано» for 2 s (the live region says it too).
+    const button = answer.locator('[data-act="copy-reply"]')
+    await expect(button).toHaveAccessibleName('Копіювати')
+    await button.click()
+    await expect(button).toHaveText('Скопійовано')
+    await expect(announcer(page)).toHaveText('Скопійовано')
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(NUMBERED_SHOWN)
+    await expect(button).toHaveText('Копіювати', { timeout: 4000 })
+    // The crisis keeps the conversation as a read-only copy: no «Копіювати» under any reply.
+    await send(page, CRISIS_TEXT)
+    await onScreen(page, 'crisis')
+    await expect(page.locator('[data-el="crisis-talk"] li')).not.toHaveCount(0)
+    await expect(page.locator('[data-el="crisis-talk"] [data-act="copy-reply"], [data-el="crisis-talk"] .said__meta')).toHaveCount(0)
+  })
+
+  test('#58 a starter puts its words into the field and sends nothing; each scenario has its own; gone after the first message', async ({ page, api }) => {
+    await openChat(page)
+    const box = page.locator('[data-el="starters"]')
+    const chips = box.locator('button.starter')
+    await expect(box).toHaveAttribute('role', 'group')
+    await expect(chips).toHaveText([...starters('free')])
+    await scenarioList(page).getByRole('radio', { name: 'Розбір дня' }).check()
+    await expect(chips).toHaveText([...starters('day')])
+    await chips.nth(1).click()
+    await expect(composer(page)).toHaveValue(starters('day')[1]!)
+    // A second chip adds its words after the first, with a space.
+    await chips.nth(2).click()
+    await expect(composer(page)).toHaveValue(`${starters('day')[1]} ${starters('day')[2]}`)
+    await page.waitForTimeout(300)
+    expect(api.count('POST /chat/turn')).toBe(0)
+    await sendButton(page).click()
+    await answered(page, 1)
+    expect(api.count('POST /chat/turn')).toBe(1)
+    await expect(box).toBeHidden()
+  })
+
+  test('#59 ⓘ beside «Не зберігати» and under the field: Enter opens the note, Esc closes it, the focus stays on ⓘ', async ({ page }) => {
+    await openChat(page)
+    const check = async (button: Locator, tip: Locator, words: string): Promise<void> => {
+      await button.focus()
+      await page.keyboard.press('Enter')
+      await expect(tip).toBeVisible()
+      expect(await tip.evaluate((node) => node.matches(':popover-open'))).toBe(true)
+      await expect(tip).toContainText(words)
+      await expect(button).toBeFocused()
+      await page.keyboard.press('Escape')
+      await expect(tip).toBeHidden()
+      await expect(button).toBeFocused()
+    }
+    await check(page.getByRole('button', { name: 'Що означає «Не зберігати»' }), page.locator('#nosave-tip'), 'Тези наприкінці можна буде переглянути')
+    // The switch says the same without the tip: the hint is its description.
+    await expect(page.getByRole('switch', { name: 'Не зберігати цю розмову' })).toHaveAccessibleDescription(/Тези наприкінці можна буде переглянути/)
+    await exchange(page, USER)
+    await check(page.getByRole('button', { name: 'Про цю розмову' }), page.locator('#composer-tip'), 'Liora не зберігає цю розмову')
+    // The field's description is the same sentence, opened or not.
+    await expect(composer(page)).toHaveAccessibleDescription(/Liora не зберігає цю розмову/)
+  })
+
+  test('#60 a screen rises in only with motion; the crisis stands in one frame, motion or not', async ({ page, api }) => {
+    api.on('POST /chat/turn', { sse: reply() }, { sse: meta() + crisis('keyword') })
+    await openChat(page)
+    const animation = (screen: string) => page.locator(`section[data-screen="${screen}"]`).evaluate((node) => getComputedStyle(node).animationName)
+    await expect(html(page)).toHaveAttribute('data-motion', 'on')
+    expect(await animation('chat')).toBe('rise-in')
+    await exchange(page, USER)
+    // The reply that came in live rises in; the read-only copies never do.
+    await expect(aiMessages(page).nth(1)).toHaveClass(/\bsaid--in\b/)
+    await send(page, CRISIS_TEXT)
+    await onScreen(page, 'crisis')
+    const still = await page.locator('section[data-screen="crisis"]').evaluate((node) => ({
+      name: getComputedStyle(node).animationName,
+      running: node.getAnimations({ subtree: true }).map((a) => (a as CSSAnimation).animationName ?? 'transition'),
+      // No View Transition either: its pseudo-elements animate on the document.
+      viewTransition: document.getAnimations().filter((a) => ((a.effect as KeyframeEffect | null)?.pseudoElement ?? '').includes('view-transition')).length,
+    }))
+    expect(still).toEqual({ name: 'none', running: [], viewTransition: 0 })
+    // «Пауза»: a new conversation after the crisis stands still too.
+    await page.locator('[data-motion-toggle]').click()
+    await expect(html(page)).toHaveAttribute('data-motion', 'off')
+    await page.locator('[data-act="new-after-crisis"]').click()
+    await confirmDialog(page).getByRole('button', { name: 'Почати нову', exact: true }).click()
+    await onScreen(page, 'chat')
+    expect(await animation('chat')).toBe('none')
+    // Nothing moves: no animation, and no transition of a transform, scale, translate or opacity
+    // (a button's colour may still settle after a press).
+    const moving = await page.evaluate(() =>
+      document
+        .getAnimations()
+        .filter((a) => a.playState === 'running')
+        .map((a) => (a instanceof CSSTransition ? a.transitionProperty : a instanceof CSSAnimation ? `animation ${a.animationName}` : 'script'))
+        .filter((what) => !/^(color|background-color|border-color|outline-color|box-shadow)$/.test(what)),
+    )
+    expect(moving).toEqual([])
   })
 })
 
@@ -2723,7 +2897,7 @@ test.describe('theme', () => {
     // A click outside, on text that takes no focus.
     await toggle.click()
     await expect(themeMenu(page)).toBeVisible()
-    await page.locator('[data-el="compose-head"] .tag').click()
+    await page.locator('[data-el="compose-head"] .scenarios__legend').click()
     await expect(themeMenu(page)).toBeHidden()
     // Tab moves on and closes it.
     await toggle.click()

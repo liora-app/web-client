@@ -17,6 +17,7 @@ import { initSky } from '../../ui/sky'
 import { initSound } from '../../ui/sound'
 import { initThemePicker } from '../../ui/theme-picker'
 import { createApi } from '../core/api'
+import { maskPausedLine } from '../core/helplines'
 import { draftOf, leaveGuard, pendingOf, sessionOf, type Action, type Model } from '../core/state'
 import type { ConsentKind } from '../core/types'
 import { createAnnouncer } from './announcer'
@@ -94,15 +95,19 @@ function topOverlay(model: Model) {
   return model.overlay[model.overlay.length - 1]
 }
 
-/** «Скопіювати текст розмови» / «Скопіювати тези» on whichever screen still holds them (§3.8). The
- *  result is said through the live region too: a changed name of the focused button is not
- *  announced by most screen readers (WCAG 4.1.3). */
-async function copy(button: HTMLElement, kind: 'talk' | 'theses'): Promise<void> {
+/** «Скопіювати текст розмови» / «Скопіювати тези» on whichever screen still holds them (§3.8), and
+ *  «Копіювати» under one reply of the AI: its text from the model, the paused number masked — never
+ *  read back from the page. The result is said through the live region too: a changed name of the
+ *  focused button is not announced by most screen readers (WCAG 4.1.3). */
+async function copy(button: HTMLElement, kind: 'talk' | 'theses' | 'reply'): Promise<void> {
   const { state } = store.model()
   let text = ''
   if (kind === 'theses') {
     const draft = draftOf(state)
     if (draft) text = thesesText(draft)
+  } else if (kind === 'reply') {
+    const message = sessionOf(state)?.messages[Number(button.dataset.i)]
+    if (message?.role === 'assistant') text = maskPausedLine(message.content)
   } else {
     const session = sessionOf(state)
     const pending = pendingOf(state)
@@ -111,14 +116,16 @@ async function copy(button: HTMLElement, kind: 'talk' | 'theses'): Promise<void>
   if (text === '') return
   const ok = await copyText(text)
   const shown = ok ? COPIED : COPY_FAILED_LABEL
-  // The button's own name, kept across quick repeated presses (a failure, then a success).
-  const label = button.dataset.label ?? button.textContent ?? ''
+  // The words of the button (its label, beside an icon), kept across quick repeated presses (a
+  // failure, then a success).
+  const words = button.querySelector<HTMLElement>('.said__copy-label') ?? button
+  const label = button.dataset.label ?? words.textContent ?? ''
   button.dataset.label = label
-  button.textContent = shown
+  words.textContent = shown
   announcer.say(ok ? COPIED : copyFailed(kind))
   window.setTimeout(() => {
-    if (button.textContent !== shown) return
-    button.textContent = label
+    if (words.textContent !== shown) return
+    words.textContent = label
     delete button.dataset.label
   }, 2000)
 }
@@ -241,6 +248,11 @@ function act(name: string, target: HTMLElement, event: Event): void {
     case 'copy-theses':
       void copy(target, 'theses')
       return
+    case 'copy-reply':
+      void copy(target, 'reply')
+      return
+    case 'starter':
+      return view.chat.start(Number(target.dataset.i))
   }
 }
 

@@ -1467,6 +1467,28 @@ test.describe('state: chat', () => {
     expect(c.session.cut).toEqual([2])
   })
 
+  test('times run beside the history: none for the opening, the press for the message, `done` for the answer', () => {
+    const DONE = { kind: 'done', text: 'Синтетична відповідь.', finishReason: 'stop', requestId: 'r' } as const
+    const sent = run(booted(), { type: 'chat/send', text: 'Привіт', now: NOW - 5000 })
+    expect(chatOf(sent.model).pending).toMatchObject({ at: NOW - 5000 })
+    expect(chatOf(sent.model).session.times).toEqual([null])
+    const first = run(sent.model, { type: 'turn/outcome', id: turnEffect(sent.effects).id, now: NOW, outcome: DONE })
+    expect(chatOf(first.model).session.times).toEqual([null, NOW - 5000, NOW])
+    // The second turn keeps the first one's times; a failed send and its «Надіслати ще раз» keep
+    // the moment of the press, not of the repeat.
+    const next = run(first.model, { type: 'chat/send', text: 'Ще одне', now: NOW + 1000 })
+    const failed = run(next.model, { type: 'turn/outcome', id: turnEffect(next.effects).id, now: NOW + 2000, outcome: { kind: 'network' } }).model
+    const again = run(failed, { type: 'chat/resend' })
+    const second = run(again.model, { type: 'turn/outcome', id: turnEffect(again.effects).id, now: NOW + 9000, outcome: DONE })
+    const c = chatOf(second.model)
+    expect(c.session.times).toEqual([null, NOW - 5000, NOW, NOW + 1000, NOW + 9000])
+    expect(c.session.times).toHaveLength(c.session.messages.length)
+    // A send without a time (no clock in the caller): the message takes the answer's.
+    const plain = run(booted(), { type: 'chat/send', text: 'Привіт' })
+    const answered = run(plain.model, { type: 'turn/outcome', id: turnEffect(plain.effects).id, now: NOW, outcome: DONE })
+    expect(chatOf(answered.model).session.times).toEqual([null, NOW, NOW])
+  })
+
   test('an answer over 4000 code points joins the history cut to 4000; an empty one joins nothing', () => {
     const sent = run(booted(), { type: 'chat/send', text: 'Привіт' })
     const { id } = turnEffect(sent.effects)

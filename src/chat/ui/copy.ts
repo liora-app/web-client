@@ -7,17 +7,39 @@ import { maskPausedLine } from '../core/helplines'
 import type { AuthCode, AuthNotice } from '../core/state'
 import type { ScenarioId, ScenarioOut } from '../core/types'
 
-/** Scenario descriptions (spec §3.6). The server's own `situation` text names a psychotherapy
- *  method, which must not stand next to «не терапія»; unknown ids fall back to the server text. */
+/** Scenario descriptions, one line each (spec §3.6). The server's own `situation` text names a
+ *  psychotherapy method, which must not stand next to «не терапія»; an id the page does not know
+ *  yet (a scenario the server added later) falls back to the server's own description. */
 const SCENARIO_ABOUT: Readonly<Record<string, string>> = {
-  free: 'Будь-яка тема. Можна просто виговоритися, а AI ставитиме уточнювальні запитання.',
-  situation: 'Що сталося, що ви подумали й відчули — і як ще можна на це подивитися. Вправа для роздумів, а не терапія.',
-  day: 'Що сталося за день, що ви відчували і що з цього варте уваги.',
-  revisit: 'Поверніться до теми зі свого щоденника: AI отримає тези, які ви оберете.',
+  free: 'Будь-яка тема: можна просто виговоритися, а AI ставитиме запитання.',
+  situation: 'Що сталося, що ви подумали й відчули — і як ще на це подивитися.',
+  day: 'Що було за день, що ви відчували і що з цього варте уваги.',
+  revisit: 'Повернутися до теми зі щоденника: AI отримає тези, які ви оберете.',
+  worry: 'Коли всередині неспокійно: назвати, що саме турбує, і що з цим у ваших руках.',
+  hard_talk: 'Підготуватися до непростої розмови: що сказати, чого ви хочете і чого боїтеся.',
+  gratitude: 'Помітити, що було добре — навіть дрібне — і що це для вас означає.',
+  evening: 'Спокійно завершити день: що відпустити і з чим іти спати.',
 }
 
 export function scenarioAbout(scenario: ScenarioOut): string {
   return SCENARIO_ABOUT[scenario.id] ?? scenario.description
+}
+
+/** Ways to begin, per scenario (spec §3.6): a chip puts the words into the field — the person
+ *  edits them and sends, nothing goes by itself. An id without its own list shows none. */
+const STARTERS: Readonly<Record<string, readonly string[]>> = {
+  free: ['Хочу виговоритися', 'Мене дещо зачепило', 'Не йде з голови'],
+  situation: ['Сьогодні сталося ось що:', 'Мене зачепили слова', 'Досі не можу відпустити'],
+  day: ['Найбільше сил забрало', 'Найкраще за день', 'Досі думаю про'],
+  revisit: ['Відтоді змінилося', 'Досі повертаюся до', 'Хочу глянути ще раз'],
+  worry: ['Мене турбує', 'Думки крутяться довкола', 'Найбільше боюся, що'],
+  hard_talk: ['Мені треба поговорити з', 'Хочу, щоб мене почули', 'Найважче буде сказати'],
+  gratitude: ['Сьогодні порадувало', 'Я ціную', 'Мені допомогло'],
+  evening: ['Сьогодні вдалося', 'Хочу відпустити', 'Завтра хочу'],
+}
+
+export function starters(scenario: ScenarioId): readonly string[] {
+  return STARTERS[scenario] ?? []
 }
 
 export const REVISIT_EMPTY =
@@ -29,6 +51,10 @@ const PLACEHOLDER: Readonly<Record<string, string>> = {
   situation: 'Що сталося?',
   day: 'Як минув день?',
   revisit: 'Що змінилося?',
+  worry: 'Що зараз турбує?',
+  hard_talk: 'З ким ця розмова?',
+  gratitude: 'Що сьогодні було добре?',
+  evening: 'Що зараз на думці?',
 }
 
 export function placeholder(scenario: ScenarioId, firstMessage: boolean): string {
@@ -323,10 +349,12 @@ export function requestIdLine(id: string | null): string | null {
 
 // ── Presence (§3.1 «Під кулею», §9.2) ────────────────────────────────────────────────────────
 
-export type Presence = 'idle' | 'thinking' | 'speaking' | 'summary' | 'saved' | 'quiet'
+export type Presence = 'idle' | 'listening' | 'thinking' | 'speaking' | 'summary' | 'saved' | 'quiet'
 
 export const PRESENCE_LABEL: Readonly<Record<Presence, string>> = {
   idle: 'Чекає на ваше повідомлення',
+  // The person is typing. Honest about where the words are: nothing goes out before «Надіслати».
+  listening: 'Ви пишете…',
   thinking: 'Думає над відповіддю',
   speaking: 'Відповідає',
   summary: 'Складає тези',
@@ -355,10 +383,10 @@ export const SAY_SAVED = 'Збережено в щоденник'
 export const COPIED = 'Скопійовано'
 /** On the button for 2 s; copyFailed() is what the live region says. */
 export const COPY_FAILED_LABEL = 'Не вдалося скопіювати'
-export function copyFailed(kind: 'talk' | 'theses'): string {
-  return kind === 'theses'
-    ? 'Не вдалося скопіювати. Виділіть тези вручну.'
-    : 'Не вдалося скопіювати. Виділіть текст розмови вручну.'
+export function copyFailed(kind: 'talk' | 'theses' | 'reply'): string {
+  if (kind === 'theses') return 'Не вдалося скопіювати. Виділіть тези вручну.'
+  if (kind === 'reply') return 'Не вдалося скопіювати. Виділіть текст відповіді вручну.'
+  return 'Не вдалося скопіювати. Виділіть текст розмови вручну.'
 }
 
 // ── Dates ────────────────────────────────────────────────────────────────────────────────────
@@ -387,6 +415,13 @@ export function longDateTime(iso: string): string {
   const day = new Intl.DateTimeFormat('uk', { day: 'numeric', month: 'long', year: 'numeric' }).format(date).replace(/\s*р\.$/, '')
   const time = new Intl.DateTimeFormat('uk', { hour: '2-digit', minute: '2-digit' }).format(date)
   return `${day}, ${time}`
+}
+
+const CLOCK = new Intl.DateTimeFormat('uk', { hour: '2-digit', minute: '2-digit' })
+
+/** «14:52» — the time under a message (spec §3.7.2). */
+export function clock(ms: number): string {
+  return CLOCK.format(new Date(ms))
 }
 
 /** дд.мм */

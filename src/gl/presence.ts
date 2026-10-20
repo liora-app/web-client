@@ -49,7 +49,7 @@ import somaFrag from './shaders/soma.frag.glsl?raw'
 import somaVert from './shaders/soma.vert.glsl?raw'
 import { THEME_EVENT, resolvedTheme } from '../ui/theme'
 
-export type Presence = 'idle' | 'thinking' | 'speaking' | 'summary' | 'saved' | 'quiet'
+export type Presence = 'idle' | 'listening' | 'thinking' | 'speaking' | 'summary' | 'saved' | 'quiet'
 
 export interface PresenceHandle extends SceneHandle {
   setPresence(presence: Presence): void
@@ -98,6 +98,8 @@ const ACTIVE_FRAME_MS = 9.2
 /** Per presence: signal in the network, halo strength, brightness of the light. */
 const MOOD: Readonly<Record<Presence, Readonly<{ fire: number; glow: number; intensity: number }>>> = {
   idle: { fire: 0.2, glow: 0.3, intensity: 0.9 },
+  // The person is typing: a little more awake than idle, far from thinking (nothing has been sent).
+  listening: { fire: 0.32, glow: 0.33, intensity: 0.93 },
   thinking: { fire: 0.6, glow: 0.34, intensity: 0.95 },
   speaking: { fire: 0.8, glow: 0.36, intensity: 1 },
   summary: { fire: 0.5, glow: 0.32, intensity: 0.92 },

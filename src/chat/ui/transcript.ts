@@ -2,14 +2,23 @@
 //
 // - Append-only: confirmed messages are cloned from <template data-tpl="said"> once and kept; only a
 //   new conversation (or a changed opening message) re-renders the list.
-// - Text goes in through textContent and Text.appendData only (I8), split into <p> on "\n\n".
+// - Text goes in through textContent, Text.appendData and new nodes only (I8), split into <p> on "\n\n".
+// - The person's message is a bubble on the right; the AI's reply stands on the page under a small
+//   light and the label «AI». Under each: its time (Session.times, never inside .said__text) and,
+//   under a reply, «Копіювати» (copies the reply from the model, the paused number masked).
 // - The answer being streamed is written once per frame (requestAnimationFrame), every 250 ms in a
 //   hidden tab (rAF stands still there, so a frame already asked for is swapped for the timer), every
-//   300 ms without motion. Its target is the state's `partial`; the DOM catches up.
+//   300 ms without motion. Its target is the state's `partial`; the DOM catches up. With motion each
+//   new piece comes in as a <span class="w"> that fades in (chat.css); on `done` every paragraph is one
+//   Text node again. A trailing run of digits waits for the next character: a phone number shows only
+//   whole, after the mask of core/helplines.ts has seen its last digit.
 // - On any end but `done` (crisis, error, «Зупинити», pagehide, the screen leaving) the scheduled
 //   write is cancelled, the target emptied and the answer's <li> leaves the DOM before anything else
 //   (I3). A cut stream before its retry keeps the slot, but its text goes at once, not a frame later.
 //   On `done` the rest is written at once and the <li> becomes a confirmed message in place.
+// - Only what comes in while the person watches enters with a short rise (.said--in): the sent
+//   message, the answer's slot, a swapped opening message. A list built again (back from the theses)
+//   just stands there.
 // - Where the page scrolls is scroll-anchor.ts: the transcript only says what was sent and when
 //   text was written.
 // - The AI's text reaches the DOM only through shown(): the paused hotline number masked
@@ -18,7 +27,7 @@
 
 import { maskPausedLine } from '../core/helplines'
 import type { Msg, Pending } from '../core/state'
-import { busyWait, requestIdLine, turnError, waitLabel } from './copy'
+import { busyWait, clock, requestIdLine, turnError, waitLabel } from './copy'
 import { fromTemplate, setAttr, setText, show } from './dom'
 import { motionAllowed } from '../../ui/motion'
 
@@ -33,6 +42,8 @@ export type StreamView = Readonly<{
 
 export type TranscriptView = Readonly<{
   messages: readonly Msg[]
+  /** When each message came (Session.times): null where the page did not see it. */
+  times: readonly (number | null)[]
   cut: readonly number[]
   pending: Pending | null
   stream: StreamView | null
@@ -46,6 +57,9 @@ export type TranscriptView = Readonly<{
 
 type Para = { readonly paras: Text[] }
 
+/** The streamed answer's paragraphs: what each one shows so far. */
+type Live = { p: HTMLParagraphElement; text: string }[]
+
 type Item = Readonly<{ li: HTMLLIElement; role: Msg['role']; content: string; text: Para }>
 
 export type TranscriptHooks = Readonly<{
@@ -58,6 +72,10 @@ export type TranscriptHooks = Readonly<{
 }>
 
 const LABEL: Readonly<Record<Msg['role'], string>> = { assistant: 'AI', user: 'Ви' }
+
+/** A tail that may be the start of a phone number: digits (with spaces, brackets, dashes, a plus)
+ *  up to the end of the text so far. It waits for the next character (or `done`). */
+const NUMBER_TAIL = /[\d+(][\d\s()\-]*$/u
 
 /** Writes `full` into the container as paragraphs, appending where it can. */
 function writeText(container: HTMLElement, state: Para, full: string): void {
@@ -79,10 +97,58 @@ function writeText(container: HTMLElement, state: Para, full: string): void {
   while (state.paras.length > parts.length) state.paras.pop()?.parentElement?.remove()
 }
 
+/** The streamed answer: what continues the text comes in as a new node — with motion a
+ *  <span class="w"> that fades in; anything that does not continue it (the mask, a retry) rebuilds
+ *  the paragraph without a fade. */
+function writeLive(container: HTMLElement, live: Live, full: string, fade: boolean): void {
+  const parts = full.split('\n\n')
+  for (let i = 0; i < parts.length; i++) {
+    const want = parts[i]!
+    let para = live[i]
+    if (para === undefined) {
+      const p = document.createElement('p')
+      container.append(p)
+      para = { p, text: '' }
+      live.push(para)
+    }
+    if (para.text === want) continue
+    if (want.startsWith(para.text)) {
+      const piece = want.slice(para.text.length)
+      if (fade) {
+        const word = document.createElement('span')
+        word.className = 'w'
+        word.textContent = piece
+        para.p.append(word)
+      } else {
+        para.p.append(document.createTextNode(piece))
+      }
+    } else {
+      para.p.textContent = want
+    }
+    para.text = want
+  }
+  while (live.length > parts.length) live.pop()?.p.remove()
+}
+
+/** On `done`: each paragraph becomes one Text node again (no spans left for a screen reader to
+ *  read in pieces), and the answer continues as a confirmed message. */
+function settle(live: Live): Para {
+  const paras: Text[] = []
+  for (const { p, text } of live) {
+    const node = document.createTextNode(text)
+    p.replaceChildren(node)
+    paras.push(node)
+  }
+  return { paras }
+}
+
 function said(role: Msg['role']): { li: HTMLLIElement; text: Para } {
   const li = fromTemplate<HTMLLIElement>('said')
   li.classList.add(role === 'assistant' ? 'said--ai' : 'said--you')
-  setText(li.querySelector('.said__who')!, LABEL[role])
+  const who = li.querySelector<HTMLElement>('.said__who')!
+  setText(who, LABEL[role])
+  // «Ви» is said to a screen reader, not shown: the bubble on the right already says whose it is.
+  if (role === 'user') who.classList.add('visually-hidden')
   return { li, text: { paras: [] } }
 }
 
@@ -95,6 +161,24 @@ function textBox(li: HTMLElement): HTMLElement {
   return li.querySelector<HTMLElement>('.said__text')!
 }
 
+/** The line under a message: its time, and «Копіювати» under a reply of the AI (`index` in the
+ *  history; the opening message has nothing to copy). */
+function writeMeta(li: HTMLLIElement, role: Msg['role'], index: number | null, time: number | null): void {
+  const meta = li.querySelector<HTMLElement>('.said__meta')
+  if (meta === null) return
+  const stamp = meta.querySelector<HTMLTimeElement>('.said__time')!
+  const copy = meta.querySelector<HTMLElement>('.said__copy')!
+  if (time !== null) {
+    setText(stamp, clock(time))
+    setAttr(stamp, 'datetime', new Date(time).toISOString())
+  }
+  show(stamp, time !== null)
+  const copyable = role === 'assistant' && index !== null && index > 0
+  if (copyable) copy.dataset.i = String(index)
+  show(copy, copyable)
+  show(meta, time !== null || copyable)
+}
+
 /** A read-only copy of a conversation (crisis, not-invited, session-expired): no actions — not
  *  even hidden ones in the tree, under any record. */
 export function renderStatic(list: HTMLOListElement, messages: readonly Msg[], pending: Pending | null): void {
@@ -104,10 +188,12 @@ export function renderStatic(list: HTMLOListElement, messages: readonly Msg[], p
     writeText(textBox(li), text, shown(m.role, m.content))
     list.append(li)
     li.querySelector('.said__status')?.remove()
+    li.querySelector('.said__meta')?.remove()
   }
   if (pending !== null) {
     const { li, text } = said('user')
     writeText(textBox(li), text, pending.text)
+    li.querySelector('.said__meta')?.remove()
     const status = li.querySelector<HTMLElement>('.said__status')!
     setText(status.querySelector('.said__flag')!, 'Не надіслано')
     status.querySelector('.said__actions')?.remove()
@@ -125,7 +211,7 @@ export class Transcript {
   private pendingText: Para = { paras: [] }
   private pendingKey = ''
   private streamLi: HTMLLIElement | null = null
-  private streamText: Para = { paras: [] }
+  private streamText: Live = []
   private streamId = -1
   private target = ''
   private scheduled: { kind: 'raf' | 'timer'; handle: number } | null = null
@@ -206,7 +292,10 @@ export class Transcript {
     // A different conversation (or the opening message swapped before the first message): start over.
     const first = messages[0]
     const head = this.items[0]
+    // The opening message swapped for another scenario's, in front of the person: it comes in.
+    let swapped = false
     if (messages.length < this.items.length || (head !== undefined && (first === undefined || head.content !== first.content))) {
+      swapped = messages.length === 1 && head !== undefined
       const keepStream = finished ? null : this.streamLi
       this.list.replaceChildren()
       this.items = []
@@ -216,6 +305,7 @@ export class Transcript {
     }
     for (let i = this.items.length; i < messages.length; i++) {
       const m = messages[i]!
+      const time = view.times[i] ?? null
       let li: HTMLLIElement
       let text: Para
       if (m.role === 'user' && this.pendingLi !== null && this.pendingLi.isConnected && i === messages.length - 2 && finished) {
@@ -226,26 +316,29 @@ export class Transcript {
         this.pendingKey = ''
       } else if (m.role === 'assistant' && finished && i === messages.length - 1 && this.streamLi !== null) {
         li = this.streamLi
-        text = this.streamText
         this.cancelFlush()
+        text = settle(this.streamText)
         // The screen keeps the whole answer even when the history keeps 4000 code points (§5.8).
         writeText(textBox(li), text, shown('assistant', this.target.length >= m.content.length ? this.target : m.content))
         li.classList.remove('said--streaming', 'said--waiting')
         setAttr(li, 'aria-busy', 'false')
         show(li.querySelector<HTMLElement>('.said__wait')!, false)
         this.streamLi = null
+        this.streamText = []
         this.streamId = -1
         this.target = ''
       } else {
         const fresh = said(m.role)
         li = fresh.li
         text = fresh.text
+        if (swapped) li.classList.add('said--in')
         writeText(textBox(li), text, shown(m.role, m.content))
         // Before the pending message, so the order stays: history, then what is still on its way.
         const before = this.pendingLi?.isConnected ? this.pendingLi : this.streamLi?.isConnected ? this.streamLi : null
         if (before) this.list.insertBefore(li, before)
         else this.list.append(li)
       }
+      writeMeta(li, m.role, i, time)
       this.items.push({ li, role: m.role, content: m.content, text })
     }
     for (const [i, item] of this.items.entries()) show(item.li.querySelector<HTMLElement>('.said__cut')!, view.cut.includes(i))
@@ -268,7 +361,9 @@ export class Transcript {
     if (this.pendingLi === null || this.pendingKey !== key || !this.pendingLi.isConnected) {
       this.pendingLi?.remove()
       const { li, text } = said('user')
+      li.classList.add('said--in')
       writeText(textBox(li), text, pending.text)
+      writeMeta(li, 'user', null, pending.at ?? null)
       const before = this.streamLi?.isConnected ? this.streamLi : null
       if (before) this.list.insertBefore(li, before)
       else this.list.append(li)
@@ -293,7 +388,7 @@ export class Transcript {
       for (const name of ['resend', 'edit', 'pick', 'busy-cancel', 'copy', 'reload']) show(slot(name), names.includes(name))
     }
     if (pending.status === 'sending') {
-      // llm_busy: the countdown is in the AI's slot, «-> Скасувати» under the message (§4.3).
+      // llm_busy: the countdown is in the AI's slot, «Скасувати» under the message (§4.3).
       const busy = view.stream?.phase === 'busy-wait'
       show(status, busy)
       if (!busy) return
@@ -347,12 +442,12 @@ export class Transcript {
 
   private syncStream(stream: StreamView): void {
     if (this.streamLi === null) {
-      const { li, text } = said('assistant')
-      li.classList.add('said--live')
+      const { li } = said('assistant')
+      li.classList.add('said--live', 'said--in')
       setAttr(li, 'aria-busy', 'true')
       this.list.append(li)
       this.streamLi = li
-      this.streamText = text
+      this.streamText = []
       this.streamId = stream.id
       this.target = ''
     }
@@ -388,7 +483,7 @@ export class Transcript {
   private updateWait(): void {
     const stream = this.view?.stream
     if (!stream || !this.streamLi || stream.phase === 'streaming') return
-    const wait = this.streamLi.querySelector<HTMLElement>('.said__wait')!
+    const wait = this.streamLi.querySelector<HTMLElement>('.said__wait-text')!
     if (stream.phase === 'busy-wait') {
       const seconds = stream.until === null ? 0 : Math.ceil((stream.until - Date.now()) / 1000)
       setText(wait, busyWait(seconds))
@@ -433,8 +528,10 @@ export class Transcript {
   private flush(): void {
     this.scheduled = null
     if (this.streamLi === null) return
-    // The whole answer so far, masked: digits that came in separate tokens are one number here.
-    writeText(textBox(this.streamLi), this.streamText, shown('assistant', this.target))
+    // The whole answer so far, masked: digits that came in separate tokens are one number here. A
+    // number still coming in (a trailing run of digits) waits until its end is in.
+    const masked = shown('assistant', this.target)
+    writeLive(textBox(this.streamLi), this.streamText, masked.replace(NUMBER_TAIL, ''), motionAllowed() && !document.hidden)
     this.hooks.onWrite?.()
     if (this.target === '') return
     const now = performance.now()
@@ -449,7 +546,7 @@ export class Transcript {
     this.target = ''
     this.streamLi?.remove()
     this.streamLi = null
-    this.streamText = { paras: [] }
+    this.streamText = []
     this.streamId = -1
     this.waitKey = ''
   }

@@ -79,6 +79,10 @@ export type Session = Readonly<{
   noSave: boolean
   /** Indices in `messages` of AI replies the model cut by length (finish_reason "length"). */
   cut: readonly number[]
+  /** When each message of `messages` came, in ms since the epoch (a parallel array, like `cut`):
+   *  the page shows it as HH:MM under the reply. null where the page did not see it come (the
+   *  opening message). Never sent: the turn body carries only role and content. */
+  times: readonly (number | null)[]
 }>
 
 /** The person's message that is not in `messages` yet. */
@@ -88,6 +92,8 @@ export type Pending = Readonly<{
   request: readonly Msg[]
   status: 'sending' | 'failed' | 'stopped'
   error: UiError | null
+  /** When «Надіслати» was pressed (the time under the message); null if the action had no clock. */
+  at: number | null
 }>
 
 /** What to repeat after the consent screen; the turn keeps its frozen body (I4). */
@@ -326,7 +332,8 @@ export type Action =
   // conversation
   | Readonly<{ type: 'chat/scenario'; id: ScenarioId }>
   | Readonly<{ type: 'chat/no-save'; on: boolean }>
-  | Readonly<{ type: 'chat/send'; text: string }>
+  /** `now`: the page's clock at the press (the core has none); the message's time on the screen. */
+  | Readonly<{ type: 'chat/send'; text: string; now?: number }>
   | Readonly<{ type: 'chat/resend' }>
   | Readonly<{ type: 'chat/edit' }>
   | Readonly<{ type: 'chat/stop' }>
@@ -507,6 +514,7 @@ function freshSession(ctx: Ctx, scenario: ScenarioId, noSave: boolean): Session 
     messages: freezeMessages([{ role: 'assistant', content: chosen.opening_message }]),
     noSave,
     cut: Object.freeze([]),
+    times: Object.freeze([null]),
   })
 }
 
@@ -581,6 +589,7 @@ function beginTurn(
   request: readonly Msg[],
   text: string,
   revisitIds: readonly string[],
+  at: number | null,
 ): Step {
   const { session } = base
   if (session.scenario === 'revisit' && revisitIds.length === 0) {
@@ -588,7 +597,7 @@ function beginTurn(
   }
   const id = model.ctx.seq + 1
   const frozen = Object.isFrozen(request) ? request : freezeMessages(request)
-  const pending: Pending = { text, request: frozen, status: 'sending', error: null }
+  const pending: Pending = { text, request: frozen, status: 'sending', error: null, at }
   const turn: TurnPhase = { p: 'waiting', id, stage: 'headers', request: frozen, trunc: 0, busy: 0 }
   const state: ChatState = { ...base, session: { ...session, revisitIds }, turn, pending, notice: null }
   return [
@@ -759,7 +768,7 @@ function afterConsent(model: Model): Step {
     switch (resume.kind) {
       case 'turn': {
         const text = state.pending?.text ?? lastUserText(resume.request)
-        return beginTurn(model, chat(session), resume.request, text, resume.revisitIds)
+        return beginTurn(model, chat(session), resume.request, text, resume.revisitIds, state.pending?.at ?? null)
       }
       case 'summarize':
         return beginSummarize(model, session, state.pending)
@@ -804,11 +813,19 @@ function turnActive(state: State, id: number): Exclude<TurnPhase, { p: 'idle' } 
   return t
 }
 
+/** `times` of the history after `done` (`length` messages): the times kept so far, the person's
+ *  message at its press (or, without one, with the answer), then the answer at `now`. */
+function timesAfter(session: Session, length: number, at: number | null, now: number): readonly (number | null)[] {
+  const kept: (number | null)[] = session.times.slice(0, Math.max(0, length - 2))
+  while (kept.length < length - 2) kept.push(null)
+  return Object.freeze([...kept, at ?? now, now])
+}
+
 function onTurnOutcome(model: Model, state: ChatState, outcome: TurnOutcome, now: number): Step {
   const turn = state.turn
   if (turn.p === 'idle' || turn.p === 'cooldown') return [model, NONE]
   const request = turn.request
-  const pending: Pending = state.pending ?? { text: lastUserText(request), request, status: 'sending', error: null }
+  const pending: Pending = state.pending ?? { text: lastUserText(request), request, status: 'sending', error: null, at: null }
   const fail = (error: UiError, extra: Partial<ChatState> = {}, effects: readonly Effect[] = NONE): Step =>
     withState(model, { ...state, turn: IDLE, pending: { ...pending, status: 'failed', error }, ...extra }, effects)
 
@@ -819,7 +836,8 @@ function onTurnOutcome(model: Model, state: ChatState, outcome: TurnOutcome, now
       // it whole and the history keeps 4000, or the next turn would be a 422 (§5.8).
       const messages = freezeMessages([...request, { role: 'assistant', content: clampCodePoints(outcome.text, MAX_CONTENT) }])
       const cut = outcome.finishReason === 'length' ? [...state.session.cut, messages.length - 1] : state.session.cut
-      return withState(model, { ...state, session: { ...state.session, messages, cut }, turn: IDLE, pending: null, notice: null })
+      const times = timesAfter(state.session, messages.length, pending.at, now)
+      return withState(model, { ...state, session: { ...state.session, messages, cut, times }, turn: IDLE, pending: null, notice: null })
     }
     case 'crisis':
       // I3, I5: the partial answer is gone, the conversation is locked.
@@ -1250,13 +1268,13 @@ function step(model: Model, action: Action): Step {
         return withState(model, { ...state, notice: { kind: 'need-records' } })
       }
       const request = freezeMessages([...session.messages, { role: 'user', content: action.text }])
-      return beginTurn(model, state, request, action.text, session.revisitIds)
+      return beginTurn(model, state, request, action.text, session.revisitIds, action.now ?? null)
     }
     case 'chat/resend': {
       if (state.s !== 'chat' || state.turn.p !== 'idle' || state.pending === null || state.pending.status === 'sending') return [model, NONE]
       if (state.notice?.kind === 'too-large' || state.notice?.kind === 'revisit-gone') return [model, NONE]
       // I4: the same frozen request, not a rebuilt one.
-      return beginTurn(model, state, state.pending.request, state.pending.text, state.session.revisitIds)
+      return beginTurn(model, state, state.pending.request, state.pending.text, state.session.revisitIds, state.pending.at)
     }
     case 'chat/edit': {
       if (state.s !== 'chat' || state.pending === null || state.pending.status === 'sending') return [model, NONE]
@@ -1387,7 +1405,7 @@ function step(model: Model, action: Action): Step {
       const base: ChatState = { ...state, session: { ...state.session, revisitIds: [...top.selected] }, notice: null }
       // After a 404 the same turn goes again, with the new ids (§3.6).
       if (state.turn.p === 'idle' && state.pending !== null && state.pending.status === 'failed' && state.pending.error?.code === 'not_found') {
-        return beginTurn(popped, base, state.pending.request, state.pending.text, top.selected)
+        return beginTurn(popped, base, state.pending.request, state.pending.text, top.selected, state.pending.at)
       }
       return withState(popped, base)
     }

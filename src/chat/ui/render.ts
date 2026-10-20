@@ -59,7 +59,7 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky,
 
   const presence: PresenceView = createPresence(presenceRoot, gl, sound)
   const dialogs = createDialogs(dispatch)
-  const chat = chatScreen(dispatch, () => presence.pulse())
+  const chat = chatScreen(dispatch, () => presence.pulse(), () => presence.listen())
   const consent = consentScreen()
   const review = reviewScreen(dispatch)
   const screens: Record<State['s'], Screen> = {

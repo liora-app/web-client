@@ -56,6 +56,7 @@
   --color-band-tail: rgb(4 7 8 / 0.45);
   --color-fade-0: rgb(4 7 8 / 0);
   --color-shadow: rgb(0 0 0 / 0.42);
+  --color-field-shadow: rgb(0 0 0 / 0); /* the lift under the message field */
   --color-vignette: rgb(3 5 5 / 0.62);
   --color-vignette-0: rgb(3 5 5 / 0);
 
@@ -105,6 +106,7 @@
   /* Shape (the chat's fields and dialogs; colour still comes only from light) */
   --radius-field: 0.875rem;
   --radius-dialog: 1rem;
+  --radius-pill: 1.5rem; /* the chat's message field */
 
   /* Space */
   --gutter: clamp(1rem, 4vw, 3.5rem);
@@ -120,6 +122,12 @@
   --dur-3: 240ms;
   --dur-4: 320ms;
   --dur-5: 420ms;
+  /* Named steps of the chat (ADR-012): a screen comes in, a message comes in, the light breathes. */
+  --dur-screen: 280ms;
+  --dur-item: 220ms;
+  --dur-breath: 7s;
+  --rise-screen: 8px;
+  --rise-item: 4px;
   --ease-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1); /* entering */
   --ease-standard: cubic-bezier(0.2, 0, 0, 1); /* a change in place */
   --ease-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15); /* leaving */
@@ -177,6 +185,7 @@
   --color-band-tail: light-dark(rgb(246 241 234 / 0.45), rgb(18 26 27 / 0.45));
   --color-fade-0: light-dark(rgb(246 241 234 / 0), rgb(18 26 27 / 0));
   --color-shadow: light-dark(rgb(60 44 28 / 0.14), rgb(0 0 0 / 0.42));
+  --color-field-shadow: light-dark(rgb(60 44 28 / 0.07), rgb(0 0 0 / 0.22));
   /* Weaker than the landing's 62 %: the evening lamp is not a tunnel, the paper barely darkens. */
   --color-vignette: light-dark(rgb(120 96 70 / 0.04), rgb(8 12 13 / 0.4));
   --color-vignette-0: light-dark(rgb(120 96 70 / 0), rgb(8 12 13 / 0));
@@ -271,6 +280,7 @@ html[data-theme-switching] *::after {
     --color-band-tail: rgb(18 26 27 / 0.45);
     --color-fade-0: rgb(18 26 27 / 0);
     --color-shadow: rgb(0 0 0 / 0.42);
+    --color-field-shadow: rgb(0 0 0 / 0.22);
     --color-vignette: rgb(8 12 13 / 0.4);
     --color-vignette-0: rgb(8 12 13 / 0);
     --brand-core: #fff4e2;

@@ -100,28 +100,23 @@
             </div>
             <p class="tag">Розмова з AI</p>
             <h1 class="display-2 screen__title" id="signin-title" tabindex="-1">Розмова з AI, а не з людиною</h1>
-            <p class="lead">Liora — для саморефлексії: AI ставить запитання, а наприкінці пропонує 3–5 коротких тез. Зберегти їх у щоденник чи видалити — вирішуєте ви.</p>
-            <p class="note">Не терапія й не медична допомога.</p>
-            <div class="rows rows--stack">
-              <div class="row">
-                <h2 class="row__title">Вхід через Google</h2>
-                <div class="row__body">
-                  <p>Увійти може кожен із підтвердженою адресою Google. Перед початком розмови потрібно надати згоди та підтвердити, що вам є 18 років.</p>
-                </div>
-              </div>
-            </div>
+            <p class="lead">AI ставить запитання, а наприкінці пропонує 3–5 коротких тез — зберегти їх у щоденник чи видалити, вирішуєте ви.</p>
+            <p class="note">Саморефлексія, а не терапія й не медична допомога.</p>
             <p class="screen__actions">
               <a class="button button--primary" href="/api/v1/auth/google/start?next=/chat/">
                 <svg class="button__icon" viewBox="0 0 18 18" aria-hidden="true" focusable="false"><path d="M15.6 9.2c0-.5 0-1-.1-1.5H9v2.8h3.7a3.3 3.3 0 0 1-1.4 2.1v1.8h2.3c1.3-1.2 2-3 2-5.2Z" /><path d="M9 16c1.9 0 3.5-.6 4.6-1.7l-2.3-1.8c-.6.4-1.4.7-2.3.7-1.8 0-3.3-1.2-3.9-2.8H2.8v1.8A7 7 0 0 0 9 16Z" /><path d="M5.1 10.4a4.2 4.2 0 0 1 0-2.8V5.8H2.8a7 7 0 0 0 0 6.4l2.3-1.8Z" /><path d="M9 4.8c1 0 2 .4 2.7 1.1l2-2A7 7 0 0 0 2.8 5.8l2.3 1.8C5.7 6 7.2 4.8 9 4.8Z" /></svg>
                 Увійти через Google
               </a>
             </p>
-            <h2 class="row__title list-title">Що буде далі</h2>
-            <ol class="next" role="list">
-              <li><span class="next__index" aria-hidden="true">01</span><p>Google спитає, яким акаунтом увійти. Від нього ми отримаємо ідентифікатор акаунта й email — без імені, фото, листів, Диска й календаря.</p></li>
-              <li><span class="next__index" aria-hidden="true">02</span><p>Перед першим повідомленням — окремий екран згоди: хто обробляє текст розмови (назва постачальника AI і країна) і що зберігається.</p></li>
-              <li><span class="next__index" aria-hidden="true">03</span><p>Під час входу браузер отримає тимчасовий файл cookie входу (до 20 хвилин), а після входу — файл cookie сесії, щоб ви залишалися в акаунті. Обидва недоступні скриптам сторінки. Реклами й аналітики тут немає.</p></li>
-            </ol>
+            <p class="small">Потрібна підтверджена адреса Google і 18 років; перед першою розмовою — екран згоди.</p>
+            <details class="more">
+              <summary>Що буде після входу</summary>
+              <ol class="next more__body" role="list">
+                <li><span class="next__index" aria-hidden="true">01</span><p>Google спитає, яким акаунтом увійти. Від нього ми отримаємо ідентифікатор акаунта й email — без імені, фото, листів, Диска й календаря.</p></li>
+                <li><span class="next__index" aria-hidden="true">02</span><p>Перед першим повідомленням — окремий екран згоди: хто обробляє текст розмови (назва постачальника AI і країна) і що зберігається.</p></li>
+                <li><span class="next__index" aria-hidden="true">03</span><p>Під час входу браузер отримає тимчасовий файл cookie входу (до 20 хвилин), а після входу — файл cookie сесії, щоб ви залишалися в акаунті. Обидва недоступні скриптам сторінки. Реклами й аналітики тут немає.</p></li>
+              </ol>
+            </details>
             <ul class="arrows" role="list">
               <li><a href="/">На головну</a></li>
             </ul>
@@ -134,8 +129,7 @@
             <div class="screen__part" data-el="ni-guest">
               <h1 class="display-2 screen__title" tabindex="-1">Google не підтвердив вашу адресу</h1>
               <div class="prose">
-                <p>Google не підтвердив адресу електронної пошти цього акаунта. Ви нічого не зробили не так. Новий акаунт не створено, і під час цього входу вашої адреси ми не записали.</p>
-                <p>Підтвердьте адресу у своєму Google-акаунті або спробуйте увійти іншим акаунтом.</p>
+                <p>Google не підтвердив адресу пошти цього акаунта — ви нічого не зробили не так. Новий акаунт не створено, і під час цього входу вашої адреси ми не записали.</p>
               </div>
               <p class="screen__actions">
                 <a class="button button--secondary" href="/api/v1/auth/google/start?next=/chat/">Увійти іншим акаунтом</a>
@@ -195,47 +189,67 @@
             </div>
             <p class="tag">Перед розмовою</p>
             <h1 class="display-2 screen__title" id="consent-title" tabindex="-1">Що відбувається з тим, що ви напишете</h1>
-            <p class="lead">Окремого документа з політикою немає: усе, що про це варто знати, — на цьому екрані. Це займе хвилину.</p>
+            <p class="lead">Усе про ваші дані — на цьому екрані, окремого документа немає.</p>
 
+            <!-- One sentence a row; what follows from it opens under its own <details> (spec §3.5). The provider
+                 and its country, 112 and 103 stay in the visible sentences. -->
             <div class="rows rows--stack">
               <div class="row">
                 <h2 class="row__title">Ви говорите з AI</h2>
                 <div class="row__body">
-                  <p>Відповіді пише штучний інтелект (AI). Людини на тому боці немає. AI може помилятися, неточно зрозуміти вас або сказати щось не так.</p>
+                  <p>Відповідає штучний інтелект, а не людина, і він може помилятися або неточно зрозуміти вас.</p>
                 </div>
               </div>
               <div class="row">
                 <h2 class="row__title">Це не терапія</h2>
                 <div class="row__body">
-                  <p>Liora — для саморефлексії. Це не психологічна, не медична й не екстрена допомога: вона не ставить діагнозів і не лікує. Якщо вам зараз дуже важко — <a href="tel:112">112</a> або <a href="tel:103">103</a>, цілодобово й безкоштовно, або <a href="https://howareu.com/hot-lines" target="_blank" rel="noopener noreferrer">гарячі лінії на сторінці «Ти як?»<span class="visually-hidden"> (відкриється в новій вкладці)</span></a>.</p>
+                  <p>Liora — для саморефлексії: це не психологічна, не медична й не екстрена допомога, вона не ставить діагнозів і не лікує.</p>
+                  <p>Якщо вам зараз дуже важко — <a href="tel:112">112</a> або <a href="tel:103">103</a>, цілодобово й безкоштовно, або <a href="https://howareu.com/hot-lines" target="_blank" rel="noopener noreferrer">гарячі лінії «Ти як?»<span class="visually-hidden"> (відкриється в новій вкладці)</span></a>.</p>
                 </div>
               </div>
               <div class="row">
                 <h2 class="row__title">Хто обробляє текст розмови</h2>
                 <div class="row__body">
-                  <p>Відповіді й тези створює не наш сервер, а постачальник AI<span data-provider="named"> — <span data-el="provider"></span><span data-provider="located">, <span data-el="country"></span></span></span>. Щоб AI міг відповідати, йому щоразу передається текст усієї розмови. Для тез текст передається ще раз — разом із назвами тегів, які найчастіше трапляються у вашому щоденнику, щоб нові теги збігалися зі старими. У сценарії «Повернення до теми» постачальник отримує також назви, тези й теги записів, які ви оберете. Як довго постачальник зберігає ці дані, визначають його умови, а не Liora.</p>
-                  <p>Наш сервер автоматично перевіряє текст на фрази, які можуть свідчити про кризу. У базу даних і журнали він текст розмови не записує.</p>
+                  <p>Відповіді й тези створює не наш сервер, а постачальник AI<span data-provider="named"> — <span data-el="provider"></span><span data-provider="located">, <span data-el="country"></span></span></span>.</p>
+                  <details class="more">
+                    <summary>Що саме йому передається</summary>
+                    <div class="more__body">
+                      <p>Щоб AI міг відповідати, йому щоразу передається текст усієї розмови. Для тез текст передається ще раз — разом із назвами тегів, які найчастіше трапляються у вашому щоденнику, щоб нові теги збігалися зі старими. У сценарії «Повернення до теми» постачальник отримує також назви, тези й теги записів, які ви оберете. Як довго постачальник зберігає ці дані, визначають його умови, а не Liora.</p>
+                      <p>Наш сервер автоматично перевіряє текст на фрази, які можуть свідчити про кризу. У базу даних і журнали він текст розмови не записує.</p>
+                    </div>
+                  </details>
                 </div>
               </div>
               <div class="row">
                 <h2 class="row__title">Що зберігає Liora</h2>
                 <div class="row__body">
-                  <ul class="dash" role="list">
-                    <li>Тези, які ви самі вирішите зберегти: назва, тези, теги.</li>
-                    <li>Ваш email та ідентифікатор Google-акаунта, дату реєстрації й останнього входу.</li>
-                    <li>Входи в акаунт: з якого застосунку, коли створено й коли востаннє використано. Ключ входу зберігаємо у вигляді, з якого його не відновити.</li>
-                    <li>Ваші згоди: яка саме, версія умов, коли дано й коли відкликано.</li>
-                    <li>Технічні журнали сервера без тексту розмов: який запит надійшов і коли, чим завершився, скільки тривав і скільки тексту обробив AI (у токенах). Замість вашого акаунта в них псевдонім. Журнали з часом перезаписуються.</li>
-                    <li>Після видалення акаунта — його номер і дата видалення, щоб видалення не скасувалося при відновленні даних із резервної копії.</li>
-                    <li>У вашому браузері — файл cookie сесії (скриптам сторінки він недоступний) і ваш вибір паузи анімації, теми та фону.</li>
-                  </ul>
                   <p class="row__sum">Повного тексту розмови на сервері Liora немає. Він живе на цій сторінці, поки вона відкрита.</p>
+                  <details class="more">
+                    <summary>Що саме зберігаємо</summary>
+                    <div class="more__body">
+                      <ul class="dash" role="list">
+                        <li>Тези, які ви самі вирішите зберегти: назва, тези, теги.</li>
+                        <li>Ваш email та ідентифікатор Google-акаунта, дату реєстрації й останнього входу.</li>
+                        <li>Входи в акаунт: з якого застосунку, коли створено й коли востаннє використано. Ключ входу зберігаємо у вигляді, з якого його не відновити.</li>
+                        <li>Ваші згоди: яка саме, версія умов, коли дано й коли відкликано.</li>
+                        <li>Технічні журнали сервера без тексту розмов: який запит надійшов і коли, чим завершився, скільки тривав і скільки тексту обробив AI (у токенах). Замість вашого акаунта в них псевдонім. Журнали з часом перезаписуються.</li>
+                        <li>Після видалення акаунта — його номер і дата видалення, щоб видалення не скасувалося при відновленні даних із резервної копії.</li>
+                        <li>У вашому браузері — файл cookie сесії (скриптам сторінки він недоступний) і ваш вибір паузи анімації, теми та фону.</li>
+                      </ul>
+                    </div>
+                  </details>
                 </div>
               </div>
               <div class="row">
                 <h2 class="row__title">Як видалити</h2>
                 <div class="row__body">
-                  <p>Акаунт разом з усім щоденником — у меню «Акаунт», однією кнопкою, без листів до нас. Там само можна завантажити щоденник у файл і відкликати будь-яку згоду.</p>
+                  <p>Акаунт разом з усім щоденником видаляється однією кнопкою в меню «Акаунт», без листів до нас.</p>
+                  <details class="more">
+                    <summary>Що ще там є</summary>
+                    <div class="more__body">
+                      <p>Там само можна завантажити щоденник у файл і відкликати будь-яку згоду.</p>
+                    </div>
+                  </details>
                 </div>
               </div>
             </div>
@@ -288,12 +302,13 @@
           <section class="screen screen--chat" data-screen="chat" aria-labelledby="chat-title" hidden>
             <h1 class="visually-hidden" id="chat-title" tabindex="-1">Розмова з AI</h1>
 
+            <!-- From the first message on: what this is and how to end it. «AI, не людина» stays here: on a
+                 phone the light is gone from a running conversation (G2). -->
             <div class="session" data-el="session" hidden>
               <span class="orb orb--mini" aria-hidden="true"></span>
-              <div class="session__who">
-                <p class="session__label">AI · <span data-el="session-title"></span><span data-el="session-nosave" hidden>&nbsp;· <span class="keep">Не зберігати</span></span></p>
-                <p class="session__sub"><span class="keep">Не людина</span>&nbsp;· <span class="keep">не терапія</span></p>
-              </div>
+              <p class="session__label">
+                <span class="session__title" data-el="session-title"></span><span class="session__sep" aria-hidden="true"> · </span><span class="keep session__ai">AI, не людина</span><span class="session__nosave" data-el="session-nosave" hidden><span class="session__sep" aria-hidden="true"> · </span><span class="keep">Не зберігати</span></span>
+              </p>
               <button class="button button--secondary button--small session__end" type="button" data-act="end" aria-haspopup="dialog" data-el="session-end" hidden>
                 <span class="wide-only">Завершити розмову</span><span class="narrow-only">Завершити</span>
               </button>
@@ -303,7 +318,6 @@
               <div class="banner" data-el="chat-auth" role="status" tabindex="-1" hidden>
                 <p class="banner__text" data-el="chat-auth-text"></p>
               </div>
-              <p class="tag">Нова розмова</p>
               <p class="after-crisis" data-el="after-crisis" hidden>Якщо важко — <a href="tel:112">112</a> або <a href="tel:103">103</a>. Контакти завжди є вгорі: «Якщо важко».</p>
               <fieldset class="scenarios" data-el="scenarios">
                 <legend class="scenarios__legend">З чого почнемо?</legend>
@@ -315,9 +329,8 @@
               </p>
               <div class="scenario-about">
                 <p class="scenario-about__text" data-el="scenario-text"></p>
-                <p class="flow" data-el="scenario-flow" hidden>Тригер → реакція → інший погляд</p>
                 <p class="scenario-about__chosen" data-el="revisit-chosen" hidden>Ви повертаєтеся до: <span data-el="revisit-names"></span></p>
-                <ul class="arrows" role="list" data-el="revisit-actions" hidden>
+                <ul class="arrows arrows--row" role="list" data-el="revisit-actions" hidden>
                   <li><button type="button" data-act="revisit-open" aria-haspopup="dialog" data-el="revisit-open">Обрати записи</button></li>
                   <li><button type="button" data-act="diary-retry" data-el="diary-retry" hidden>Спробувати ще раз</button></li>
                   <li><button type="button" data-act="start-free" data-el="revisit-free" hidden>Почати вільну розмову</button></li>
@@ -327,13 +340,22 @@
 
             <ol class="talk" aria-label="Розмова" data-el="talk" data-no-stoplist></ol>
 
+            <!-- Until the first message: a few ways to begin. A chip puts its words into the field; the
+                 person edits them and sends — nothing goes by itself. -->
+            <div class="starters" role="group" aria-label="Почати зі слів" data-el="starters" hidden></div>
+
             <div class="nosave" data-el="nosave">
               <button class="switch" type="button" role="switch" aria-checked="false" data-act="no-save" aria-describedby="nosave-hint">
                 <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
                 <span class="switch__label">Не зберігати цю розмову</span>
                 <span class="switch__state" aria-hidden="true" data-el="nosave-state">Вимкнено</span>
               </button>
-              <p class="nosave__hint" id="nosave-hint">Тези наприкінці можна буде переглянути, але не зберегти. Повного тексту розмови сервер Liora не зберігає в жодному разі.</p>
+              <button class="tip__button" type="button" popovertarget="nosave-tip" aria-label="Що означає «Не зберігати»">
+                <svg class="tip__icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.25" /><path d="M8 7.25v4" /><circle class="tip__dot" cx="8" cy="4.9" r="0.85" /></svg>
+              </button>
+              <div class="tip__panel tip__panel--nosave" id="nosave-tip" popover>
+                <p id="nosave-hint">Тези наприкінці можна буде переглянути, але не зберегти. Повного тексту розмови сервер Liora не зберігає в жодному разі.</p>
+              </div>
             </div>
 
             <p class="chat-line" data-el="chat-line" role="status"></p>
@@ -354,21 +376,44 @@
               <label class="visually-hidden" for="composer-input">Ваше повідомлення для AI</label>
               <div class="composer__field">
                 <textarea class="composer__input" id="composer-input" rows="1" autocomplete="off" placeholder="Пишіть так, як думаєте…" aria-describedby="composer-note"></textarea>
+                <!-- «Інструменти»: small exercises beside the conversation (each is wired in a later step). -->
+                <button class="composer__tools" type="button" popovertarget="composer-tools" aria-label="Інструменти" data-el="composer-tools">
+                  <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 4.75v10.5M4.75 10h10.5" /></svg>
+                </button>
+                <div class="composer__menu" id="composer-tools" popover aria-labelledby="composer-tools-title">
+                  <p class="composer__menu-title" id="composer-tools-title">Інструменти</p>
+                  <button class="composer__menu-item" type="button" data-act="tool" data-tool="breathe" aria-disabled="true">
+                    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="2.75" /><circle cx="10" cy="10" r="6.5" /></svg>
+                    <span>Подихати хвилину</span>
+                  </button>
+                  <button class="composer__menu-item" type="button" data-act="tool" data-tool="ground" aria-disabled="true">
+                    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3.5 14.5h13M6 11.25h8M8.5 8h3" /></svg>
+                    <span>Заземлення 5-4-3-2-1</span>
+                  </button>
+                  <button class="composer__menu-item" type="button" data-act="tool" data-tool="mood" aria-disabled="true">
+                    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6.5" /><path d="M7.25 11.75c.7.8 1.6 1.25 2.75 1.25s2.05-.45 2.75-1.25" /></svg>
+                    <span>Як ви зараз?</span>
+                  </button>
+                </div>
                 <button class="composer__send" type="button" aria-label="Надіслати" aria-disabled="true" data-el="composer-send">
                   <svg class="composer__arrow" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 15.5v-11M5.5 9 10 4.5 14.5 9" /></svg>
-                  <svg class="composer__stop" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="6" y="6" width="8" height="8" rx="1" /></svg>
+                  <svg class="composer__stop" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="6" y="6" width="8" height="8" rx="1.5" /></svg>
                 </button>
               </div>
               <p class="composer__status" data-el="composer-status" role="status"></p>
               <div class="composer__meta">
                 <p class="composer__ai"><span>AI, не людина</span> · <span>може помилятися</span> · <span>не терапія</span></p>
-                <p class="composer__keys" id="composer-keys">Enter — надіслати · Shift+Enter — новий рядок</p>
+                <button class="tip__button" type="button" popovertarget="composer-tip" aria-label="Про цю розмову" data-el="composer-tip-button">
+                  <svg class="tip__icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.25" /><path d="M8 7.25v4" /><circle class="tip__dot" cx="8" cy="4.9" r="0.85" /></svg>
+                </button>
                 <p class="composer__count" data-el="composer-count" aria-hidden="true"></p>
               </div>
-              <p class="composer__note" id="composer-note">
-                <span class="wide-only">Liora не зберігає цю розмову: якщо закрити чи оновити сторінку, текст зникне. Текст обробляє <span data-provider="named"><span data-el="provider"></span><span data-provider="located">, <span data-el="country"></span></span></span><span data-provider="unnamed" data-text="постачальник AI" hidden></span>.</span>
-                <span class="narrow-only">Liora не зберігає розмову: закриєте сторінку — текст зникне.</span>
-              </p>
+              <!-- The storage sentence and the keys live in ⓘ; before the first message, on a desktop, the
+                   sentence also stands under the line (chat.css). Either way it is the field's description. -->
+              <div class="tip__panel composer__tip" id="composer-tip" popover>
+                <p class="composer__note" id="composer-note">Liora не зберігає цю розмову: якщо закрити чи оновити сторінку, текст зникне. Текст обробляє <span data-provider="named"><span data-el="provider"></span><span data-provider="located">, <span data-el="country"></span></span></span><span data-provider="unnamed" data-text="постачальник AI" hidden></span>.</p>
+                <p class="composer__keys" id="composer-keys">Enter — надіслати · Shift+Enter — новий рядок</p>
+              </div>
             </div>
 
             <!-- The disclosure under the field, for when the field is not there (an empty diary in «Повернення
@@ -382,7 +427,7 @@
             <ol class="talk talk--stale" aria-label="Розмова" data-el="expired-talk" data-no-stoplist></ol>
             <div class="block">
               <p class="block__label">Вхід завершився</p>
-              <p class="block__text">Вхід в акаунт завершився — наприклад, якщо ви вийшли в іншій вкладці. Щоб продовжити, треба увійти знову. Вхід перезавантажить сторінку, і ця розмова зникне: Liora її не зберігає.</p>
+              <p class="block__text">Вхід в акаунт завершився — наприклад, ви вийшли в іншій вкладці. Увійти знову можна, але сторінка перезавантажиться, і ця розмова зникне: Liora її не зберігає.</p>
               <p class="screen__actions">
                 <button class="button button--primary" type="button" data-act="relogin" aria-haspopup="dialog">Увійти знову</button>
                 <button class="button button--secondary" type="button" data-act="copy" data-el="expired-copy">Скопіювати текст розмови</button>
@@ -438,7 +483,7 @@
             <p class="tag">Тези</p>
             <h1 class="display-2 screen__title" id="summarizing-title" tabindex="-1">AI складає тези</h1>
             <div class="prose">
-              <p>Зазвичай це до пів хвилини. Для цього текст розмови ще раз передається постачальнику AI. Розмова на місці: якщо скасуєте, повернетеся до неї.</p>
+              <p>Зазвичай це до пів хвилини. Розмова на місці: якщо скасуєте, повернетеся до неї.</p>
               <p data-el="sum-long" hidden>Іноді це триває до двох хвилин.</p>
             </div>
             <ol class="skeleton" role="list" aria-hidden="true">
@@ -470,7 +515,7 @@
           <section class="screen" data-screen="review" aria-labelledby="review-title" hidden>
             <p class="tag">Тези · чернетка від AI</p>
             <h1 class="display-2 screen__title" id="review-title" tabindex="-1">Перегляньте тези</h1>
-            <p class="lead">Ці тези написав AI за вашою розмовою. Він може помилитися або сказати не вашими словами. Виправте чи приберіть усе, що не про вас, — у щоденник потрапить лише те, що ви залишите й збережете.</p>
+            <p class="lead">Тези написав AI — він міг помилитися чи сказати не вашими словами. У щоденник потрапить лише те, що ви залишите й збережете.</p>
 
             <div class="field field--title">
               <label class="field__label" for="review-title-input">Назва</label>
@@ -518,7 +563,6 @@
               <li><button type="button" data-act="review-regenerate" aria-haspopup="dialog">Скласти заново</button></li>
               <li><button type="button" data-act="review-back">Повернутися до розмови</button></li>
             </ul>
-            <p class="small small--muted">Повного тексту розмови Liora не зберігає — ні коли ви зберігаєте тези, ні коли видаляєте.</p>
           </section>
 
           <!-- ============ saved ============ -->
@@ -532,8 +576,7 @@
               <p class="record__tags" data-el="saved-tags"></p>
             </article>
             <div class="prose">
-              <p>Розмову завершено. Повного тексту розмови на сервері Liora немає, а з цієї сторінки його вже прибрано.</p>
-              <p>Сторінка щоденника на вебі зʼявиться пізніше. Поки що всі записи можна завантажити файлом:</p>
+              <p>Розмову завершено, і її текст уже прибрано з цієї сторінки. Усі записи щоденника можна завантажити файлом:</p>
             </div>
             <ul class="arrows" role="list">
               <li><a href="/api/v1/export?format=md" download>Завантажити щоденник (.md)</a></li>
@@ -757,11 +800,19 @@
 
     <template data-tpl="said">
       <li class="said">
+        <span class="said__mark" aria-hidden="true"></span>
         <span class="said__who"></span>
         <div class="said__body">
           <div class="said__text"></div>
-          <p class="said__wait" aria-hidden="true" hidden></p>
+          <p class="said__wait" aria-hidden="true" hidden><span class="said__dots"><i></i><i></i><i></i></span><span class="said__wait-text"></span></p>
           <p class="said__cut" hidden>Відповідь обрізано за довжиною.</p>
+          <div class="said__meta" hidden>
+            <time class="said__time" hidden></time>
+            <button class="said__copy" type="button" data-act="copy-reply" hidden>
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="5.5" y="5.5" width="7.5" height="7.5" rx="1.75" /><path d="M10.5 3.25H4.75a1.5 1.5 0 0 0-1.5 1.5v5.75" /></svg>
+              <span class="said__copy-label">Копіювати</span>
+            </button>
+          </div>
           <div class="said__status" hidden>
             <p class="said__flag"></p>
             <p class="said__why"></p>
@@ -777,6 +828,10 @@
           </div>
         </div>
       </li>
+    </template>
+
+    <template data-tpl="starter">
+      <button class="starter" type="button" data-act="starter"></button>
     </template>
 
     <template data-tpl="scenario">
