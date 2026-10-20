@@ -89,6 +89,10 @@ export function consentScreen(): Screen & { checked(): ConsentKind[]; toggleLate
       authBanner(model, byEl('consent-auth', root), byEl('consent-auth-text', root))
       show(changed, state.policyChanged || state.mode === 'update')
       show(byEl('consent-resume', root), state.mode === 'resume')
+      // A diary record's changes go on after the consent; there may be no conversation at all.
+      const patch = state.resume?.kind === 'patch'
+      show(byEl('consent-resume-talk', root), !patch)
+      show(byEl('consent-resume-patch', root), patch)
       fillProvider(model, root)
 
       // A provider without a country is named in the text, but not one to agree to (§3.5).

@@ -5,7 +5,8 @@
 import { maskPausedLine } from '../core/helplines'
 import type { Draft } from '../core/limits'
 import type { Msg, Pending } from '../core/state'
-import { today } from './copy'
+import type { SummaryOut } from '../core/types'
+import { entryDay, today } from './copy'
 
 export function conversationText(messages: readonly Msg[], pending: Pending | null, now: Date = new Date()): string {
   const lines = [`Liora · розмова з AI · ${today(now)}`]
@@ -20,6 +21,16 @@ export function thesesText(draft: Draft, now: Date = new Date()): string {
   bullets.forEach((b, i) => lines.push(`${String(i + 1).padStart(2, '0')} — ${maskPausedLine(b.text.trim())}`))
   if (draft.tags.length > 0) lines.push(draft.tags.map((t) => `#${maskPausedLine(t.name)}`).join(' '))
   return lines.join('\n\n')
+}
+
+/** One diary record as Markdown («Копіювати» in the diary, §7.7): the title as a heading, the day,
+ *  the theses as a list, the themes. The AI drafted it: the paused number is masked, as on the page. */
+export function entryMarkdown(summary: SummaryOut): string {
+  const blocks = [`## ${maskPausedLine(summary.title.trim())}`, `_${entryDay(summary.created_at)}_`]
+  const bullets = summary.bullets.map((b) => b.trim()).filter((b) => b !== '')
+  if (bullets.length > 0) blocks.push(bullets.map((b) => `- ${maskPausedLine(b)}`).join('\n'))
+  if (summary.tags.length > 0) blocks.push(`Теми: ${summary.tags.map((t) => maskPausedLine(t.name)).join(', ')}`)
+  return blocks.join('\n\n')
 }
 
 /** Resolves false when the browser refuses (no permission, insecure context). */

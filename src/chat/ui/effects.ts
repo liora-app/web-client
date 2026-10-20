@@ -8,6 +8,7 @@ import { clientError, type ApiError } from '../core/errors'
 import type { Action, Effect, Model } from '../core/state'
 import { anySignal, runTurn, type TurnOutcome } from '../core/turn'
 import type { Announcer } from './announcer'
+import { JOURNAL_PAGE } from '../core/journal'
 import { COOLDOWN_OVER, SAY_STOPPED, SAY_THINKING, sayAnswer, sayRetry, sayTheses, SAY_SAVED, turnError } from './copy'
 import type { LeaveGuard } from './leave-guard'
 
@@ -24,6 +25,8 @@ export type EffectDeps = Readonly<{
   leave: LeaveGuard
   /** Puts text back into the message field (after «Змінити»). */
   composer: (text: string) => void
+  /** Empties the message field without focusing it (a conversation replaced from the diary). */
+  clearComposer: () => void
 }>
 
 export type Effects = Readonly<{
@@ -42,6 +45,8 @@ export function createEffects(deps: EffectDeps): Effects {
   let summarize: Ctl = null
   let save: Ctl = null
   let pick: Ctl = null
+  /** The diary's list: a new search or theme cancels the page still on its way. */
+  let journal: Ctl = null
 
   /** A signal that aborts on the caller's controller, on pagehide, and with 'timeout' after ms. */
   function signalFor(ctl: AbortController | null, timeoutMs: number | null): Readonly<{ signal: AbortSignal; done: () => void }> {
@@ -219,6 +224,8 @@ export function createEffects(deps: EffectDeps): Effects {
       save = null
       pick?.abort('user')
       pick = null
+      journal?.abort('user')
+      journal = null
     }
   }
 
@@ -278,6 +285,49 @@ export function createEffects(deps: EffectDeps): Effects {
         )
         return
       }
+      case 'journal-list': {
+        journal?.abort('user')
+        const ctl = new AbortController()
+        journal = ctl
+        void call(
+          (signal) => api.summaries({ limit: JOURNAL_PAGE, cursor: effect.cursor, q: effect.q, tag: effect.tag }, signal),
+          (list) => ({ type: 'journal/list-ok', req: effect.req, diary: { items: list.items, nextCursor: list.next_cursor } }),
+          (error) => ({ type: 'journal/list-fail', req: effect.req, error }),
+          { ctl },
+        ).finally(() => {
+          if (journal === ctl) journal = null
+        })
+        return
+      }
+      case 'journal-tags':
+        void call(
+          (signal) => api.tags(signal),
+          (tags) => ({ type: 'journal/tags-ok', tags }),
+          (error) => ({ type: 'journal/tags-fail', error }),
+        )
+        return
+      case 'journal-week':
+        void call(
+          (signal) => api.weekly({ weekStart: effect.weekStart, tz: effect.tz }, signal),
+          (review) => ({ type: 'journal/week-ok', req: effect.req, review }),
+          (error) => ({ type: 'journal/week-fail', req: effect.req, error }),
+        )
+        return
+      case 'patch-summary':
+        void call(
+          (signal) => api.patchSummary(effect.id, effect.body, signal),
+          (summary) => ({ type: 'journal/patch-ok', req: effect.req, summary }),
+          (error) => ({ type: 'journal/patch-fail', req: effect.req, error }),
+          { timeoutMs: SAVE_TIMEOUT },
+        )
+        return
+      case 'delete-summary':
+        void call(
+          (signal) => api.deleteSummary(effect.id, signal),
+          () => ({ type: 'journal/delete-ok', id: effect.id }),
+          (error) => ({ type: 'journal/delete-fail', id: effect.id, error }),
+        )
+        return
       case 'helplines':
         void call(
           (signal) => api.helplines(signal),
@@ -369,6 +419,9 @@ export function createEffects(deps: EffectDeps): Effects {
         return
       case 'composer':
         deps.composer(effect.text)
+        return
+      case 'composer/clear':
+        deps.clearComposer()
         return
       case 'announcer/clear':
         announcer.clear()

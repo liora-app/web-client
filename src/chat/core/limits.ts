@@ -185,6 +185,28 @@ export function validateDraft(draft: Draft, scenario: ScenarioId): DraftCheck {
   return { ok: true, value: { body: { scenario, title, bullets, tags }, bulletIndex, tagIndex } }
 }
 
+const FIELD_PATH = /^(?:(title)|bullets\.(\d+)|tags\.(\d+)(?:\.name)?)$/
+
+/** A 422's `details[].field` paths ("title", "bullets.2", "tags.0.name") mapped back to the fields
+ *  of the draft through the index tables of the body that went out (§7.2): a thesis dropped as empty
+ *  shifts every index after it. `unmapped`: a path that names no field («request», an index the
+ *  body did not have), or no path at all — the screen shows the general line too. */
+export function fieldIssues(fields: readonly string[], sent: Pick<DraftBody, 'bulletIndex' | 'tagIndex'>): Readonly<{ issues: DraftIssue[]; unmapped: boolean }> {
+  const issues: DraftIssue[] = []
+  let unmapped = fields.length === 0
+  for (const path of fields) {
+    const m = FIELD_PATH.exec(path)
+    const fieldId = m === null ? undefined : m[1] !== undefined ? 'title' : m[2] !== undefined ? sent.bulletIndex[Number(m[2])] : sent.tagIndex[Number(m[3])]
+    if (m === null || fieldId === undefined) {
+      unmapped = true
+      continue
+    }
+    const reason = m[1] !== undefined ? 'title-invalid' : m[2] !== undefined ? 'bullet-invalid' : 'tag-invalid'
+    issues.push({ field: fieldId, reason })
+  }
+  return { issues, unmapped }
+}
+
 /** Why a new tag cannot be added, or null when it can (the "Додати" button, §7.2). */
 export function newTagIssue(name: string, tags: readonly DraftTag[]): DraftIssueReason | null {
   const trimmed = name.trim()

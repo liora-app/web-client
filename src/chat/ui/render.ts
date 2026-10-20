@@ -17,6 +17,7 @@ import { createPresence, type PresenceView } from './presence'
 import { chatScreen, type ChatScreen } from './screens/chat'
 import { consentScreen } from './screens/consent'
 import { crisisScreen } from './screens/crisis'
+import { journalScreen, type JournalScreen } from './screens/journal'
 import {
   deletedScreen,
   endedScreen,
@@ -35,6 +36,7 @@ export type View = Readonly<{
   chat: ChatScreen
   consent: ReturnType<typeof consentScreen>
   review: ReviewScreen
+  journal: JournalScreen
   dialogs: Dialogs
 }>
 
@@ -62,6 +64,7 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky,
   const chat = chatScreen(dispatch, () => presence.pulse(), () => presence.listen())
   const consent = consentScreen()
   const review = reviewScreen(dispatch)
+  const journal = journalScreen(dispatch)
   const screens: Record<State['s'], Screen> = {
     booting: staticScreen,
     'signed-out': signInScreen(),
@@ -74,6 +77,7 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky,
     review,
     saved: savedScreen(),
     ended: endedScreen(),
+    journal,
     'account-deleted': deletedScreen(),
     fatal: fatalScreen(),
   }
@@ -185,5 +189,5 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky,
     }
   }
 
-  return { render, chat, consent, review, dialogs }
+  return { render, chat, consent, review, journal, dialogs }
 }

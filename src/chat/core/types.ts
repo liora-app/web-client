@@ -79,6 +79,30 @@ export type SummaryOut = Readonly<{
 
 export type SummaryList = Readonly<{ items: readonly SummaryOut[]; next_cursor: string | null }>
 
+/** SummaryPatch (extra="forbid"): at least one field; each one sent replaces the whole field on
+ *  the server — `tags` the whole set, so an AI tag must come back with source 'ai' or it turns
+ *  into the person's (spec §7.7). */
+export type SummaryPatch = Readonly<{ title?: string; bullets?: readonly string[]; tags?: readonly TagIn[] }>
+
+/** GET /tags: the account's tags that still have a record, count DESC, name ASC, no paging. */
+export type TagCountOut = Readonly<{ id: string; name: string; count: number }>
+
+/** GET /reviews/weekly: counted from saved records only (a «не зберігати» conversation leaves
+ *  nothing). `week_end` is the next Monday (exclusive); tags here are names, without ids. */
+export type TagTrend = Readonly<{ name: string; count: number; prev_count: number }>
+export type WeeklyReviewOut = Readonly<{
+  week_start: string
+  week_end: string
+  tz: string
+  sessions: number
+  prev_sessions: number
+  delta: number
+  top_tags: readonly TagTrend[]
+  recurring_tags: readonly string[]
+  new_tags: readonly string[]
+  faded_tags: readonly string[]
+}>
+
 // Wire shape of the helplines object (GET /helplines, SSE crisis, 409 crisis_stop details).
 // Documentation only: the raw object is never rendered, stored or serialised — helplines.ts
 // reads a whitelist of its fields and nothing else.

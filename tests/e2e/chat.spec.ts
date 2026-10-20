@@ -17,6 +17,10 @@ import {
   CSRF_RELOAD,
   DRAFT_TEXT,
   GENERIC,
+  JOURNAL_DELETED,
+  JOURNAL_EMPTY,
+  JOURNAL_FAILED,
+  JOURNAL_SAVED,
   LIMIT_BLOCK,
   LONG_CONVERSATION,
   NEED_RECORDS,
@@ -24,8 +28,10 @@ import {
   REVISIT_GONE_BLOCK,
   SERVER_DOWN,
   TOO_LARGE_BLOCK,
+  WEEK_FAILED,
   accountOpError,
   copyFailed,
+  journalNothing,
   saveError,
   scenarioAbout,
   placeholder,
@@ -50,6 +56,10 @@ import {
   SAFE_LINES,
   SCENARIOS,
   VERSION,
+  type ApiCall,
+  type MockApi,
+  type Summary,
+  type TagCount,
   aiMessages,
   announced,
   answered,
@@ -84,9 +94,11 @@ import {
   streamTurns,
   talk,
   test,
+  themeId,
   toReview,
   token,
   userMessages,
+  weekly,
 } from './chat-fixtures'
 import { cutOffAtEdges } from './helpers'
 
@@ -3107,6 +3119,504 @@ test.describe('theme: a light system', () => {
     await expect(html(page)).toHaveCSS('background-color', PAPER)
     await settled(page)
     await axe(page, 'light: the crisis')
+  })
+})
+
+// ── The diary page (spec §7.7) ───────────────────────────────────────────────────────────────
+
+/** The Monday the server names as this week (its first answer), and the one before it. */
+const THIS_WEEK = '2026-10-19'
+const LAST_WEEK = '2026-10-12'
+const WORK = { id: themeId(1), name: 'робота', source: 'ai' }
+const SLEEP = { id: themeId(2), name: 'сон', source: 'ai' }
+const MINE = { id: themeId(3), name: 'стосунки', source: 'user' }
+const ENTRIES = [
+  record(1, { title: 'Відкладена розмова з колегою', tags: [WORK, MINE], created_at: '2026-10-20T08:00:00Z' }),
+  record(2, { title: 'Сон і ранки', tags: [SLEEP], created_at: '2026-10-16T08:00:00Z' }),
+  record(3, { title: 'Тиждень без вихідних', tags: [WORK, SLEEP], created_at: '2026-10-14T08:00:00Z' }),
+]
+const THEMES: TagCount[] = [
+  { id: WORK.id, name: 'робота', count: 2 },
+  { id: SLEEP.id, name: 'сон', count: 2 },
+  { id: MINE.id, name: 'стосунки', count: 1 },
+]
+
+const entries = (page: Page): Locator => page.locator('[data-el="journal-list"] > li.entry')
+const entryTitled = (page: Page, title: string): Locator => entries(page).filter({ has: page.locator('.entry__title', { hasText: title }) })
+const journalStatus = (page: Page): Locator => page.locator('[data-el="journal-status"]')
+const listCalls = (api: MockApi): ApiCall[] => api.of('GET /summaries').filter((call) => call.query.has('q') || call.query.has('tag') || call.query.has('cursor'))
+
+/** GET /summaries as the server filters it: the words of `q` anywhere in the record, AND the theme. */
+function found(call: ApiCall, items: readonly Summary[] = ENTRIES): Summary[] {
+  const q = call.query.get('q')?.toLowerCase() ?? ''
+  const tag = call.query.get('tag')
+  return items.filter((r) => (q === '' || `${r.title} ${r.bullets.join(' ')} ${r.tags.map((t) => t.name).join(' ')}`.toLowerCase().includes(q)) && (tag === null || r.tags.some((t) => t.id === tag)))
+}
+
+/** PATCH /summaries/{id} → 200: the record with the body applied and edited_at stamped. */
+function patched(base: Summary, body: unknown): Summary {
+  const b = body as { title: string; bullets: string[]; tags: { name: string; source: string }[] }
+  return { ...base, title: b.title, bullets: b.bullets, tags: b.tags.map((t, i) => ({ id: themeId(40 + i), name: t.name, source: t.source })), edited_at: '2026-10-21T08:00:00Z' }
+}
+
+/** From the account sheet (the header has no room for one more control at 320 px). */
+async function openDiary(page: Page): Promise<void> {
+  await accountToggle(page).click()
+  await expect(accountSheet(page)).toBeVisible()
+  await accountSheet(page).getByRole('button', { name: 'Відкрити щоденник' }).click()
+  await onScreen(page, 'journal')
+  await expect(accountSheet(page)).toBeHidden()
+  await expect(page.locator('#journal-title')).toBeFocused()
+}
+
+test.describe('diary', () => {
+  // A zone other than the server's default: the page sends its own (and Europe/Kyiv once refused).
+  test.use({ timezoneId: 'Europe/Berlin' })
+
+  test.beforeEach(({ api }) => {
+    api.on('GET /summaries', (call) => ({ json: diary(found(call)) }))
+    api.on('GET /tags', { json: THEMES })
+    api.on('GET /reviews/weekly', (call) => ({ json: weekly(call.query.get('week_start') ?? THIS_WEEK, 2, ['робота', 'сон'], 'Europe/Berlin') }))
+  })
+
+  test('#63 ★ the diary asks for nothing until it opens; the week in words, the records; «До розмови» gives the conversation back as it was', async ({ page, api }) => {
+    const typed = 'Синтетичний текст, ще не надісланий.'
+    await openChat(page)
+    await exchange(page, USER)
+    await composer(page).fill(typed)
+    // Lazily (§7.7): nothing of the diary page at the page's start, nor during a conversation.
+    expect(api.count('GET /tags') + api.count('GET /reviews/weekly')).toBe(0)
+    const before = api.count('GET /summaries')
+    await openDiary(page)
+    await expect(page.locator('[data-el="week-count"]')).toHaveText('2 збережені записи')
+    expect(api.count('GET /reviews/weekly')).toBe(1)
+    expect(api.count('GET /tags')).toBe(1)
+    expect(api.count('GET /summaries')).toBe(before + 1)
+    expect(api.of('GET /summaries').at(-1)!.query.toString()).toBe('limit=20')
+    const [week] = api.of('GET /reviews/weekly')
+    expect(week!.query.get('tz')).toBe('Europe/Berlin')
+    expect(week!.query.has('week_start')).toBe(false)
+
+    await expect(page.locator('[data-el="week-title"]')).toHaveText('Цей тиждень')
+    await expect(page.locator('[data-el="week-themes"]')).toHaveText('Теми: робота, сон')
+    await expect(page.locator('[data-el="week-next"]')).toHaveAttribute('aria-disabled', 'true')
+    await expect(entries(page).locator('.entry__title')).toHaveText(ENTRIES.map((r) => r.title))
+    const first = entries(page).first()
+    await expect(first.locator('.entry__meta')).toHaveText('20 жовтня 2026')
+    await expect(first.locator('.entry__bullets li')).toHaveText(['01Перша теза запису 1.', '02Друга теза запису 1.'])
+    await expect(first.locator('.entry__themes')).toHaveText('#робота #стосунки')
+    const themes = page.locator('[data-el="journal-themes"]')
+    await expect(themes.getByRole('radio')).toHaveCount(4)
+    await expect(themes.getByRole('radio', { name: 'Усі теми' })).toBeChecked()
+    // Which record a button is about: its title names it.
+    await expect(first.getByRole('button', { name: 'Редагувати' })).toHaveAccessibleDescription(ENTRIES[0]!.title)
+
+    // The records' words live in the text only: every data-* of the list is an id or a hook.
+    const data = await page
+      .locator('[data-el="journal-list"]')
+      .evaluate((list) => Array.from(list.querySelectorAll('*')).flatMap((node) => Array.from(node.attributes).filter((a) => a.name.startsWith('data-')).map((a) => `${a.name}=${a.value}`)))
+    const hooks = /^data-(id=[0-9a-f-]{36}|act=entry-[a-z-]+|slot=(revisit|add)|err=(title|bullets|tags|edit)|for=(title|tags)|hint=tags)$/
+    expect(data.filter((d) => !hooks.test(d)), 'data-* that are neither an id nor a hook').toEqual([])
+
+    // The conversation waits under the diary: leaving the page still asks.
+    expect(await beforeUnload(page)).toBe(1)
+    await page.getByRole('button', { name: 'До розмови' }).click()
+    await onScreen(page, 'chat')
+    await expect(userMessages(page)).toHaveCount(1)
+    await expect(lastUser(page)).toContainText(USER)
+    await expect(aiMessages(page).nth(1)).toContainText(REPLY_TEXT)
+    await expect(composer(page)).toHaveValue(typed)
+    // The records left with the screen.
+    await expect(page.locator('[data-el="journal-list"] li')).toHaveCount(0)
+    expect(await markup(page)).not.toContain(ENTRIES[2]!.title)
+    await storageAudit(page, ENTRIES[0]!.title)
+  })
+
+  test('#63b no way into the diary while an answer streams; from «Розмову завершено» it opens, unguarded, and leads to a new conversation', async ({ page, api }) => {
+    const stream = await streamTurns(page)
+    await openChat(page)
+    await send(page, USER)
+    await stream.requests(1)
+    await accountToggle(page).click()
+    await expect(accountSheet(page)).toBeVisible()
+    await expect(accountSheet(page).locator('[data-el="account-journal"]')).toBeHidden()
+    await page.keyboard.press('Escape')
+    await stream.write(reply())
+    await stream.close()
+    await answered(page, 1)
+
+    await endWithoutTheses(page)
+    await page.locator('section[data-screen="ended"]').getByRole('button', { name: 'Відкрити щоденник' }).click()
+    await onScreen(page, 'journal')
+    await expect(entries(page)).toHaveCount(3)
+    expect(await beforeUnload(page)).toBe(0)
+    const out = page.locator('[data-act="journal-back"]')
+    await expect(out).toHaveText('Нова розмова')
+    await out.click()
+    await onScreen(page, 'chat')
+    await expect(userMessages(page)).toHaveCount(0)
+    expect(api.count('GET /reviews/weekly')).toBe(1)
+  })
+
+  test('#64 the week steps by its Monday and stops at this one; a zone the server refuses goes once more as Europe/Kyiv; a failed week has its own line', async ({ page, api }) => {
+    api.on('GET /reviews/weekly', (call, index) => {
+      if (index === 0) return fail(422, 'invalid_timezone')
+      if (index === 3) return fail(500, 'internal')
+      const start = call.query.get('week_start') ?? THIS_WEEK
+      return { json: start === LAST_WEEK ? weekly(LAST_WEEK, 1, ['сон']) : weekly(THIS_WEEK, 2, ['робота', 'сон']) }
+    })
+    await openChat(page)
+    await openDiary(page)
+    const count = page.locator('[data-el="week-count"]')
+    await expect(count).toHaveText('2 збережені записи')
+    const calls = (): ApiCall[] => api.of('GET /reviews/weekly')
+    expect(calls().map((c) => c.query.get('tz'))).toEqual(['Europe/Berlin', 'Europe/Kyiv'])
+    expect(calls()[1]!.query.has('week_start')).toBe(false)
+
+    // Back: the Monday before, by the zone the server took.
+    await page.getByRole('button', { name: 'Попередній тиждень' }).click()
+    await expect(page.locator('[data-el="week-title"]')).toHaveText('12–18 жовтня')
+    await expect(count).toHaveText('1 збережений запис')
+    await expect(page.locator('[data-el="week-themes"]')).toHaveText('Теми: сон')
+    expect(calls()[2]!.query.get('week_start')).toBe(LAST_WEEK)
+    expect(calls()[2]!.query.get('tz')).toBe('Europe/Kyiv')
+    await expect(page.locator('[data-el="week-next"]')).not.toHaveAttribute('aria-disabled', 'true')
+
+    // Forward again: this answer fails — a line of its own and «Спробувати ще раз»; the list stays.
+    await page.getByRole('button', { name: 'Наступний тиждень' }).click()
+    await expect(page.locator('[data-el="week-status"]')).toHaveText(WEEK_FAILED)
+    await expect(page.locator('[data-el="week-title"]')).toHaveText('Цей тиждень')
+    await expect(count).toHaveText('')
+    await expect(entries(page)).toHaveCount(3)
+    const retry = page.locator('[data-el="week-retry"]')
+    await retry.getByRole('button', { name: 'Спробувати ще раз' }).click()
+    await expect(count).toHaveText('2 збережені записи')
+    await expect(page.locator('[data-el="week-status"]')).toHaveText('')
+    await expect(retry).toBeHidden()
+    expect(calls()[4]!.query.get('week_start')).toBe(THIS_WEEK)
+
+    // This week is the last one: «Наступний тиждень» says so and asks for nothing.
+    const next = page.getByRole('button', { name: 'Наступний тиждень' })
+    await expect(next).toHaveAttribute('aria-disabled', 'true')
+    // aria-disabled keeps it in the tab order (its name stays readable): pressed, it does nothing.
+    await next.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('[data-el="week-title"]')).toHaveText('Цей тиждень')
+    await expect(count).toHaveText('2 збережені записи')
+    expect(calls()).toHaveLength(5)
+  })
+
+  test('#65 the search goes 300 ms after the last key, Enter at once; a theme narrows it (AND); «Показати ще» keeps both; nothing found says so', async ({ page, api }) => {
+    const LATER = record(7, { title: 'Ще один запис про сон', tags: [WORK, SLEEP] })
+    api.on('GET /summaries', (call) => {
+      if (call.query.get('cursor') === 'c-2') return { json: diary([LATER]) }
+      const items = found(call)
+      return { json: diary(items, call.query.has('q') && items.length > 0 ? 'c-2' : null) }
+    })
+    await page.clock.install({ time: new Date('2026-10-21T09:00:00Z') })
+    await openChat(page)
+    await openDiary(page)
+    await expect(entries(page)).toHaveCount(3)
+    await expect(page.locator('[data-el="journal-more"]')).toBeHidden()
+    // From here on the page's timers move only when the test moves them.
+    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000)
+
+    const search = page.getByRole('searchbox', { name: 'Пошук' })
+    await search.pressSequentially('сон')
+    await page.clock.runFor(299)
+    expect(listCalls(api)).toHaveLength(0)
+    await page.clock.runFor(1)
+    await expect.poll(() => listCalls(api).length).toBe(1)
+    expect(listCalls(api)[0]!.query.toString()).toBe(`limit=20&q=${encodeURIComponent('сон')}`)
+    await expect(entries(page).locator('.entry__title')).toHaveText([ENTRIES[1]!.title, ENTRIES[2]!.title])
+
+    // A theme and the words together.
+    await page.locator('[data-el="journal-themes"]').getByRole('radio', { name: '#робота' }).check()
+    await expect(entries(page).locator('.entry__title')).toHaveText([ENTRIES[2]!.title])
+    expect(listCalls(api).at(-1)!.query.toString()).toBe(`limit=20&q=${encodeURIComponent('сон')}&tag=${WORK.id}`)
+    await page.getByRole('button', { name: 'Показати ще' }).click()
+    await expect(entries(page).locator('.entry__title')).toHaveText([ENTRIES[2]!.title, LATER.title])
+    expect(listCalls(api).at(-1)!.query.toString()).toBe(`limit=20&cursor=c-2&q=${encodeURIComponent('сон')}&tag=${WORK.id}`)
+    await expect(page.locator('[data-el="journal-more"]')).toBeHidden()
+
+    // Enter goes at once; nothing found is one line, and the week and the tools stay.
+    await search.fill('кава')
+    await search.press('Enter')
+    await expect(page.locator('[data-el="journal-empty"]')).toHaveText(journalNothing('кава'))
+    await expect(entries(page)).toHaveCount(0)
+    await expect(page.locator('[data-el="week"]')).toBeVisible()
+    await expect(search).toBeVisible()
+    // Nothing more goes once the timer the typing set would have run out.
+    const sent = listCalls(api).length
+    await page.clock.runFor(1000)
+    expect(listCalls(api)).toHaveLength(sent)
+    await page.locator('[data-el="journal-themes"]').getByRole('radio', { name: 'Усі теми' }).check()
+    await expect(page.locator('[data-el="journal-empty"]')).toHaveText(journalNothing('кава'))
+    expect(listCalls(api).at(-1)!.query.toString()).toBe(`limit=20&q=${encodeURIComponent('кава')}`)
+  })
+
+  test('#66 ★ a record is edited in place: the PATCH carries title, theses and themes (the AI’s keep «ai»); «змінено» after; unchanged, «Скасувати» and Esc send nothing', async ({ page, api }) => {
+    const target = ENTRIES[0]!
+    const key = `PATCH /summaries/${target.id}`
+    api.on(key, (call) => ({ json: patched(target, call.body) }))
+    await openChat(page)
+    await openDiary(page)
+    const row = entryTitled(page, target.title)
+    const edit = row.getByRole('button', { name: 'Редагувати' })
+    const title = row.getByRole('textbox', { name: 'Назва' })
+    const tags = row.getByRole('textbox', { name: 'Теми' })
+
+    // Opened: the record as it is, the focus in the title; one edit at a time.
+    await edit.click()
+    await expect(title).toBeFocused()
+    await expect(title).toHaveValue(target.title)
+    await expect(row.getByRole('textbox', { name: 'Теза 1' })).toHaveValue(target.bullets[0]!)
+    await expect(tags).toHaveValue('робота, стосунки')
+    await expect(entryTitled(page, ENTRIES[1]!.title).getByRole('button', { name: 'Редагувати' })).toHaveAttribute('aria-disabled', 'true')
+    // Nothing changed: «Зберегти» closes the form without a PATCH (it would stamp «змінено»).
+    await row.getByRole('button', { name: 'Зберегти' }).click()
+    await expect(title).toBeHidden()
+    await expect(edit).toBeFocused()
+    // «Скасувати» and Esc give the record back as it was.
+    await edit.click()
+    await title.fill('Синтетична назва, яку скасують')
+    await row.getByRole('button', { name: 'Скасувати' }).click()
+    await expect(row.locator('.entry__title')).toHaveText(target.title)
+    await edit.click()
+    await title.fill('Синтетична назва, яку скасують')
+    await page.keyboard.press('Escape')
+    await expect(title).toBeHidden()
+    await expect(edit).toBeFocused()
+    expect(api.count(key)).toBe(0)
+
+    await edit.click()
+    await title.fill('Розмова з колегою відбулася')
+    await row.getByRole('textbox', { name: 'Теза 2' }).fill('Синтетична нова друга теза.')
+    await row.getByRole('button', { name: '+ Додати тезу' }).click()
+    const third = row.getByRole('textbox', { name: 'Теза 3' })
+    await expect(third).toBeFocused()
+    await third.fill('Синтетична третя теза.')
+    await tags.fill('робота, нова тема, Робота')
+    const themesBefore = api.count('GET /tags')
+    const weeksBefore = api.count('GET /reviews/weekly')
+    const diaryBefore = api.count('GET /summaries')
+    await row.getByRole('button', { name: 'Зберегти' }).click()
+    await expect(journalStatus(page)).toHaveText(JOURNAL_SAVED)
+    expect(api.bodies(key)).toEqual([
+      {
+        title: 'Розмова з колегою відбулася',
+        bullets: ['Перша теза запису 1.', 'Синтетична нова друга теза.', 'Синтетична третя теза.'],
+        tags: [
+          { name: 'робота', source: 'ai' },
+          { name: 'нова тема', source: 'user' },
+        ],
+      },
+    ])
+    const saved = entryTitled(page, 'Розмова з колегою відбулася')
+    await expect(saved.locator('.entry__meta')).toHaveText('20 жовтня 2026 · змінено')
+    await expect(saved.locator('.entry__bullets li')).toHaveCount(3)
+    await expect(saved.locator('.entry__themes')).toHaveText('#робота #нова тема')
+    await expect(saved.getByRole('button', { name: 'Редагувати' })).toBeFocused()
+    // A theme may have gone, the week may count differently, the picker reads the diary: all again.
+    await expect.poll(() => api.count('GET /tags')).toBe(themesBefore + 1)
+    await expect.poll(() => api.count('GET /reviews/weekly')).toBe(weeksBefore + 1)
+    await expect.poll(() => api.count('GET /summaries')).toBe(diaryBefore + 1)
+  })
+
+  test('#67 403 consent_required on «Зберегти»: the consent says the changes wait; after it the same PATCH goes by itself and the diary comes back', async ({ page, api }) => {
+    const target = ENTRIES[0]!
+    const key = `PATCH /summaries/${target.id}`
+    api.on('GET /consents', { json: CONSENTS_OK }, { json: CONSENTS_NONE })
+    api.on(key, fail(403, 'consent_required', { missing: [...KINDS], policy_version: VERSION }), (call) => ({ json: patched(target, call.body) }))
+    await openChat(page)
+    await openDiary(page)
+    const row = entryTitled(page, target.title)
+    await row.getByRole('button', { name: 'Редагувати' }).click()
+    await row.getByRole('textbox', { name: 'Назва' }).fill('Синтетична нова назва')
+    await row.getByRole('button', { name: 'Зберегти' }).click()
+    await onScreen(page, 'consent')
+    await expect(page.locator('[data-el="consent-resume-patch"]')).toBeVisible()
+    await expect(page.locator('[data-el="consent-resume-talk"]')).toBeHidden()
+    await expect.poll(() => api.count('GET /consents')).toBe(2)
+    for (const kind of KINDS) await page.locator(`input[data-kind="${kind}"]`).check()
+    await page.getByRole('button', { name: 'Погоджуюся — продовжити' }).click()
+    await onScreen(page, 'journal')
+    await expect(journalStatus(page)).toHaveText(JOURNAL_SAVED)
+    const patches = api.of(key)
+    expect(patches).toHaveLength(2)
+    expect(patches[1]!.raw).toBe(patches[0]!.raw)
+    await expect(entryTitled(page, 'Синтетична нова назва').locator('.entry__meta')).toHaveText('20 жовтня 2026 · змінено')
+    await expect(page.getByRole('button', { name: 'До розмови' })).toBeVisible()
+  })
+
+  test('#68 «Видалити» asks first, the focus on «Залишити»; DELETE only after «Видалити»; the record leaves and the focus goes to the next one', async ({ page, api }) => {
+    const target = ENTRIES[0]!
+    const key = `DELETE /summaries/${target.id}`
+    api.on(key, { status: 204 })
+    await openChat(page)
+    await openDiary(page)
+    const row = entryTitled(page, target.title)
+    const remove = row.getByRole('button', { name: 'Видалити' })
+    const confirm = confirmDialog(page)
+    await remove.click()
+    await expect(confirm).toBeVisible()
+    await expect(confirm.locator('#confirm-title')).toHaveText('Видалити запис?')
+    await expect(confirm).toContainText('Повернути його не вийде.')
+    await expect(confirm.getByRole('button', { name: 'Залишити' })).toBeFocused()
+    await confirm.getByRole('button', { name: 'Залишити' }).click()
+    await expect(confirm).toBeHidden()
+    await expect(remove).toBeFocused()
+    expect(api.count(key)).toBe(0)
+
+    const themesBefore = api.count('GET /tags')
+    await remove.click()
+    await confirm.getByRole('button', { name: 'Видалити', exact: true }).click()
+    await expect(journalStatus(page)).toHaveText(JOURNAL_DELETED)
+    expect(api.count(key)).toBe(1)
+    await expect(entries(page).locator('.entry__title')).toHaveText([ENTRIES[1]!.title, ENTRIES[2]!.title])
+    await expect(entryTitled(page, ENTRIES[1]!.title).getByRole('button', { name: 'Редагувати' })).toBeFocused()
+    await expect.poll(() => api.count('GET /tags')).toBe(themesBefore + 1)
+  })
+
+  test('#69 «Копіювати» puts one record into the clipboard as Markdown, the paused number masked as on the page', async ({ page, api, context }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'the clipboard is read in one project')
+    const numbered = record(4, { title: 'Синтетичний запис із номером', bullets: [`Можна подзвонити на ${PAUSED} — або 112.`, 'Друга теза.'], tags: [WORK], created_at: '2026-10-07T10:00:00Z' })
+    api.on('GET /summaries', { json: diary([numbered]) })
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    await openChat(page)
+    await openDiary(page)
+    const row = entries(page).first()
+    await expect(row.locator('.entry__bullets li').first()).toContainText(PAUSED_LINE_NOTE)
+    // Its name turns into «Скопійовано» for 2 s: found by its hook, not by its name.
+    const button = row.locator('[data-act="entry-copy"]')
+    await expect(button).toHaveAccessibleName('Копіювати')
+    await button.click()
+    await expect(button).toHaveText('Скопійовано')
+    await expect(announcer(page)).toHaveText('Скопійовано')
+    // The Windows clipboard hands lines back with CRLF.
+    expect((await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n')).toBe(
+      ['## Синтетичний запис із номером', '_7 жовтня 2026_', `- Можна подзвонити на ${PAUSED_LINE_NOTE} — або 112.\n- Друга теза.`, 'Теми: робота'].join('\n\n'),
+    )
+    await expect(button).toHaveText('Копіювати', { timeout: 4000 })
+  })
+
+  test('#70 «Повернутися до цього» starts a revisit with that record (one the page’s diary did not have yet); over a conversation it asks first', async ({ page, api }) => {
+    // At the start the diary is empty; the diary page then finds the records.
+    api.on('GET /summaries', { json: diary() }, (call) => ({ json: diary(found(call)) }))
+    await openChat(page)
+    await openDiary(page)
+    await entryTitled(page, ENTRIES[1]!.title).getByRole('button', { name: 'Повернутися до цього' }).click()
+    await onScreen(page, 'chat')
+    await expect(scenarioList(page).getByRole('radio', { name: 'Повернення до теми' })).toBeChecked()
+    await expect(page.locator('[data-el="revisit-names"]')).toHaveText(ENTRIES[1]!.title)
+    await exchange(page)
+    expect(turnBodies(api.bodies('POST /chat/turn')).at(-1)).toMatchObject({ scenario: 'revisit', revisit_summary_ids: [ENTRIES[1]!.id] })
+
+    // Now a conversation is under way: a new one replaces it only after a confirm.
+    await composer(page).fill('Синтетичний текст, ще не надісланий.')
+    await openDiary(page)
+    const back = entryTitled(page, ENTRIES[2]!.title).getByRole('button', { name: 'Повернутися до цього' })
+    await back.click()
+    const confirm = confirmDialog(page)
+    await expect(confirm.locator('#confirm-title')).toHaveText('Почати нову розмову?')
+    await expect(confirm.getByRole('button', { name: 'Скасувати' })).toBeFocused()
+    await confirm.getByRole('button', { name: 'Скасувати' }).click()
+    await expect(confirm).toBeHidden()
+    await expect(back).toBeFocused()
+    await onScreen(page, 'journal')
+    await back.click()
+    await confirm.getByRole('button', { name: 'Почати нову' }).click()
+    await onScreen(page, 'chat')
+    await expect(userMessages(page)).toHaveCount(0)
+    await expect(composer(page)).toHaveValue('')
+    await expect(page.locator('[data-el="revisit-names"]')).toHaveText(ENTRIES[2]!.title)
+    expect(await beforeUnload(page)).toBe(0)
+    await exchange(page)
+    expect(turnBodies(api.bodies('POST /chat/turn')).at(-1)!.revisit_summary_ids).toEqual([ENTRIES[2]!.id])
+  })
+
+  test('#71 an empty diary is one line, without the week, the search or the themes; a list that fails says so and asks again', async ({ page, api }) => {
+    api.on('GET /summaries', { json: diary() })
+    api.on('GET /tags', { json: [] })
+    api.on('GET /reviews/weekly', { json: weekly(THIS_WEEK) })
+    await openChat(page)
+    await openDiary(page)
+    await expect(page.locator('[data-el="journal-empty"]')).toHaveText(JOURNAL_EMPTY)
+    await expect(page.locator('[data-el="week"]')).toBeHidden()
+    await expect(page.locator('[data-el="journal-tools"]')).toBeHidden()
+    await expect(page.locator('[data-el="journal-themes"]')).toBeHidden()
+    await expect(entries(page)).toHaveCount(0)
+    await page.getByRole('button', { name: 'До розмови' }).click()
+    await onScreen(page, 'chat')
+
+    let failing = true
+    api.on('GET /summaries', (call) => {
+      if (!failing) return { json: diary(found(call)) }
+      failing = false
+      return fail(500, 'internal')
+    })
+    api.on('GET /tags', { json: THEMES })
+    await openDiary(page)
+    await expect(journalStatus(page)).toHaveText(JOURNAL_FAILED)
+    await expect(page.locator('[data-el="journal-empty"]')).toBeHidden()
+    await page.locator('[data-el="journal-retry"]').getByRole('button', { name: 'Спробувати ще раз' }).click()
+    await expect(entries(page)).toHaveCount(3)
+    await expect(journalStatus(page)).toHaveText('')
+    await expect(page.locator('[data-el="journal-retry"]')).toBeHidden()
+  })
+
+  test('#72 axe on the diary in both themes: the list, an edit with an empty title, the delete confirm', async ({ page, api }) => {
+    await openChat(page)
+    await openDiary(page)
+    for (const scheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme: scheme })
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await settled(page)
+      await axe(page, `${scheme}: the diary`)
+      const row = entries(page).first()
+      await row.getByRole('button', { name: 'Редагувати' }).click()
+      const title = row.getByRole('textbox', { name: 'Назва' })
+      await title.fill('')
+      await row.getByRole('button', { name: 'Зберегти' }).click()
+      await expect(title).toHaveAttribute('aria-invalid', 'true')
+      await expect(title).toBeFocused()
+      await expect(row.locator('[data-err="title"]')).not.toHaveText('')
+      await axe(page, `${scheme}: an edit with an empty title`)
+      await row.getByRole('button', { name: 'Скасувати' }).click()
+      await row.getByRole('button', { name: 'Видалити' }).click()
+      await expect(confirmDialog(page)).toBeVisible()
+      await axe(page, `${scheme}: the delete confirm`)
+      await confirmDialog(page).getByRole('button', { name: 'Залишити' }).click()
+      await expect(confirmDialog(page)).toBeHidden()
+    }
+    expect(api.count('PATCH /summaries/' + ENTRIES[0]!.id) + api.count('DELETE /summaries/' + ENTRIES[0]!.id)).toBe(0)
+  })
+
+  test('#73 at 320 px nothing of the diary leaves the screen: a 40-character theme, a long title, the edit form; the week’s arrows stay 44 px', async ({ page, api }, testInfo) => {
+    test.skip(testInfo.project.name !== 'mobile', 'one engine is enough for reflow')
+    const tag = 'тег'.repeat(13) + 'и'
+    const word = 'Синтетичнийдовгийрядокбезжодногопробілу'.repeat(3)
+    const long = record(1, { title: word, bullets: [word], tags: [{ id: themeId(9), name: tag, source: 'ai' }] })
+    api.on('GET /summaries', { json: diary([long, ENTRIES[1]!], 'c-2') })
+    api.on('GET /tags', { json: [{ id: themeId(9), name: tag, count: 1 }, ...THEMES] })
+    api.on('GET /reviews/weekly', (call) => ({ json: weekly(call.query.get('week_start') ?? '2026-10-05', 12, [tag, 'робота']) }))
+    await page.setViewportSize({ width: 320, height: 640 })
+    await openChat(page)
+    await openDiary(page)
+    await expect(entries(page)).toHaveCount(2)
+    // «28 вересня – 4 жовтня»: a week over a month’s end, the longest kind of title.
+    await page.getByRole('button', { name: 'Попередній тиждень' }).click()
+    await expect(page.locator('[data-el="week-title"]')).toHaveText('28 вересня – 4 жовтня')
+    await page.evaluate(() => document.fonts.ready)
+    expect(await cutOffAtEdges(page), 'the diary').toEqual([])
+    expect(await page.evaluate(() => window.innerWidth), 'the layout viewport did not widen').toBe(320)
+    for (const name of ['Попередній тиждень', 'Наступний тиждень']) {
+      const box = await page.getByRole('button', { name }).boundingBox()
+      expect(Math.min(box!.width, box!.height), name).toBeGreaterThanOrEqual(44)
+    }
+    await entries(page).first().getByRole('button', { name: 'Редагувати' }).click()
+    await expect(entries(page).first().getByRole('textbox', { name: 'Назва' })).toBeFocused()
+    expect(await cutOffAtEdges(page), 'the edit form').toEqual([])
   })
 })
 

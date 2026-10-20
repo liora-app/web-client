@@ -12,7 +12,7 @@
 // unheard (§3.11, §5.7, WCAG 4.1.3). With no dialog open it is back in its place.
 
 import type { Action, Model, Overlay, PickOverlay } from '../core/state'
-import { hasReply, hasUserMessage, leaveGuard, pendingOf, sessionOf } from '../core/state'
+import { canOpenJournal, hasReply, hasUserMessage, leaveGuard, pendingOf, sessionOf } from '../core/state'
 import { maskPausedLine, type SafeLine } from '../core/helplines'
 import { accountOpError, dayMonth, requestIdLine, shortDate } from './copy'
 import { byEl, fromTemplate, headingOf, setAttr, setText, show } from './dom'
@@ -165,6 +165,8 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
     const { ctx } = m
     const root = elements.account
     setText(byEl('account-email', root), ctx.me?.email ?? '')
+    // «Відкрити щоденник» where the diary can open: not while the AI works, not on the theses.
+    show(byEl('account-journal', root), canOpenJournal(m.state))
     fillProvider(m, root)
     for (const node of Array.from(root.querySelectorAll<HTMLElement>('[data-grant-date]'))) {
       const granted = ctx.consents?.granted.find((g) => g.kind === node.dataset.grantDate)

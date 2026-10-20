@@ -133,6 +133,31 @@ export function record(i: number, init: Partial<Summary> = {}): Summary {
 
 export const diary = (items: Summary[] = [], next: string | null = null): { items: Summary[]; next_cursor: string | null } => ({ items, next_cursor: next })
 
+/** The id of a diary theme (GET /tags, a record's tags) for the diary page's tests (1 ≤ i ≤ 99). */
+export const themeId = (i: number): string => `00000000-0000-4000-9000-0000000002${String(i).padStart(2, '0')}`
+
+/** GET /tags: each theme with the number of records that carry it. Not among the defaults: the
+ *  diary page asks for it only when it opens (spec §7.7), anywhere else it is an unexpected call. */
+export type TagCount = { id: string; name: string; count: number }
+
+/** GET /reviews/weekly for the week from Monday `start` (YYYY-MM-DD): `sessions` saved records and
+ *  the themes among them. week_end is the next Monday, as the server sends it. Not a default either. */
+export function weekly(start: string, sessions = 0, themes: readonly string[] = [], tz = 'Europe/Kyiv') {
+  const end = new Date(Date.parse(`${start}T12:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10)
+  return {
+    week_start: start,
+    week_end: end,
+    tz,
+    sessions,
+    prev_sessions: 0,
+    delta: sessions,
+    top_tags: themes.map((name) => ({ name, count: 1, prev_count: 0 })),
+    recurring_tags: [],
+    new_tags: themes.slice(),
+    faded_tags: [],
+  }
+}
+
 /** POST /summaries → 201: the record as the server would store it. */
 export function storedFrom(body: unknown): Summary {
   const b = body as { scenario: string; title: string; bullets: string[]; tags: { name: string; source: string }[] }

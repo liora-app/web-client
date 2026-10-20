@@ -21,7 +21,7 @@ import { maskPausedLine } from '../core/helplines'
 import { draftOf, leaveGuard, pendingOf, sessionOf, type Action, type Model } from '../core/state'
 import type { ConsentKind } from '../core/types'
 import { createAnnouncer } from './announcer'
-import { conversationText, copyText, thesesText } from './clipboard'
+import { conversationText, copyText, entryMarkdown, thesesText } from './clipboard'
 import { COPIED, COPY_FAILED_LABEL, copyFailed } from './copy'
 import { createEffects } from './effects'
 import { initKeyboard } from './keyboard'
@@ -86,6 +86,7 @@ const effects = createEffects({
   announcer,
   leave,
   composer: (text) => view.chat.composer.put(text),
+  clearComposer: () => view.chat.composer.clear(),
 })
 view = createView(dispatch, { gl, sound, sky, theme })
 
@@ -95,14 +96,28 @@ function topOverlay(model: Model) {
   return model.overlay[model.overlay.length - 1]
 }
 
+/** The page's IANA zone for the weekly review (the core has no time zone database), if Intl has one. */
+function timeZone(): string | null {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    return typeof zone === 'string' && zone !== '' && zone.length <= 64 ? zone : null
+  } catch {
+    return null
+  }
+}
+
 /** «Скопіювати текст розмови» / «Скопіювати тези» on whichever screen still holds them (§3.8), and
  *  «Копіювати» under one reply of the AI: its text from the model, the paused number masked — never
  *  read back from the page. The result is said through the live region too: a changed name of the
  *  focused button is not announced by most screen readers (WCAG 4.1.3). */
-async function copy(button: HTMLElement, kind: 'talk' | 'theses' | 'reply'): Promise<void> {
+async function copy(button: HTMLElement, kind: 'talk' | 'theses' | 'reply' | 'entry'): Promise<void> {
   const { state } = store.model()
   let text = ''
-  if (kind === 'theses') {
+  if (kind === 'entry') {
+    // One diary record as Markdown, from the model (masked), never read back from the page.
+    const item = state.s === 'journal' ? state.list?.items.find((x) => x.id === button.dataset.id) : undefined
+    if (item) text = entryMarkdown(item)
+  } else if (kind === 'theses') {
     const draft = draftOf(state)
     if (draft) text = thesesText(draft)
   } else if (kind === 'reply') {
@@ -137,6 +152,7 @@ function act(name: string, target: HTMLElement, event: Event): void {
   // The account operation (or the save) is on its way: a second press sends nothing.
   if (target.getAttribute('aria-busy') === 'true') return
   if (view.review.act(name, target)) return
+  if (view.journal.act(name, target)) return
   switch (name) {
     case 'leave-home':
       // Something would be lost: ask first (spec §3.12); otherwise the link just works.
@@ -253,6 +269,24 @@ function act(name: string, target: HTMLElement, event: Event): void {
       return
     case 'starter':
       return view.chat.start(Number(target.dataset.i))
+    // The diary (§7.7).
+    case 'journal-open':
+      return dispatch({ type: 'journal/open', tz: timeZone() })
+    case 'journal-back':
+      return dispatch({ type: 'journal/back' })
+    case 'journal-more':
+      return dispatch({ type: 'journal/more' })
+    case 'journal-retry':
+      return dispatch({ type: 'journal/retry' })
+    case 'week-prev':
+      return dispatch({ type: 'journal/week', step: -1 })
+    case 'week-next':
+      return dispatch({ type: 'journal/week', step: 1 })
+    case 'week-retry':
+      return dispatch({ type: 'journal/week-retry' })
+    case 'entry-copy':
+      void copy(target, 'entry')
+      return
   }
 }
 

@@ -7,12 +7,16 @@
 //   I2 at most one LLM request in flight; I3 a partial answer joins `messages` only on `done`;
 //   I4 every retry sends the frozen request; I5 no way back from `crisis` into its conversation;
 //   I6 a new screen closes every overlay; I7 leaveGuard(); I9 turnBody()/summarizeBody() in api.ts.
+// The diary page (`journal`, spec §7.7) is a screen of its own here: it keeps the conversation it
+// was opened from and gives it back, and its requests are stamped with ctx.seq like every other.
 
 import { GOOGLE_START, grantBody, summarizeBody, turnBody } from './api'
 import { DEFAULT_BUSY_RETRY_MS, outcomeUnknown, toUiError, uiError, type ApiError, type UiError } from './errors'
 import { FALLBACK, PAUSED_LINE_NOTE_SHORT, maskPausedLineShort, type SafeHelplines } from './helplines'
+import { FALLBACK_TZ, formOf, patchOf, searchQuery, shiftDay, type EntryForm, type PatchSent } from './journal'
 import {
   MAX_BULLET,
+  MAX_BULLETS,
   MAX_CONTENT,
   MAX_QUERY,
   MAX_REVISIT_IDS,
@@ -22,6 +26,7 @@ import {
   clampCodePoints,
   clampWords,
   draftFromOut,
+  fieldIssues,
   normalize,
   validateDraft,
   type Draft,
@@ -43,7 +48,10 @@ import {
   type SummaryDraftOut,
   type SummaryList,
   type SummaryOut,
+  type SummaryPatch,
+  type TagCountOut,
   type TurnRequest,
+  type WeeklyReviewOut,
 } from './types'
 
 // ── Constants ─────────────────────────────────────────────────────────────────────────────────
@@ -101,6 +109,10 @@ export type Resume =
   | Readonly<{ kind: 'turn'; request: readonly Msg[]; revisitIds: readonly string[] }>
   | Readonly<{ kind: 'summarize' }>
   | Readonly<{ kind: 'save'; draft: Draft }>
+  /** A PATCH of a diary record (403 consent_required): the diary as it was, its edit with the
+   *  frozen body — after the consent the same body goes again, from `saved`/`ended` too, where
+   *  there is no conversation. */
+  | Readonly<{ kind: 'patch'; journal: JournalState }>
 
 export type TurnPhase =
   | Readonly<{ p: 'idle' }>
@@ -189,6 +201,7 @@ export type State =
     }>
   | Readonly<{ s: 'saved'; summary: SummaryOut }>
   | Readonly<{ s: 'ended' }>
+  | JournalState
   | Readonly<{ s: 'account-deleted'; variant: 'confirmed' | 'presumed' }>
   | Readonly<{ s: 'fatal'; error: UiError }>
 
@@ -206,6 +219,68 @@ export type Loadable<T> =
   | Readonly<{ status: 'failed' }>
 
 export type Diary = Readonly<{ items: readonly SummaryOut[]; nextCursor: string | null }>
+
+// ── The diary page (spec §7.7) ──
+
+/** The conversation the diary was opened from; «До розмови» gives it back as the theses do
+ *  (backToChat). null: opened from `saved` or `ended` — the way out is a new conversation. */
+export type JournalBack = Readonly<{
+  session: Session
+  pending: Pending | null
+  revertTo: ScenarioId
+  /** The block «Записів… уже немає» stood instead of the composer: it comes back with it. */
+  gone: boolean
+}>
+
+export type JournalEdit = Readonly<{
+  form: EntryForm
+  saving: boolean
+  error: UiError | null
+  issues: readonly DraftIssue[]
+  /** The last PATCH that went out, with its index tables for a 422; repeated as it is after a
+   *  consent. */
+  sent: PatchSent | null
+  req: number
+}>
+
+export type JournalNotice =
+  | Readonly<{ kind: 'saved' }>
+  | Readonly<{ kind: 'deleted' }>
+  /** The record went meanwhile (404 on a PATCH, another tab). */
+  | Readonly<{ kind: 'gone' }>
+  | Readonly<{ kind: 'delete-failed'; error: UiError }>
+
+export type JournalWeek = Readonly<{
+  /** The Monday shown; null until the first answer (the week of today in `tz`). */
+  start: string | null
+  /** This week's Monday, as the first answer named it: «Наступний тиждень» stops there. */
+  current: string | null
+  review: Loadable<WeeklyReviewOut>
+  req: number
+}>
+
+export type JournalState = Readonly<{
+  s: 'journal'
+  back: JournalBack | null
+  /** The page's IANA zone (Intl), Europe/Kyiv once the server refused it, null without one. */
+  tz: string | null
+  /** The search and the theme the list is filtered by (AND on the server); paging keeps both. */
+  q: string
+  tag: string | null
+  list: Diary | null
+  loading: boolean
+  failed: boolean
+  /** The cursor of the page asked for last (null: the first page): a retry asks for it again. */
+  cursor: string | null
+  req: number
+  tags: Loadable<readonly TagCountOut[]>
+  week: JournalWeek
+  /** One record edited at a time, in place. */
+  edit: JournalEdit | null
+  /** The record whose DELETE is on its way. */
+  deleting: string | null
+  notice: JournalNotice | null
+}>
 
 /** Page data outside State.s (§2.3). */
 export type Ctx = Readonly<{
@@ -252,6 +327,8 @@ export type ConfirmKind =
   | 'new-after-crisis'
   | 'delete-account'
   | 'revoke'
+  | 'delete-summary'
+  | 'revisit-restart'
 
 export type PickOverlay = Readonly<{
   o: 'revisit-pick'
@@ -277,6 +354,8 @@ export type Overlay =
       leaveTo: 'home' | 'reload' | null
       /** end-no-theses opened from end: «Назад» goes back to end. */
       back: boolean
+      /** delete-summary, revisit-restart: the diary record it is about (absent otherwise). */
+      summary?: string
     }>
 
 export type Model = Readonly<{ state: State; ctx: Ctx; overlay: readonly Overlay[] }>
@@ -370,7 +449,7 @@ export type Action =
   | Readonly<{ type: 'save/check-fail'; id: number; error: ApiError }>
   // overlays and the account
   | Readonly<{ type: 'overlay/open'; overlay: 'account' | 'help' }>
-  | Readonly<{ type: 'confirm/open'; kind: ConfirmKind; revoke?: ConsentKind; leaveTo?: 'home' | 'reload' }>
+  | Readonly<{ type: 'confirm/open'; kind: ConfirmKind; revoke?: ConsentKind; leaveTo?: 'home' | 'reload'; summary?: string }>
   | Readonly<{ type: 'confirm/switch'; kind: 'end' | 'end-no-theses' }>
   | Readonly<{ type: 'confirm/accept'; choice?: 'summarize' }>
   | Readonly<{ type: 'overlay/close' }>
@@ -381,6 +460,32 @@ export type Action =
   | Readonly<{ type: 'delete/fail'; error: ApiError }>
   | Readonly<{ type: 'revoke/ok'; kind: ConsentKind; consents: ConsentState }>
   | Readonly<{ type: 'revoke/fail'; kind: ConsentKind; error: ApiError }>
+  // the diary (§7.7). `tz`: the page's Intl zone — the core has no time zone database.
+  | Readonly<{ type: 'journal/open'; tz: string | null }>
+  | Readonly<{ type: 'journal/back' }>
+  | Readonly<{ type: 'journal/search'; q: string }>
+  | Readonly<{ type: 'journal/tag'; id: string | null }>
+  | Readonly<{ type: 'journal/more' }>
+  | Readonly<{ type: 'journal/retry' }>
+  | Readonly<{ type: 'journal/list-ok'; req: number; diary: Diary }>
+  | Readonly<{ type: 'journal/list-fail'; req: number; error: ApiError }>
+  | Readonly<{ type: 'journal/tags-ok'; tags: readonly TagCountOut[] }>
+  | Readonly<{ type: 'journal/tags-fail'; error: ApiError }>
+  | Readonly<{ type: 'journal/week'; step: -1 | 1 }>
+  | Readonly<{ type: 'journal/week-retry' }>
+  | Readonly<{ type: 'journal/week-ok'; req: number; review: WeeklyReviewOut }>
+  | Readonly<{ type: 'journal/week-fail'; req: number; error: ApiError }>
+  | Readonly<{ type: 'journal/edit'; id: string }>
+  | Readonly<{ type: 'journal/edit-update'; form: EntryForm }>
+  | Readonly<{ type: 'journal/edit-add' }>
+  | Readonly<{ type: 'journal/edit-cancel' }>
+  | Readonly<{ type: 'journal/edit-save' }>
+  | Readonly<{ type: 'journal/patch-ok'; req: number; summary: SummaryOut }>
+  | Readonly<{ type: 'journal/patch-fail'; req: number; error: ApiError }>
+  | Readonly<{ type: 'journal/delete-ok'; id: string }>
+  | Readonly<{ type: 'journal/delete-fail'; id: string; error: ApiError }>
+  /** «Повернутися до цього»: a revisit conversation with this one record. */
+  | Readonly<{ type: 'journal/revisit'; id: string }>
 
 export type Effect =
   | Readonly<{ type: 'url/clean' }> // history.replaceState(null, '', location.pathname)
@@ -403,6 +508,13 @@ export type Effect =
   | Readonly<{ type: 'navigate'; href: string }> // drops the leave guard first
   | Readonly<{ type: 'reload' }>
   | Readonly<{ type: 'composer'; text: string }> // put text back into the message field
+  | Readonly<{ type: 'composer/clear' }> // empty the message field without focusing it
+  // the diary (§7.7): GET /summaries?limit=20[&cursor][&q][&tag], GET /tags, GET /reviews/weekly
+  | Readonly<{ type: 'journal-list'; req: number; q: string; tag: string | null; cursor: string | null }>
+  | Readonly<{ type: 'journal-tags' }>
+  | Readonly<{ type: 'journal-week'; req: number; weekStart: string | null; tz: string | null }>
+  | Readonly<{ type: 'patch-summary'; req: number; id: string; body: SummaryPatch }>
+  | Readonly<{ type: 'delete-summary'; id: string }>
   | Readonly<{ type: 'announcer/clear' }> // empty [data-announcer] (§5.7)
 
 export type Step = readonly [Model, readonly Effect[]]
@@ -444,9 +556,20 @@ export function leaveGuard(state: State): boolean {
       return hasUserMessage(state.stale, state.pending) || state.draft !== null
     case 'not-invited':
       return hasUserMessage(state.stale, state.pending) || state.draft !== null
+    case 'journal':
+      // The conversation it was opened from waits under it. An edit of a record does not count:
+      // «Піти з розмови?» speaks of the conversation, and the record is on the server.
+      return state.back !== null && hasUserMessage(state.back.session, state.back.pending)
     default:
       return false
   }
+}
+
+/** The diary opens from a conversation with nothing in flight (a 429 countdown is no request),
+ *  from `saved` and from `ended` (spec §7.7). */
+export function canOpenJournal(state: State): boolean {
+  if (state.s === 'saved' || state.s === 'ended') return true
+  return state.s === 'chat' && (state.turn.p === 'idle' || state.turn.p === 'cooldown')
 }
 
 /** I2: a turn or a summarize is in flight (or waiting for its automatic retry). */
@@ -630,7 +753,7 @@ function enterCrisis(model: Model, helplines: SafeHelplines, stale: readonly Msg
   ]
 }
 
-function enterResume(model: Model, session: Session, pending: Pending | null, resume: Resume, policyVersion: string | null): Step {
+function enterResume(model: Model, session: Session | null, pending: Pending | null, resume: Resume, policyVersion: string | null): Step {
   const known = model.ctx.consents?.current_policy_version ?? null
   const policyChanged = policyVersion !== null && known !== null && policyVersion !== known
   return withState(model, consent('resume', { policyChanged, session, pending, resume, loading: true }), [
@@ -731,6 +854,8 @@ export function sessionOf(state: State): Session | null {
     case 'session-expired':
     case 'not-invited':
       return state.stale
+    case 'journal':
+      return state.back?.session ?? null
     default:
       return null
   }
@@ -746,6 +871,8 @@ export function pendingOf(state: State): Pending | null {
     case 'session-expired':
     case 'not-invited':
       return state.pending
+    case 'journal':
+      return state.back?.pending ?? null
     default:
       return null
   }
@@ -763,6 +890,8 @@ export function draftOf(state: State): Draft | null {
 function afterConsent(model: Model): Step {
   const { state } = model
   if (state.s !== 'consent') return [model, NONE]
+  // The diary's PATCH needs no conversation: it may come from `saved` or `ended`.
+  if (state.mode === 'resume' && state.resume?.kind === 'patch') return resumeJournal(model, state.resume.journal)
   if (state.mode === 'resume' && state.resume !== null && state.session !== null) {
     const { session, resume } = state
     switch (resume.kind) {
@@ -772,6 +901,8 @@ function afterConsent(model: Model): Step {
       }
       case 'summarize':
         return beginSummarize(model, session, state.pending)
+      case 'patch':
+        return resumeJournal(model, resume.journal)
       case 'save':
         return beginSave(model, {
           s: 'review',
@@ -916,8 +1047,6 @@ function onSummarizeFail(model: Model, state: SummarizingState, error: ApiError,
   return [{ ...model, ctx, state: { ...state, until, error: toUiError(error) } }, NONE]
 }
 
-const FIELD = /^(?:(title)|bullets\.(\d+)|tags\.(\d+)(?:\.name)?)$/
-
 function onSaveFail(model: Model, state: ReviewState, error: ApiError): Step {
   const { session, pending, draft } = state
   // Network, our timeout, a gateway without a body, or a 201 we could not read: the record may
@@ -934,19 +1063,7 @@ function onSaveFail(model: Model, state: ReviewState, error: ApiError): Step {
   if (error.code === 'not_invited') return notInvited(model, session, pending, draft)
   if (error.code === 'consent_required') return enterResume(model, session, pending, { kind: 'save', draft }, error.policyVersion)
   if (error.code === 'validation_error' && state.sent !== null) {
-    const issues: DraftIssue[] = []
-    let unmapped = error.fields.length === 0
-    for (const path of error.fields) {
-      const m = FIELD.exec(path)
-      const fieldId =
-        m === null ? undefined : m[1] !== undefined ? 'title' : m[2] !== undefined ? state.sent.bulletIndex[Number(m[2])] : state.sent.tagIndex[Number(m[3])]
-      if (m === null || fieldId === undefined) {
-        unmapped = true
-        continue
-      }
-      const reason = m[1] !== undefined ? 'title-invalid' : m[2] !== undefined ? 'bullet-invalid' : 'tag-invalid'
-      issues.push({ field: fieldId, reason })
-    }
+    const { issues, unmapped } = fieldIssues(error.fields, state.sent)
     return withState(model, { ...state, saving: 'idle', issues, error: unmapped ? toUiError(error) : null })
   }
   const ctx = error.code === 'csrf_failed' ? { ...model.ctx, csrfFailures: model.ctx.csrfFailures + 1 } : model.ctx
@@ -983,7 +1100,7 @@ function ended(model: Model, effects: readonly Effect[] = NONE): Step {
 
 const STACKED: ReadonlySet<ConfirmKind> = new Set(['logout', 'delete-account', 'revoke'])
 
-function confirmAllowed(model: Model, kind: ConfirmKind, revoke: ConsentKind | undefined): boolean {
+function confirmAllowed(model: Model, kind: ConfirmKind, revoke: ConsentKind | undefined, summary?: string): boolean {
   const { state } = model
   const idleChat = state.s === 'chat' && (state.turn.p === 'idle' || state.turn.p === 'cooldown')
   switch (kind) {
@@ -1006,6 +1123,10 @@ function confirmAllowed(model: Model, kind: ConfirmKind, revoke: ConsentKind | u
       return accountReachable(model)
     case 'revoke':
       return accountReachable(model) && revoke !== undefined
+    case 'delete-summary':
+      return state.s === 'journal' && state.deleting === null && summary !== undefined && journalItem(state, summary) !== undefined
+    case 'revisit-restart':
+      return state.s === 'journal' && summary !== undefined && journalItem(state, summary) !== undefined && revisitOffered(model.ctx)
   }
 }
 
@@ -1067,6 +1188,16 @@ function onConfirmAccept(model: Model, choice: 'summarize' | undefined): Step {
     case 'revoke':
       if (top.revoke === null) return [model, NONE]
       return [{ ...model, ctx: { ...ctx, op: { name: 'revoke', busy: true, error: null } } }, [{ type: 'revoke', kind: top.revoke }]]
+    case 'delete-summary':
+      // The screen stays: the dialog closes here, not by a change of screen.
+      if (popped.state.s !== 'journal' || top.summary === undefined || popped.state.deleting !== null) return [popped, NONE]
+      return [{ ...popped, state: { ...popped.state, deleting: top.summary, notice: null } }, [{ type: 'delete-summary', id: top.summary }]]
+    case 'revisit-restart': {
+      if (popped.state.s !== 'journal' || top.summary === undefined) return [popped, NONE]
+      const item = journalItem(popped.state, top.summary)
+      // «Текст цієї розмови зникне зі сторінки»: the field's text goes with it.
+      return item === undefined ? [popped, NONE] : startRevisit(popped, item, true)
+    }
   }
 }
 
@@ -1082,6 +1213,286 @@ function onOverlayClose(model: Model): Step {
     return withState(popped, { ...state, session: freshSession(popped.ctx, top.revertTo, state.session.noSave), notice: null })
   }
   return [popped, NONE]
+}
+
+// ── The diary (spec §7.7) ──
+
+/** «Повернутися до цього» needs the revisit scenario (a failed GET /scenarios leaves only free). */
+export function revisitOffered(ctx: Ctx): boolean {
+  return scenariosOf(ctx).some((s) => s.id === 'revisit')
+}
+
+function journalItem(state: JournalState, id: string): SummaryOut | undefined {
+  return state.list?.items.find((item) => item.id === id)
+}
+
+/** One more request id (ctx.seq): an answer with another id is stale. */
+function nextReq(model: Model): [Model, number] {
+  const req = model.ctx.seq + 1
+  return [{ ...model, ctx: { ...model.ctx, seq: req } }, req]
+}
+
+function journalList(model: Model, state: JournalState, cursor: string | null): Step {
+  const [next, req] = nextReq(model)
+  const journal: JournalState = { ...state, loading: true, failed: false, cursor, req }
+  return [{ ...next, state: journal }, [{ type: 'journal-list', req, q: journal.q, tag: journal.tag, cursor }]]
+}
+
+function journalWeek(model: Model, state: JournalState, weekStart: string | null, tz: string | null = state.tz): Step {
+  const [next, req] = nextReq(model)
+  const journal: JournalState = { ...state, tz, week: { ...state.week, review: { status: 'loading' }, req } }
+  return [{ ...next, state: journal }, [{ type: 'journal-week', req, weekStart, tz }]]
+}
+
+function openJournal(model: Model, tz: string | null): Step {
+  const { state } = model
+  const back: JournalBack | null =
+    state.s === 'chat' ? { session: state.session, pending: state.pending, revertTo: state.revertTo, gone: state.notice?.kind === 'revisit-gone' } : null
+  const journal: JournalState = {
+    s: 'journal',
+    back,
+    tz,
+    q: '',
+    tag: null,
+    list: null,
+    loading: false,
+    failed: false,
+    cursor: null,
+    req: 0,
+    tags: { status: 'loading' },
+    week: { start: null, current: null, review: { status: 'loading' }, req: 0 },
+    edit: null,
+    deleting: null,
+    notice: null,
+  }
+  // Lazily, on the way in (never at the page's start): the week, the themes, the first page.
+  const [weekModel, weekFx] = journalWeek(model, journal, null)
+  const [listModel, listFx] = journalList(weekModel, weekModel.state as JournalState, null)
+  return [listModel, [...weekFx, { type: 'journal-tags' }, ...listFx]]
+}
+
+/** After a PATCH or a DELETE: the themes (an orphan tag is gone), the week shown and the page's
+ *  diary (the record picker and «Ви повертаєтеся до:» read it) are asked for again. */
+function afterChange(model: Model, state: JournalState): Step {
+  const [weekModel, weekFx] = state.week.start !== null || state.week.review.status !== 'loading' ? journalWeek(model, state, state.week.start) : [{ ...model, state }, NONE]
+  const journal = weekModel.state as JournalState
+  return [
+    { ...weekModel, ctx: { ...weekModel.ctx, diary: { status: 'loading' } }, state: { ...journal, tags: journal.tags.status === 'ok' ? journal.tags : { status: 'loading' } } },
+    [...weekFx, { type: 'journal-tags' }, { type: 'diary' }],
+  ]
+}
+
+function beginPatch(model: Model, state: JournalState, sent: PatchSent): Step {
+  if (state.edit === null) return withState(model, state)
+  const [next, req] = nextReq(model)
+  const edit: JournalEdit = { ...state.edit, saving: true, error: null, issues: [], sent, req }
+  return [{ ...next, state: { ...state, edit, notice: null } }, [{ type: 'patch-summary', req, id: state.edit.form.id, body: sent.body }]]
+}
+
+/** Back from the consent a PATCH asked for: the diary as it was. What it had on its way then was
+ *  answered while the consent was up (and ignored there): it is asked for again. */
+function resumeJournal(model: Model, snapshot: JournalState): Step {
+  let step: Step = [{ ...model, state: snapshot }, NONE]
+  const effects: Effect[] = []
+  const then = (next: Step): void => {
+    step = next
+    effects.push(...next[1])
+  }
+  if (snapshot.loading) then(journalList(step[0], step[0].state as JournalState, snapshot.cursor))
+  if (snapshot.week.review.status === 'loading') then(journalWeek(step[0], step[0].state as JournalState, snapshot.week.start))
+  if (snapshot.tags.status === 'loading') effects.push({ type: 'journal-tags' })
+  const journal = step[0].state as JournalState
+  const sent = journal.edit?.sent ?? null
+  if (sent === null) return [step[0], effects]
+  const [patched, patchFx] = beginPatch(step[0], journal, sent)
+  return [patched, [...effects, ...patchFx]]
+}
+
+const without = (list: Diary | null, id: string): Diary | null =>
+  list === null ? null : { items: list.items.filter((item) => item.id !== id), nextCursor: list.nextCursor }
+
+/** A record left the diary (deleted, or gone meanwhile): off the list, its edit closed. */
+function dropRecord(model: Model, state: JournalState, id: string, notice: JournalNotice): Step {
+  const journal: JournalState = {
+    ...state,
+    list: without(state.list, id),
+    edit: state.edit?.form.id === id ? null : state.edit,
+    deleting: state.deleting === id ? null : state.deleting,
+    notice,
+  }
+  return afterChange(model, journal)
+}
+
+/** «Повернутися до цього»: a new conversation in «Повернення до теми» with this record chosen.
+ *  Its name must be in ctx.diary for «Ви повертаєтеся до:» (a record found by a search or on a
+ *  later page is not on the first page the page loaded). `wipe`: a conversation is replaced. */
+function startRevisit(model: Model, item: SummaryOut, wipe: boolean): Step {
+  const { ctx } = model
+  const diary: Loadable<Diary> =
+    ctx.diary.status === 'ok'
+      ? ctx.diary.value.items.some((x) => x.id === item.id)
+        ? ctx.diary
+        : loaded({ items: [...ctx.diary.value.items, item], nextCursor: ctx.diary.value.nextCursor })
+      : ctx.diary.status === 'loading'
+        ? ctx.diary
+        : loaded({ items: [item], nextCursor: null })
+  const next: Ctx = { ...ctx, wantChat: false, cooldown: null, maybeSaved: false, diary }
+  const session: Session = { ...freshSession(next, 'revisit', false), revisitIds: Object.freeze([item.id]) }
+  const effects: readonly Effect[] = wipe ? [{ type: 'composer/clear' }, { type: 'announcer/clear' }] : NONE
+  return [{ ...model, ctx: next, state: chat(session, { revertTo: 'free' }) }, effects]
+}
+
+function onPatchFail(model: Model, state: JournalState, edit: JournalEdit, error: ApiError): Step {
+  const back = state.back
+  const idle: JournalState = { ...state, edit: { ...edit, saving: false } }
+  if (error.status === 401) return unauthenticated(model, back?.session ?? null, back?.pending ?? null, null)
+  if (error.code === 'not_invited') return notInvited(model, back?.session ?? null, back?.pending ?? null, null)
+  if (error.code === 'consent_required') {
+    return enterResume(model, back?.session ?? null, back?.pending ?? null, { kind: 'patch', journal: idle }, error.policyVersion)
+  }
+  if (error.code === 'not_found') return dropRecord(model, state, edit.form.id, { kind: 'gone' })
+  if (error.code === 'validation_error' && edit.sent !== null) {
+    const { issues, unmapped } = fieldIssues(error.fields, edit.sent.index)
+    return withState(model, { ...idle, edit: { ...idle.edit!, issues, error: unmapped ? toUiError(error) : null } })
+  }
+  const next: Model = error.code === 'csrf_failed' ? { ...model, ctx: { ...model.ctx, csrfFailures: model.ctx.csrfFailures + 1 } } : model
+  return withState(next, { ...idle, edit: { ...idle.edit!, error: toUiError(error) } })
+}
+
+function journalStep(model: Model, state: JournalState, action: Action): Step | null {
+  const { ctx } = model
+  switch (action.type) {
+    case 'journal/back':
+      if (state.back === null) return startChat(model)
+      {
+        const { session, pending, revertTo, gone } = state.back
+        const back = backToChat(ctx, session, pending)
+        return withState(model, { ...back, revertTo, notice: gone ? { kind: 'revisit-gone' } : back.notice })
+      }
+    case 'journal/search': {
+      const q = searchQuery(action.q)
+      if (q === state.q && !state.failed && state.list !== null) return [model, NONE]
+      return journalList(model, { ...state, q, notice: null }, null)
+    }
+    case 'journal/tag':
+      if (action.id === state.tag) return [model, NONE]
+      return journalList(model, { ...state, tag: action.id, notice: null }, null)
+    case 'journal/more':
+      if (state.loading || state.list?.nextCursor == null) return [model, NONE]
+      return journalList(model, state, state.list.nextCursor)
+    case 'journal/retry':
+      if (state.loading) return [model, NONE]
+      return journalList(model, state, state.list === null ? null : state.cursor)
+    case 'journal/list-ok': {
+      if (action.req !== state.req || !state.loading) return [model, NONE]
+      let list: Diary
+      if (state.cursor === null) list = action.diary
+      else if (state.list !== null && state.list.nextCursor === state.cursor) {
+        list = { items: [...state.list.items, ...action.diary.items.filter((item) => !state.list!.items.some((x) => x.id === item.id))], nextCursor: action.diary.nextCursor }
+      } else return withState(model, { ...state, loading: false })
+      return withState(model, { ...state, list, loading: false, failed: false })
+    }
+    case 'journal/list-fail':
+      if (action.req !== state.req || !state.loading) return [model, NONE]
+      if (action.error.status === 401) return unauthenticated(model, sessionOf(state), pendingOf(state), null)
+      return withState(model, { ...state, loading: false, failed: true })
+    case 'journal/tags-ok': {
+      const tags = loaded(action.tags)
+      // The theme filtered by is gone (its last record changed or went): the whole list again.
+      if (state.tag !== null && !action.tags.some((t) => t.id === state.tag)) return journalList(model, { ...state, tags, tag: null }, null)
+      return withState(model, { ...state, tags })
+    }
+    case 'journal/tags-fail':
+      if (action.error.status === 401) return unauthenticated(model, sessionOf(state), pendingOf(state), null)
+      return withState(model, { ...state, tags: { status: 'failed' } })
+    case 'journal/week': {
+      const { start, current } = state.week
+      if (start === null || state.week.review.status === 'loading') return [model, NONE]
+      const to = shiftDay(start, 7 * action.step)
+      if (to === null || (action.step === 1 && (current === null || to > current))) return [model, NONE]
+      return journalWeek(model, { ...state, week: { ...state.week, start: to } }, to)
+    }
+    case 'journal/week-retry':
+      if (state.week.review.status === 'loading') return [model, NONE]
+      return journalWeek(model, state, state.week.start)
+    case 'journal/week-ok': {
+      if (action.req !== state.week.req) return [model, NONE]
+      const { review } = action
+      return withState(model, {
+        ...state,
+        week: { start: review.week_start, current: state.week.current ?? review.week_start, review: loaded(review), req: state.week.req },
+      })
+    }
+    case 'journal/week-fail': {
+      if (action.req !== state.week.req) return [model, NONE]
+      if (action.error.status === 401) return unauthenticated(model, sessionOf(state), pendingOf(state), null)
+      // A zone the server does not know (an old browser's alias): once more with its default.
+      if (action.error.code === 'invalid_timezone' && state.tz !== FALLBACK_TZ) return journalWeek(model, state, state.week.start, FALLBACK_TZ)
+      return withState(model, { ...state, week: { ...state.week, review: { status: 'failed' } } })
+    }
+    case 'journal/edit': {
+      if (state.edit !== null) return [model, NONE]
+      const item = journalItem(state, action.id)
+      if (item === undefined) return [model, NONE]
+      return withState(model, { ...state, notice: null, edit: { form: formOf(item), saving: false, error: null, issues: [], sent: null, req: 0 } })
+    }
+    case 'journal/edit-update':
+      if (state.edit === null || state.edit.saving || action.form.id !== state.edit.form.id) return [model, NONE]
+      return withState(model, { ...state, edit: { ...state.edit, form: action.form, issues: [], error: null } })
+    case 'journal/edit-add': {
+      const edit = state.edit
+      if (edit === null || edit.saving || edit.form.bullets.length >= MAX_BULLETS) return [model, NONE]
+      return withState(model, { ...state, edit: { ...edit, form: { ...edit.form, bullets: [...edit.form.bullets, ''] } } })
+    }
+    case 'journal/edit-cancel':
+      if (state.edit === null || state.edit.saving) return [model, NONE]
+      return withState(model, { ...state, edit: null })
+    case 'journal/edit-save': {
+      const edit = state.edit
+      if (edit === null || edit.saving) return [model, NONE]
+      const item = journalItem(state, edit.form.id)
+      if (item === undefined) return withState(model, { ...state, edit: null })
+      const check = patchOf(edit.form, item)
+      if (!check.ok) return withState(model, { ...state, edit: { ...edit, issues: check.issues, error: null } })
+      // Nothing changed: the form closes without a PATCH (it would stamp «змінено»).
+      if (check.sent === null) return withState(model, { ...state, edit: null })
+      return beginPatch(model, state, check.sent)
+    }
+    case 'journal/patch-ok': {
+      const edit = state.edit
+      if (edit === null || !edit.saving || edit.req !== action.req) return [model, NONE]
+      const list = state.list === null ? null : { ...state.list, items: state.list.items.map((item) => (item.id === action.summary.id ? action.summary : item)) }
+      return afterChange(model, { ...state, list, edit: null, notice: { kind: 'saved' } })
+    }
+    case 'journal/patch-fail': {
+      const edit = state.edit
+      if (edit === null || !edit.saving || edit.req !== action.req) return [model, NONE]
+      return onPatchFail(model, state, edit, action.error)
+    }
+    case 'journal/delete-ok':
+      if (state.deleting !== action.id) return [model, NONE]
+      return dropRecord(model, state, action.id, { kind: 'deleted' })
+    case 'journal/delete-fail': {
+      if (state.deleting !== action.id) return [model, NONE]
+      const error = action.error
+      if (error.status === 401) return unauthenticated(model, sessionOf(state), pendingOf(state), null)
+      // Already gone (another tab, a repeat after a lost answer): what the person asked for.
+      if (error.code === 'not_found') return dropRecord(model, state, action.id, { kind: 'deleted' })
+      const next: Model = error.code === 'csrf_failed' ? { ...model, ctx: { ...ctx, csrfFailures: ctx.csrfFailures + 1 } } : model
+      return withState(next, { ...state, deleting: null, notice: { kind: 'delete-failed', error: toUiError(error) } })
+    }
+    case 'journal/revisit': {
+      const item = journalItem(state, action.id)
+      if (item === undefined || !revisitOffered(ctx)) return [model, NONE]
+      // A conversation under way would be replaced: ask first.
+      if (state.back !== null && hasUserMessage(state.back.session, state.back.pending)) {
+        return step(model, { type: 'confirm/open', kind: 'revisit-restart', summary: item.id })
+      }
+      return startRevisit(model, item, false)
+    }
+    default:
+      return null
+  }
 }
 
 function step(model: Model, action: Action): Step {
@@ -1481,13 +1892,15 @@ function step(model: Model, action: Action): Step {
       return [{ ...opened, ctx: { ...ctx, helplines: { status: 'loading' } } }, [{ type: 'helplines' }]]
     }
     case 'confirm/open': {
-      if (!confirmAllowed(model, action.kind, action.revoke)) return [model, NONE]
+      if (!confirmAllowed(model, action.kind, action.revoke, action.summary)) return [model, NONE]
       const overlay: Overlay = {
         o: 'confirm',
         kind: action.kind,
         revoke: action.revoke ?? null,
         leaveTo: action.kind === 'leave' ? (action.leaveTo ?? 'home') : null,
         back: false,
+        // Only where it means something: the other confirms keep their shape.
+        ...(action.summary !== undefined && (action.kind === 'delete-summary' || action.kind === 'revisit-restart') ? { summary: action.summary } : {}),
       }
       const top = topOverlay(model)
       // account → confirm(logout | delete-account | revoke) is the only second level (§2.5).
@@ -1554,6 +1967,34 @@ function step(model: Model, action: Action): Step {
         [{ type: 'abort', target: 'all' }, { type: 'announcer/clear' }],
       ]
     }
+    case 'journal/open':
+      if (!canOpenJournal(state)) return [model, NONE]
+      return openJournal(model, action.tz)
+    case 'journal/back':
+    case 'journal/search':
+    case 'journal/tag':
+    case 'journal/more':
+    case 'journal/retry':
+    case 'journal/list-ok':
+    case 'journal/list-fail':
+    case 'journal/tags-ok':
+    case 'journal/tags-fail':
+    case 'journal/week':
+    case 'journal/week-retry':
+    case 'journal/week-ok':
+    case 'journal/week-fail':
+    case 'journal/edit':
+    case 'journal/edit-update':
+    case 'journal/edit-add':
+    case 'journal/edit-cancel':
+    case 'journal/edit-save':
+    case 'journal/patch-ok':
+    case 'journal/patch-fail':
+    case 'journal/delete-ok':
+    case 'journal/delete-fail':
+    case 'journal/revisit':
+      // Only on the diary: an answer that comes after it was left changes nothing.
+      return state.s === 'journal' ? (journalStep(model, state, action) ?? [model, NONE]) : [model, NONE]
     case 'revoke/fail':
       // The same for a late failure: a 401 must not turn «акаунт видалено» into the sign-in screen.
       if (!accountReachable(model)) return [withoutRevoke(model), NONE]

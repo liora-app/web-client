@@ -185,7 +185,8 @@
               <p class="banner__text">Умови щойно оновилися. Перегляньте, будь ласка, текст ще раз і підтвердьте.</p>
             </div>
             <div class="banner" data-el="consent-resume" role="status" tabindex="-1" hidden>
-              <p class="banner__text">Щоб продовжити, потрібна ваша згода. Розмова на місці — після згоди те, що ви почали, продовжиться само.</p>
+              <p class="banner__text" data-el="consent-resume-talk">Щоб продовжити, потрібна ваша згода. Розмова на місці — після згоди те, що ви почали, продовжиться само.</p>
+              <p class="banner__text" data-el="consent-resume-patch" hidden>Щоб зберегти зміни в щоденнику, потрібна ваша згода. Після неї вони збережуться самі.</p>
             </div>
             <p class="tag">Перед розмовою</p>
             <h1 class="display-2 screen__title" id="consent-title" tabindex="-1">Що відбувається з тим, що ви напишете</h1>
@@ -585,7 +586,8 @@
             <p class="screen__actions">
               <button class="button button--primary" type="button" data-act="new-chat">Почати нову розмову</button>
             </p>
-            <ul class="arrows" role="list">
+            <ul class="arrows arrows--row" role="list">
+              <li><button type="button" data-act="journal-open">Відкрити щоденник</button></li>
               <li><a href="/">На головну</a></li>
             </ul>
           </section>
@@ -613,8 +615,62 @@
             <p class="screen__actions">
               <button class="button button--primary" type="button" data-act="new-chat">Почати нову розмову</button>
             </p>
-            <ul class="arrows" role="list">
+            <ul class="arrows arrows--row" role="list">
+              <li><button type="button" data-act="journal-open">Відкрити щоденник</button></li>
               <li><a href="/">На головну</a></li>
+            </ul>
+          </section>
+
+          <!-- ============ journal (spec §7.7): the week, search and themes, the records ============ -->
+          <section class="screen screen--journal" data-screen="journal" aria-labelledby="journal-title" hidden>
+            <p class="journal__back">
+              <button class="button button--secondary button--small" type="button" data-act="journal-back">
+                <svg class="button__chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M9.75 3.5 5.25 8l4.5 4.5" /></svg>
+                <span data-el="journal-back-label">До розмови</span>
+              </button>
+            </p>
+            <h1 class="screen__title" id="journal-title" tabindex="-1">Щоденник</h1>
+
+            <!-- The week, counted from saved records only: how many, and the themes as words. No scores. -->
+            <div class="week" data-el="week">
+              <div class="week__head">
+                <h2 class="week__title" id="week-title" data-el="week-title">Цей тиждень</h2>
+                <div class="week__nav" role="group" aria-labelledby="week-title">
+                  <button class="week__step" type="button" data-act="week-prev" aria-label="Попередній тиждень" data-el="week-prev">
+                    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M9.75 3.5 5.25 8l4.5 4.5" /></svg>
+                  </button>
+                  <button class="week__step" type="button" data-act="week-next" aria-label="Наступний тиждень" data-el="week-next">
+                    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6.25 3.5 10.75 8l-4.5 4.5" /></svg>
+                  </button>
+                </div>
+              </div>
+              <p class="week__count" data-el="week-count"></p>
+              <p class="week__themes" data-el="week-themes" data-no-stoplist></p>
+              <p class="status-line" data-el="week-status" role="status"></p>
+              <ul class="arrows" role="list" data-el="week-retry" hidden>
+                <li><button type="button" data-act="week-retry">Спробувати ще раз</button></li>
+              </ul>
+            </div>
+
+            <div class="journal__tools" data-el="journal-tools">
+              <div class="field journal__search">
+                <label class="field__label" for="journal-q">Пошук</label>
+                <input class="field__input" id="journal-q" type="search" autocomplete="off" enterkeyhint="search" placeholder="Слово з назви, тези чи теми" data-el="journal-q" />
+              </div>
+              <fieldset class="journal__themes" data-el="journal-themes" hidden>
+                <legend class="field__label">Теми</legend>
+                <div class="journal__theme-list" data-el="journal-theme-list" data-no-stoplist></div>
+              </fieldset>
+            </div>
+
+            <p class="status-line" data-el="journal-status" role="status"></p>
+            <ul class="arrows" role="list" data-el="journal-retry" hidden>
+              <li><button type="button" data-act="journal-retry">Спробувати ще раз</button></li>
+            </ul>
+            <p class="journal__empty" data-el="journal-empty" hidden></p>
+            <ol class="entries" role="list" aria-label="Записи" data-el="journal-list" data-no-stoplist></ol>
+            <ul class="arrows" role="list" data-el="journal-more" hidden>
+              <li><button type="button" data-act="journal-more">Показати ще</button></li>
             </ul>
           </section>
 
@@ -702,6 +758,10 @@
         </div>
         <div class="sheet__row">
           <h3 class="sheet__label">Щоденник</h3>
+          <!-- The diary page (§7.7): from a conversation with nothing in flight, «Збережено», «Розмову завершено». -->
+          <p class="sheet__open" data-el="account-journal" hidden>
+            <button class="button button--secondary button--small" type="button" data-act="journal-open">Відкрити щоденник</button>
+          </p>
           <p>Завантажте всі збережені тези файлом.</p>
           <ul class="arrows arrows--row" role="list">
             <li><a href="/api/v1/export?format=md" download>Файл .md</a></li>
@@ -887,7 +947,66 @@
       </li>
     </template>
 
-    <!-- Confirm dialogs (spec §3.7.8, §3.8, §3.12, §6.6, §7.2, §7.4, §8.4–8.6). Buttons say what happens. -->
+    <!-- One diary record (§7.7): read, or edited in place. Every text goes in through textContent. -->
+    <template data-tpl="entry">
+      <li class="entry">
+        <div class="entry__view">
+          <p class="entry__meta"></p>
+          <h2 class="entry__title"></h2>
+          <ol class="entry__bullets" role="list"></ol>
+          <p class="entry__themes"></p>
+          <ul class="arrows arrows--row entry__actions" role="list">
+            <li><button type="button" data-act="entry-edit">Редагувати</button></li>
+            <li><button type="button" data-act="entry-copy">Копіювати</button></li>
+            <li data-slot="revisit"><button type="button" data-act="entry-revisit">Повернутися до цього</button></li>
+            <li><button type="button" data-act="entry-delete" aria-haspopup="dialog">Видалити</button></li>
+          </ul>
+        </div>
+        <div class="entry__edit" hidden>
+          <div class="field">
+            <label class="field__label" data-for="title">Назва</label>
+            <input class="field__input field__input--title entry__title-input" type="text" autocomplete="off" />
+            <p class="field-error" data-err="title"></p>
+          </div>
+          <fieldset class="entry__theses">
+            <legend class="field__label">Тези</legend>
+            <ol class="entry__fields" role="list"></ol>
+            <p class="field-error" data-err="bullets"></p>
+            <ul class="arrows" role="list" data-slot="add">
+              <li><button type="button" data-act="entry-bullet-add">+ Додати тезу</button></li>
+            </ul>
+          </fieldset>
+          <div class="field">
+            <label class="field__label" data-for="tags">Теми</label>
+            <input class="field__input entry__tags-input" type="text" autocomplete="off" />
+            <p class="small" data-hint="tags">Через кому.</p>
+            <p class="field-error" data-err="tags"></p>
+          </div>
+          <div class="entry__save">
+            <button class="button button--primary" type="button" data-act="entry-save">Зберегти</button>
+            <button class="button button--secondary" type="button" data-act="entry-cancel">Скасувати</button>
+          </div>
+          <p class="field-error" data-err="edit" role="alert"></p>
+        </div>
+      </li>
+    </template>
+
+    <template data-tpl="entry-thesis">
+      <li class="entry__field">
+        <label class="visually-hidden"></label>
+        <textarea class="field__input entry__thesis-input" rows="2" autocomplete="off"></textarea>
+        <p class="field-error"></p>
+      </li>
+    </template>
+
+    <template data-tpl="theme">
+      <label class="pill">
+        <input class="pill__input" type="radio" name="journal-tag" />
+        <span class="pill__text"></span>
+      </label>
+    </template>
+
+    <!-- Confirm dialogs (spec §3.7.8, §3.8, §3.12, §6.6, §7.2, §7.4, §7.7, §8.4–8.6). Buttons say what happens. -->
     <template data-confirm="end">
       <h2 class="confirm__title" id="confirm-title">Завершити розмову?</h2>
       <p>AI запропонує 3–5 коротких тез. Ви переглянете їх, виправите, якщо треба, і самі вирішите: зберегти в щоденник чи видалити.</p>
@@ -964,6 +1083,24 @@
     <template data-confirm="new-after-crisis">
       <h2 class="confirm__title" id="confirm-title">Почати нову розмову?</h2>
       <p>Текст цієї розмови зникне зі сторінки.</p>
+      <div class="confirm__actions">
+        <button class="button button--primary" type="button" data-act="accept">Почати нову</button>
+        <button class="button button--secondary" type="button" data-act="close" data-focus>Скасувати</button>
+      </div>
+    </template>
+
+    <template data-confirm="delete-summary">
+      <h2 class="confirm__title" id="confirm-title">Видалити запис?</h2>
+      <p>Повернути його не вийде.</p>
+      <div class="confirm__actions">
+        <button class="button button--danger" type="button" data-act="accept">Видалити</button>
+        <button class="button button--secondary" type="button" data-act="close" data-focus>Залишити</button>
+      </div>
+    </template>
+
+    <template data-confirm="revisit-restart">
+      <h2 class="confirm__title" id="confirm-title">Почати нову розмову?</h2>
+      <p>Поточна розмова закриється, і її текст зникне зі сторінки.</p>
       <div class="confirm__actions">
         <button class="button button--primary" type="button" data-act="accept">Почати нову</button>
         <button class="button button--secondary" type="button" data-act="close" data-focus>Скасувати</button>

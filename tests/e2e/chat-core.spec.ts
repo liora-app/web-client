@@ -11,8 +11,11 @@ import { expect, test } from '@playwright/test'
 import {
   GOOGLE_START,
   createApi,
+  patchBody,
+  summariesPath,
   summarizeBody,
   turnBody,
+  weeklyPath,
   type FetchLike,
 } from '../../src/chat/core/api'
 import { countryName } from '../../src/chat/core/country'
@@ -41,11 +44,13 @@ import {
   validateDraft,
   type Draft,
 } from '../../src/chat/core/limits'
+import { formOf, patchOf, searchQuery, shiftDay, tagsFromText } from '../../src/chat/core/journal'
 import { MAX_FRAME_BUFFER, ProtocolError, chatEvents, readFrames, type TurnEvent } from '../../src/chat/core/sse'
 import {
   FALLBACK_SCENARIO,
   INITIAL_MODEL,
   authErrorFrom,
+  canOpenJournal,
   leaveGuard,
   llmInFlight,
   matchesSaved,
@@ -54,6 +59,7 @@ import {
   type Action,
   type ChatState,
   type Effect,
+  type JournalState,
   type Model,
   type State,
 } from '../../src/chat/core/state'
@@ -67,10 +73,10 @@ import {
   type TurnOutcome,
   type TurnProgress,
 } from '../../src/chat/core/turn'
-import type { ConsentState, ScenarioOut, SummaryCreate, SummaryList, SummaryOut, TurnRequest } from '../../src/chat/core/types'
+import type { ConsentState, ScenarioOut, SummaryCreate, SummaryList, SummaryOut, SummaryPatch, TurnRequest, WeeklyReviewOut } from '../../src/chat/core/types'
 // UI modules whose logic needs no DOM to load: what they decide is tested here, the page in CI.
 import { CLEAR_AFTER_MS, createAnnouncer, type Region } from '../../src/chat/ui/announcer'
-import { conversationText, thesesText } from '../../src/chat/ui/clipboard'
+import { conversationText, entryMarkdown, thesesText } from '../../src/chat/ui/clipboard'
 import { sayAnswer, sayRetry } from '../../src/chat/ui/copy'
 import { KEYBOARD_DROP, keyboardInset, keyboardShown } from '../../src/chat/ui/keyboard'
 import { SKY_KEY, parseSky, skyAttribute } from '../../src/ui/sky'
@@ -2106,6 +2112,355 @@ test.describe('state: theses', () => {
   })
 })
 
+// ── The diary (§7.7): the wrappers, the helpers, the screen's steps ──────────────────────────
+
+test.describe('api: the diary', () => {
+  function recorder(responder: (url: string, init: RequestInit) => Response = () => new Response('{}', { status: 200 })) {
+    const calls: { url: string; init: RequestInit }[] = []
+    const fetchFn: FetchLike = async (url, init) => {
+      calls.push({ url, init })
+      return responder(url, init)
+    }
+    return { calls, api: createApi({ fetch: fetchFn }) }
+  }
+
+  test('GET /summaries: limit, cursor, q, tag in this order; a blank q is not sent', async () => {
+    const { calls, api } = recorder(() => new Response(JSON.stringify({ items: [], next_cursor: null }), { status: 200 }))
+    await api.summaries({ limit: 20, cursor: 'c1', q: 'сон', tag: '00000000-0000-4000-9000-000000000101' })
+    await api.summaries({ q: '   ', tag: null })
+    expect(calls.map((c) => c.url)).toEqual([
+      '/api/v1/summaries?limit=20&cursor=c1&q=%D1%81%D0%BE%D0%BD&tag=00000000-0000-4000-9000-000000000101',
+      '/api/v1/summaries?limit=20',
+    ])
+    expect(summariesPath({})).toBe('/summaries?limit=20')
+  })
+
+  test('PATCH /summaries/{id}: the id encoded, the body field by field, tags as {name, source}; DELETE is a 204 without a body', async () => {
+    const { calls, api } = recorder((_url, init) =>
+      init.method === 'DELETE'
+        ? new Response(null, { status: 204 })
+        : new Response(JSON.stringify({ ...SUMMARY, title: 'Нова назва', edited_at: '2026-10-08T10:00:00Z' }), { status: 200 }),
+    )
+    const sloppy = {
+      title: 'Нова назва',
+      bullets: ['одна'],
+      tags: [{ name: 'день', source: 'ai', id: 'tg-1', extra: 1 }],
+      scenario: 'day',
+      created_at: 'x',
+    } as unknown as SummaryPatch
+    const patched = await api.patchSummary('s/1?x', sloppy)
+    expect(patched.ok && patched.data.title).toBe('Нова назва')
+    expect(calls[0]!.url).toBe('/api/v1/summaries/s%2F1%3Fx')
+    expect(calls[0]!.init.method).toBe('PATCH')
+    expect((calls[0]!.init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ title: 'Нова назва', bullets: ['одна'], tags: [{ name: 'день', source: 'ai' }] })
+    // Only what was given: a field left out stays as stored.
+    expect(patchBody({ tags: [] })).toEqual({ tags: [] })
+    expect(Object.keys(patchBody({ title: 't' }))).toEqual(['title'])
+    const removed = await api.deleteSummary('s-1')
+    expect(removed).toMatchObject({ ok: true, data: null, status: 204 })
+    expect(calls[1]).toMatchObject({ url: '/api/v1/summaries/s-1', init: { method: 'DELETE' } })
+    expect((calls[1]!.init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
+  })
+
+  test('GET /tags and GET /reviews/weekly: the query, light checks of the answers', async () => {
+    const tagsApi = createApi({
+      fetch: async () =>
+        new Response(
+          JSON.stringify([
+            { id: 'tg-1', name: 'робота', count: 3 },
+            { id: 'tg-1', name: 'дубль', count: 1 },
+            { id: '', name: 'без id', count: 1 },
+            { id: 'tg-2', name: '  ', count: 1 },
+            { id: 'tg-3', name: 'сон', count: 'x' },
+          ]),
+          { status: 200 },
+        ),
+    })
+    const tags = await tagsApi.tags()
+    expect(tags.ok && tags.data).toEqual([
+      { id: 'tg-1', name: 'робота', count: 3 },
+      { id: 'tg-3', name: 'сон', count: 0 },
+    ])
+    const review = { week_start: '2026-10-05', week_end: '2026-10-12', tz: 'Europe/Kyiv', sessions: 2, prev_sessions: 1, delta: 1, top_tags: [{ name: 'робота', count: 2, prev_count: 0 }, { name: 7 }], recurring_tags: ['робота'], new_tags: [], faded_tags: ['спорт', 3] }
+    const { calls, api } = recorder(() => new Response(JSON.stringify(review), { status: 200 }))
+    const week = await api.weekly({ tz: 'Europe/Kyiv' })
+    await api.weekly({ weekStart: '2026-09-28', tz: 'America/Argentina/Buenos_Aires' })
+    await api.weekly({})
+    expect(calls.map((c) => c.url)).toEqual([
+      '/api/v1/reviews/weekly?tz=Europe%2FKyiv',
+      '/api/v1/reviews/weekly?week_start=2026-09-28&tz=America%2FArgentina%2FBuenos_Aires',
+      '/api/v1/reviews/weekly',
+    ])
+    expect(weeklyPath({ weekStart: null, tz: null })).toBe('/reviews/weekly')
+    expect(week.ok && week.data).toMatchObject({ week_start: '2026-10-05', sessions: 2, top_tags: [{ name: 'робота', count: 2, prev_count: 0 }], faded_tags: ['спорт'] })
+    const broken = await createApi({ fetch: async () => new Response(JSON.stringify({ week_start: 'today', sessions: 1 }), { status: 200 }) }).weekly({})
+    expect(broken.ok === false && broken.error.code).toBe('internal')
+  })
+})
+
+test.describe('journal helpers', () => {
+  test('weeks move on the calendar, not the clock: month and year ends, a leap day', () => {
+    expect(shiftDay('2026-10-19', -7)).toBe('2026-10-12')
+    expect(shiftDay('2026-10-26', 7)).toBe('2026-11-02')
+    expect(shiftDay('2026-12-28', 7)).toBe('2027-01-04')
+    expect(shiftDay('2028-02-26', 7)).toBe('2028-03-04')
+    expect(shiftDay('26.10.2026', 7)).toBeNull()
+  })
+
+  test('the search is what the server takes: trimmed, no NUL, ≤ 200 code points; spaces are no search', () => {
+    expect(searchQuery('  сон \u0000 ')).toBe('сон')
+    expect(searchQuery('   ')).toBe('')
+    expect(codePoints(searchQuery('😀'.repeat(300)))).toBe(MAX_QUERY)
+  })
+
+  test('themes typed as one line: an AI tag keeps its source and stored spelling, a new one is the person’s, repeats go', () => {
+    const own = [
+      { id: 'a', name: 'робота', source: 'ai' as const },
+      { id: 'b', name: 'пам’ять', source: 'user' as const },
+    ]
+    expect(tagsFromText('Робота, памʼять,  сон , , робота', own)).toEqual([
+      { id: 't0', name: 'робота', source: 'ai' },
+      { id: 't1', name: 'пам’ять', source: 'user' },
+      { id: 't2', name: 'сон', source: 'user' },
+    ])
+  })
+
+  test('the PATCH of an edit: nothing changed → no PATCH; a change sends all three fields; a check finds the field', () => {
+    const form = formOf(SUMMARY)
+    expect(form).toEqual({ id: 's-1', title: 'Розмова про день', bullets: ['перша', 'друга', 'третя'], tags: 'день' })
+    expect(patchOf(form, SUMMARY)).toEqual({ ok: true, sent: null })
+    const changed = patchOf({ ...form, bullets: ['перша', '  ', 'третя '], tags: 'день, сон' }, SUMMARY)
+    expect(changed).toEqual({
+      ok: true,
+      sent: {
+        body: { title: 'Розмова про день', bullets: ['перша', 'третя'], tags: [{ name: 'день', source: 'ai' }, { name: 'сон', source: 'user' }] },
+        index: { bulletIndex: ['b0', 'b2'], tagIndex: ['t0', 't1'] },
+      },
+    })
+    const wrong = patchOf({ ...form, title: ' ', tags: 'я'.repeat(41) }, SUMMARY)
+    expect(wrong.ok === false && wrong.issues).toEqual([
+      { field: 'title', reason: 'title-empty' },
+      { field: 't0', reason: 'tag-long' },
+    ])
+  })
+
+  test('the edit form starts masked: the paused number never reaches a field', () => {
+    const numbered: SummaryOut = { ...SUMMARY, title: `Лінія ${PAUSED}`, bullets: [`Дзвонити на ${PAUSED}`], tags: [{ id: 'x', name: PAUSED, source: 'ai' }, { id: 'y', name: 'день', source: 'ai' }] }
+    const form = formOf(numbered)
+    expect(JSON.stringify(form)).not.toContain(PAUSED)
+    expect(form.title).toBe(`Лінія ${PAUSED_LINE_NOTE_SHORT}`)
+    expect(form.tags).toBe('день')
+    expect(entryMarkdown(numbered)).not.toContain(PAUSED)
+  })
+
+  test('one record as Markdown: a heading, the day, the theses as a list, the themes', () => {
+    const md = entryMarkdown({ ...SUMMARY, created_at: '2026-10-07T12:00:00Z' })
+    expect(md).toBe('## Розмова про день\n\n_7 жовтня 2026_\n\n- перша\n- друга\n- третя\n\nТеми: день')
+  })
+})
+
+test.describe('state: the diary', () => {
+  const TZ = 'Europe/Berlin'
+  const REVIEW: WeeklyReviewOut = {
+    week_start: '2026-10-19',
+    week_end: '2026-10-26',
+    tz: TZ,
+    sessions: 2,
+    prev_sessions: 1,
+    delta: 1,
+    top_tags: [{ name: 'день', count: 2, prev_count: 0 }],
+    recurring_tags: ['день'],
+    new_tags: ['день'],
+    faded_tags: [],
+  }
+  const listFx = (effects: readonly Effect[]) => effects.find((e): e is Extract<Effect, { type: 'journal-list' }> => e.type === 'journal-list')!
+  const weekFx = (effects: readonly Effect[]) => effects.find((e): e is Extract<Effect, { type: 'journal-week' }> => e.type === 'journal-week')!
+  const patchFx = (effects: readonly Effect[]) => effects.find((e): e is Extract<Effect, { type: 'patch-summary' }> => e.type === 'patch-summary')!
+  const journalOf = (model: Model): JournalState => {
+    expect(model.state.s).toBe('journal')
+    return model.state as JournalState
+  }
+
+  /** The diary opened from `from`, its first page and week in. */
+  function opened(from: Model = booted()) {
+    const open = run(from, { type: 'journal/open', tz: TZ })
+    const list = listFx(open.effects)
+    const week = weekFx(open.effects)
+    const loaded = run(
+      open.model,
+      { type: 'journal/list-ok', req: list.req, diary: DIARY },
+      { type: 'journal/week-ok', req: week.req, review: REVIEW },
+      { type: 'journal/tags-ok', tags: [{ id: 'tg-1', name: 'день', count: 2 }] },
+    )
+    return { open, model: loaded.model }
+  }
+
+  test('opens lazily from a conversation at rest, «Збережено» and «Розмову завершено» — never while the AI works', () => {
+    const { open } = opened()
+    expect(types(open.effects)).toEqual(['journal-week', 'journal-tags', 'journal-list'])
+    expect(weekFx(open.effects)).toMatchObject({ weekStart: null, tz: TZ })
+    expect(listFx(open.effects)).toMatchObject({ q: '', tag: null, cursor: null })
+    expect(journalOf(open.model)).toMatchObject({ loading: true, tags: { status: 'loading' }, week: { review: { status: 'loading' } } })
+    const streaming = run(booted(), { type: 'chat/send', text: 'Текст' }).model
+    expect(run(streaming, { type: 'journal/open', tz: TZ }).model.state.s).toBe('chat')
+    const saved: Model = { ...booted(), state: { s: 'saved', summary: SUMMARY } }
+    const ended: Model = { ...booted(), state: { s: 'ended' } }
+    expect(canOpenJournal(saved.state) && canOpenJournal(ended.state)).toBe(true)
+    expect(journalOf(run(saved, { type: 'journal/open', tz: null }).model).back).toBeNull()
+    expect(canOpenJournal({ s: 'summarizing', session: chatOf(booted()).session, pending: null, id: 1, busy: 0, until: null, error: null })).toBe(false)
+  })
+
+  test('back to the conversation: the same session and the unsent message; from «Збережено» back is a new conversation', () => {
+    const talk = answered(booted(), 'РОЗМОВА-ПІД-ЩОДЕННИКОМ')
+    const { model } = opened(talk)
+    expect(leaveGuard(model.state)).toBe(true)
+    const back = run(model, { type: 'journal/back' })
+    expect(chatOf(back.model).session).toEqual(chatOf(talk).session)
+    expect(back.effects).toEqual([])
+    const fromSaved = opened({ ...booted(), state: { s: 'saved', summary: SUMMARY } })
+    expect(leaveGuard(fromSaved.model.state)).toBe(false)
+    expect(chatOf(run(fromSaved.model, { type: 'journal/back' }).model).session.messages).toHaveLength(1)
+  })
+
+  test('the week: back a week by week_start, never past this week; a refused zone is retried once with Europe/Kyiv', () => {
+    const { model, open } = opened()
+    expect(journalOf(model).week).toMatchObject({ start: '2026-10-19', current: '2026-10-19' })
+    expect(run(model, { type: 'journal/week', step: 1 }).effects).toEqual([])
+    const prev = run(model, { type: 'journal/week', step: -1 })
+    expect(weekFx(prev.effects)).toMatchObject({ weekStart: '2026-10-12', tz: TZ })
+    const prevOk = run(prev.model, { type: 'journal/week-ok', req: weekFx(prev.effects).req, review: { ...REVIEW, week_start: '2026-10-12', week_end: '2026-10-19' } })
+    const next = run(prevOk.model, { type: 'journal/week', step: 1 })
+    expect(weekFx(next.effects)).toMatchObject({ weekStart: '2026-10-19' })
+
+    const first = weekFx(open.effects)
+    const refused = run(open.model, { type: 'journal/week-fail', req: first.req, error: apiError(422, 'invalid_timezone') })
+    const retry = weekFx(refused.effects)
+    expect(retry).toMatchObject({ weekStart: null, tz: 'Europe/Kyiv' })
+    const again = run(refused.model, { type: 'journal/week-fail', req: retry.req, error: apiError(422, 'invalid_timezone') })
+    expect(again.effects).toEqual([])
+    expect(journalOf(again.model).week.review).toEqual({ status: 'failed' })
+    // A late answer to the first request changes nothing.
+    expect(run(refused.model, { type: 'journal/week-ok', req: first.req, review: REVIEW }).model).toBe(refused.model)
+  })
+
+  test('search, theme and «Показати ще» keep each other; a stale page is ignored; a gone theme resets the filter', () => {
+    const { model } = opened()
+    const search = run(model, { type: 'journal/search', q: '  день \u0000' })
+    expect(listFx(search.effects)).toMatchObject({ q: 'день', tag: null, cursor: null })
+    const tag = run(search.model, { type: 'journal/tag', id: 'tg-1' })
+    const tagFx = listFx(tag.effects)
+    expect(tagFx).toMatchObject({ q: 'день', tag: 'tg-1', cursor: null })
+    // The search's answer comes after the theme's request went: it is not the list any more.
+    expect(run(tag.model, { type: 'journal/list-ok', req: listFx(search.effects).req, diary: DIARY }).model).toBe(tag.model)
+    const page1 = run(tag.model, { type: 'journal/list-ok', req: tagFx.req, diary: { items: [SUMMARY], nextCursor: 'c2' } })
+    const more = run(page1.model, { type: 'journal/more' })
+    expect(listFx(more.effects)).toMatchObject({ q: 'день', tag: 'tg-1', cursor: 'c2' })
+    const page2 = run(more.model, { type: 'journal/list-ok', req: listFx(more.effects).req, diary: { items: [{ ...SUMMARY, id: 's-3' }], nextCursor: null } })
+    expect(journalOf(page2.model).list?.items.map((i) => i.id)).toEqual(['s-1', 's-3'])
+    const gone = run(page2.model, { type: 'journal/tags-ok', tags: [] })
+    expect(listFx(gone.effects)).toMatchObject({ tag: null, cursor: null })
+    const failed = run(page2.model, { type: 'journal/search', q: 'інше' })
+    const failure = run(failed.model, { type: 'journal/list-fail', req: listFx(failed.effects).req, error: apiError(0, 'network') })
+    expect(journalOf(failure.model)).toMatchObject({ failed: true, loading: false })
+    expect(listFx(run(failure.model, { type: 'journal/retry' }).effects)).toMatchObject({ q: 'інше', cursor: null })
+  })
+
+  test('edit: nothing changed closes the form without a PATCH; a change goes field by field, the AI tag still «ai»', () => {
+    const { model } = opened()
+    const edit = run(model, { type: 'journal/edit', id: 's-1' })
+    const form = journalOf(edit.model).edit!.form
+    const same = run(edit.model, { type: 'journal/edit-save' })
+    expect(same.effects).toEqual([])
+    expect(journalOf(same.model).edit).toBeNull()
+    const changed = run(edit.model, { type: 'journal/edit-update', form: { ...form, title: 'Інша назва', tags: 'день, сон' } }, { type: 'journal/edit-save' })
+    const fx = patchFx(changed.effects)
+    expect(fx).toMatchObject({ id: 's-1', body: { title: 'Інша назва', bullets: ['перша', 'друга', 'третя'], tags: [{ name: 'день', source: 'ai' }, { name: 'сон', source: 'user' }] } })
+    expect(journalOf(changed.model).edit).toMatchObject({ saving: true })
+    // One record at a time.
+    expect(run(changed.model, { type: 'journal/edit', id: 's-2' }).model).toBe(changed.model)
+    const stored = { ...SUMMARY, title: 'Інша назва', edited_at: '2026-10-08T10:00:00Z' }
+    const ok = run(changed.model, { type: 'journal/patch-ok', req: fx.req, summary: stored })
+    expect(journalOf(ok.model)).toMatchObject({ edit: null, notice: { kind: 'saved' } })
+    expect(journalOf(ok.model).list?.items[0]).toEqual(stored)
+    expect(types(ok.effects)).toEqual(['journal-week', 'journal-tags', 'diary'])
+    expect(ok.model.ctx.diary).toEqual({ status: 'loading' })
+  })
+
+  test('PATCH errors: a 422 lands on its field; 404 drops the record; 403 consent_required from «Збережено» resumes the same PATCH', () => {
+    const fromSaved = opened({ ...booted(), state: { s: 'saved', summary: SUMMARY } }).model
+    const edit = run(fromSaved, { type: 'journal/edit', id: 's-1' })
+    const form = journalOf(edit.model).edit!.form
+    const save = run(edit.model, { type: 'journal/edit-update', form: { ...form, bullets: ['', 'друга', 'нова третя'] } }, { type: 'journal/edit-save' })
+    const fx = patchFx(save.effects)
+    expect(fx.body.bullets).toEqual(['друга', 'нова третя'])
+    const invalid = run(save.model, { type: 'journal/patch-fail', req: fx.req, error: apiError(422, 'validation_error', { fields: ['bullets.1'] }) })
+    expect(journalOf(invalid.model).edit).toMatchObject({ saving: false, error: null, issues: [{ field: 'b2', reason: 'bullet-invalid' }] })
+    const gone = run(save.model, { type: 'journal/patch-fail', req: fx.req, error: apiError(404, 'not_found') })
+    expect(journalOf(gone.model)).toMatchObject({ edit: null, notice: { kind: 'gone' } })
+    expect(journalOf(gone.model).list?.items.map((i) => i.id)).toEqual(['s-2'])
+
+    const resume = run(save.model, { type: 'journal/patch-fail', req: fx.req, error: apiError(403, 'consent_required', { missing: ['data_processing', 'age_18'] }) })
+    expect(resume.model.state).toMatchObject({ s: 'consent', mode: 'resume', session: null, resume: { kind: 'patch' } })
+    expect(resume.effects).toEqual([{ type: 'consents', purpose: 'fresh' }])
+    const fresh = run(resume.model, { type: 'consents/ok', purpose: 'fresh', consents: { ...CONSENTS_OK, missing: ['data_processing', 'age_18'] } })
+    const agree = run(fresh.model, { type: 'consent/agree', checked: [...KINDS] })
+    const granted = run(agree.model, { type: 'grant/ok', consents: CONSENTS_OK })
+    expect(journalOf(granted.model)).toMatchObject({ back: null, edit: { saving: true } })
+    expect(patchFx(granted.effects).body).toEqual(fx.body)
+    expect(run(save.model, { type: 'journal/patch-fail', req: fx.req, error: apiError(401, 'unauthenticated') }).model.state.s).toBe('signed-out')
+  })
+
+  test('delete: a confirm that names the record, one DELETE, the record gone; a 404 is gone too', () => {
+    const { model } = opened()
+    const ask = run(model, { type: 'confirm/open', kind: 'delete-summary', summary: 's-2' })
+    expect(ask.model.overlay).toEqual([{ o: 'confirm', kind: 'delete-summary', revoke: null, leaveTo: null, back: false, summary: 's-2' }])
+    const accepted = run(ask.model, { type: 'confirm/accept' })
+    expect(accepted.model.overlay).toEqual([])
+    expect(accepted.effects).toEqual([{ type: 'delete-summary', id: 's-2' }])
+    expect(journalOf(accepted.model).deleting).toBe('s-2')
+    expect(run(accepted.model, { type: 'confirm/open', kind: 'delete-summary', summary: 's-1' }).model.overlay).toEqual([])
+    const done = run(accepted.model, { type: 'journal/delete-ok', id: 's-2' })
+    expect(journalOf(done.model)).toMatchObject({ deleting: null, notice: { kind: 'deleted' } })
+    expect(journalOf(done.model).list?.items.map((i) => i.id)).toEqual(['s-1'])
+    expect(types(done.effects)).toEqual(['journal-week', 'journal-tags', 'diary'])
+    const missing = run(accepted.model, { type: 'journal/delete-fail', id: 's-2', error: apiError(404, 'not_found') })
+    expect(journalOf(missing.model).list?.items.map((i) => i.id)).toEqual(['s-1'])
+    const failed = run(accepted.model, { type: 'journal/delete-fail', id: 's-2', error: apiError(0, 'network') })
+    expect(journalOf(failed.model)).toMatchObject({ deleting: null, notice: { kind: 'delete-failed', error: { code: 'network' } } })
+  })
+
+  test('«Повернутися до цього»: a revisit conversation with that one record; over a conversation under way, a confirm first', () => {
+    const { model } = opened()
+    const go = run(model, { type: 'journal/revisit', id: 's-2' })
+    const c = chatOf(go.model)
+    expect(c.session).toMatchObject({ scenario: 'revisit', revisitIds: ['s-2'] })
+    expect(go.effects).toEqual([])
+    const sent = run(go.model, { type: 'chat/send', text: 'Повертаюся' })
+    expect(turnEffect(sent.effects).body.revisit_summary_ids).toEqual(['s-2'])
+
+    const talk = opened(answered(booted())).model
+    const ask = run(talk, { type: 'journal/revisit', id: 's-1' })
+    expect(ask.model.overlay).toEqual([{ o: 'confirm', kind: 'revisit-restart', revoke: null, leaveTo: null, back: false, summary: 's-1' }])
+    const replaced = run(ask.model, { type: 'confirm/accept' })
+    expect(chatOf(replaced.model).session).toMatchObject({ scenario: 'revisit', revisitIds: ['s-1'] })
+    expect(chatOf(replaced.model).session.messages).toHaveLength(1)
+    expect(types(replaced.effects)).toEqual(['composer/clear', 'announcer/clear'])
+    // Without the revisit scenario (GET /scenarios failed) there is nothing to go back with.
+    const onlyFree = opened(run(INITIAL_MODEL, { type: 'boot', search: '' }, { type: 'me/ok', purpose: 'boot', me: ME }, { type: 'consents/ok', purpose: 'boot', consents: CONSENTS_OK }, { type: 'scenarios/fail', error: apiError(502, 'upstream_unavailable') }).model).model
+    expect(run(onlyFree, { type: 'journal/revisit', id: 's-1' }).model).toBe(onlyFree)
+  })
+
+  test('a 401 on the diary ends the session with the conversation kept; answers after leaving change nothing', () => {
+    const talk = answered(booted(), 'ЗБЕРЕЖЕНА-РОЗМОВА')
+    const open = run(talk, { type: 'journal/open', tz: TZ })
+    const expired = run(open.model, { type: 'journal/list-fail', req: listFx(open.effects).req, error: apiError(401, 'unauthenticated') })
+    expect(expired.model.state).toMatchObject({ s: 'session-expired', stale: { messages: chatOf(talk).session.messages } })
+    const back = run(open.model, { type: 'journal/back' })
+    expect(run(back.model, { type: 'journal/list-ok', req: listFx(open.effects).req, diary: DIARY }).model).toBe(back.model)
+  })
+})
+
 test.describe('state: crisis and invariants', () => {
   function crisisModel() {
     const sent = run(booted(), { type: 'chat/send', text: 'Синтетична кризова фраза' })
@@ -2134,6 +2489,11 @@ test.describe('state: crisis and invariants', () => {
       { type: 'revisit/open' },
       { type: 'page/show', persisted: false },
       { type: 'page/left' },
+      { type: 'journal/open', tz: 'Europe/Kyiv' },
+      { type: 'journal/back' },
+      { type: 'journal/revisit', id: 's-1' },
+      { type: 'confirm/open', kind: 'delete-summary', summary: 's-1' },
+      { type: 'confirm/open', kind: 'revisit-restart', summary: 's-1' },
     ]
     for (const action of actions) {
       const [next] = reduce(crisis, action)
@@ -2915,7 +3275,7 @@ test.describe('source rules', () => {
   test('src/chat/core/**: no DOM, browser globals, storage, three.js, UI imports or console', () => {
     const core = sources('chat/core')
     expect(core.map((f) => f.path).sort()).toEqual(
-      ['api', 'country', 'errors', 'helplines', 'limits', 'sse', 'state', 'turn', 'types'].map((n) => `src/chat/core/${n}.ts`),
+      ['api', 'country', 'errors', 'helplines', 'journal', 'limits', 'sse', 'state', 'turn', 'types'].map((n) => `src/chat/core/${n}.ts`),
     )
     for (const pattern of [
       /\bdocument\b/,

@@ -383,8 +383,9 @@ export const SAY_SAVED = 'Збережено в щоденник'
 export const COPIED = 'Скопійовано'
 /** On the button for 2 s; copyFailed() is what the live region says. */
 export const COPY_FAILED_LABEL = 'Не вдалося скопіювати'
-export function copyFailed(kind: 'talk' | 'theses' | 'reply'): string {
+export function copyFailed(kind: 'talk' | 'theses' | 'reply' | 'entry'): string {
   if (kind === 'theses') return 'Не вдалося скопіювати. Виділіть тези вручну.'
+  if (kind === 'entry') return 'Не вдалося скопіювати. Виділіть запис вручну.'
   if (kind === 'reply') return 'Не вдалося скопіювати. Виділіть текст відповіді вручну.'
   return 'Не вдалося скопіювати. Виділіть текст розмови вручну.'
 }
@@ -434,4 +435,86 @@ export function dayMonth(iso: string): string {
 /** «7 жовтня 2026» — the first line of a copied conversation (§3.8). */
 export function today(now: Date = new Date()): string {
   return new Intl.DateTimeFormat('uk', { day: 'numeric', month: 'long', year: 'numeric' }).format(now).replace(/\s*р\.$/, '')
+}
+
+// ── The diary (§7.7) ─────────────────────────────────────────────────────────────────────────
+
+export const JOURNAL_BACK = 'До розмови'
+export const JOURNAL_NEW = 'Нова розмова'
+export const JOURNAL_EMPTY = 'Тут зʼявляться тези, які ви збережете після розмови.'
+export const JOURNAL_LOADING = 'Завантажуємо записи…'
+export const JOURNAL_FAILED = 'Не вдалося завантажити записи.'
+export const JOURNAL_SAVED = 'Зміни збережено.'
+export const JOURNAL_DELETED = 'Запис видалено.'
+export const JOURNAL_GONE = 'Цього запису вже немає в щоденнику.'
+export const WEEK_THIS = 'Цей тиждень'
+export const WEEK_FAILED = 'Не вдалося завантажити огляд тижня.'
+/** Under the themes field of an edit: a wrong theme, whichever rule it broke. */
+export const THEMES_ISSUE = 'Теми: до 10, кожна до 40 символів.'
+
+/** Nothing for this search or this theme (the diary itself is not empty). */
+export function journalNothing(q: string): string {
+  return q !== '' ? `За запитом «${q}» нічого не знайшлося.` : 'Записів із цією темою немає.'
+}
+
+const RECORDS: Readonly<Record<string, string>> = { one: 'збережений запис', few: 'збережені записи', many: 'збережених записів', other: 'збережених записів' }
+
+/** The week in one line: the saved records counted, nothing compared, nothing judged. */
+export function weekCount(n: number): string {
+  if (n <= 0) return 'Збережених записів немає.'
+  return `${n} ${RECORDS[plural.select(n)] ?? RECORDS.many}`
+}
+
+export function weekThemes(names: readonly string[]): string {
+  return names.length === 0 ? '' : `Теми: ${names.map(maskPausedLine).join(', ')}`
+}
+
+const DAY_MONTH_UTC = new Intl.DateTimeFormat('uk', { day: 'numeric', month: 'long', timeZone: 'UTC' })
+const DAY_UTC = new Intl.DateTimeFormat('uk', { day: 'numeric', timeZone: 'UTC' })
+const noon = (day: string): Date => new Date(`${day}T12:00:00Z`)
+
+/** «13–19 жовтня», «29 вересня – 5 жовтня», with the year when it is not this week's year.
+ *  `last` is the Sunday (the server's week_end is the next Monday). */
+export function weekRange(first: string, last: string, currentYear: string | null): string {
+  const a = noon(first)
+  const b = noon(last)
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return ''
+  const year = currentYear !== null && last.slice(0, 4) !== currentYear ? ` ${last.slice(0, 4)}` : ''
+  if (first.slice(0, 7) === last.slice(0, 7)) return `${DAY_UTC.format(a)}–${DAY_MONTH_UTC.format(b)}${year}`
+  return `${DAY_MONTH_UTC.format(a)} – ${DAY_MONTH_UTC.format(b)}${year}`
+}
+
+const ENTRY_DAY = new Intl.DateTimeFormat('uk', { day: 'numeric', month: 'long', year: 'numeric' })
+
+/** «7 жовтня 2026» — the day a record was saved, on the page's clock. */
+export function entryDay(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  return ENTRY_DAY.format(date).replace(/\s*р\.$/, '')
+}
+
+/** «7 жовтня 2026 · змінено» */
+export function entryMeta(iso: string, edited: boolean): string {
+  const day = entryDay(iso)
+  return edited ? `${day} · змінено` : day
+}
+
+/** Under «Зберегти» of an edit (§7.7). A 422 that maps to a field is shown on the field. */
+export function editError(error: UiError, csrfFailures: number): ErrorText {
+  switch (error.code) {
+    case 'network':
+      return line(NO_CONNECTION)
+    case 'timeout':
+      return line('Відповідь не прийшла. Спробуйте ще раз — ваші правки на місці.')
+    case 'validation_error':
+      return line(GENERIC, true)
+    default:
+      return shared(error, csrfFailures) ?? line('Не вдалося зберегти зміни. Спробуйте ще раз.', true)
+  }
+}
+
+/** The line of the diary after a failed «Видалити». */
+export function deleteError(error: UiError, csrfFailures: number): ErrorText {
+  if (error.code === 'network') return line(NO_CONNECTION)
+  return shared(error, csrfFailures) ?? line('Не вдалося видалити запис. Спробуйте ще раз.', true)
 }
