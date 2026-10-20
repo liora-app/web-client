@@ -665,7 +665,7 @@ export async function axe(page: Page, label: string): Promise<void> {
       new Promise((resolve) => setTimeout(resolve, 2500)),
     ]),
   )
-  const results =await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze()
+  const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze()
   const summary = results.violations.map((v) => `${v.id} (${v.impact}): ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
   expect(summary, `axe: ${label}`).toEqual([])
 }

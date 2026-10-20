@@ -83,8 +83,9 @@ export function createPresence(
     sync(model, helpOpen) {
       lastModel = model
       lastHelp = helpOpen
-      // A new screen (the crisis above all) ends the typing at once.
-      if (model.state.s !== 'chat' && listening) {
+      // A new screen (the crisis above all) ends the typing at once, and so does a sent message: the
+      // field is empty, and a quick answer must not come back to «Ви пишете…».
+      if (listening && (model.state.s !== 'chat' || presenceOf(model) !== 'idle')) {
         listening = false
         window.clearTimeout(listenTimer)
       }

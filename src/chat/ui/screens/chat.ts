@@ -65,6 +65,19 @@ function detachable(node: HTMLElement): Readonly<{ detach(): void; attach(): voi
   }
 }
 
+/** A toggletip or the tools menu left open in a part that goes away (the head after the first
+ *  message, a field replaced by a block, the screen itself — the crisis above all) closes with it:
+ *  hidden, it would still be open and come back open with that part. */
+function closePopovers(scope: HTMLElement): void {
+  for (const node of Array.from(scope.querySelectorAll<HTMLElement>('[popover]'))) {
+    try {
+      if (node.matches(':popover-open')) node.hidePopover()
+    } catch {
+      // An engine without popovers: nothing there is open.
+    }
+  }
+}
+
 /** The first «Надіслати» takes the new conversation's head away; the transcript glides up into its
  *  place instead of jumping (a FLIP on the list, spec §3.6). Only with motion. */
 const COLLAPSE_MS = 240
@@ -185,6 +198,7 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       // On a phone the field may hold the keyboard open: let it close before the field goes.
       const active = document.activeElement
       if (active instanceof HTMLElement && root.contains(active)) active.blur()
+      closePopovers(root)
       glide?.finish()
       glide = null
       transcript.reset()
@@ -281,6 +295,7 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
 
       // «Не зберігати» (§3.6): until the first message.
       show(nosave, !started)
+      if (started) closePopovers(nosave)
       const toggle = nosave.querySelector<HTMLElement>('[role="switch"]')!
       setAttr(toggle, 'aria-checked', String(s.noSave))
       setText(el('nosave-state'), s.noSave ? 'Увімкнено' : 'Вимкнено')
@@ -305,6 +320,7 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       // on the screen: the line under the field goes with the field (§3.7.1).
       const composerShown = blockText === '' && !emptyDiary
       show(composer.element, composerShown)
+      if (!composerShown) closePopovers(composer.element)
       show(el('chat-ai'), !composerShown)
       // Starters: a new conversation with the field there to take them (§3.6).
       renderStarters(s.scenario, !started && composerShown)

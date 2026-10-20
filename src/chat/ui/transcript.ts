@@ -73,9 +73,24 @@ export type TranscriptHooks = Readonly<{
 
 const LABEL: Readonly<Record<Msg['role'], string>> = { assistant: 'AI', user: 'Ви' }
 
-/** A tail that may be the start of a phone number: digits (with spaces, brackets, dashes, a plus)
- *  up to the end of the text so far. It waits for the next character (or `done`). */
-const NUMBER_TAIL = /[\d+(][\d\s()\-]*$/u
+/** A tail that may be the start of a phone number, read as broadly as the mask of core/helplines.ts
+ *  reads one: digits of any script (fullwidth, superscript, circled…), a Cyrillic «З»/«з» for a 3,
+ *  marks drawn on a digit (keycap, strike-through), and what may join the groups — spaces, brackets,
+ *  a plus, dashes, dots, invisible format characters — up to the end of the text so far. It waits
+ *  for the next character (or `done`); holding back too much costs a frame, too little shows part
+ *  of the number. */
+const NUMBER_TAIL =
+  /[\p{N}+(\u0417\u0437][\p{N}\p{M}\s()+\-.\u00AD\u00B7\u061C\u180E\u2000-\u200F\u2010-\u2015\u2024\u2027\u202A-\u202F\u205F-\u206F\u2212\u3000\uFE58\uFE63\uFEFF\uFF0D\uFF0E\u0417\u0437]*$/u
+/** How far back that tail is looked for: a number with its marks and gaps is far shorter, and the
+ *  search stays short on a long answer full of digits. */
+const TAIL_WINDOW = 96
+
+/** The text so far without a number that may still be coming in. */
+function holdNumberTail(text: string): string {
+  const from = Math.max(0, text.length - TAIL_WINDOW)
+  const match = NUMBER_TAIL.exec(text.slice(from))
+  return match === null ? text : text.slice(0, from + match.index)
+}
 
 /** Writes `full` into the container as paragraphs, appending where it can. */
 function writeText(container: HTMLElement, state: Para, full: string): void {
@@ -531,7 +546,7 @@ export class Transcript {
     // The whole answer so far, masked: digits that came in separate tokens are one number here. A
     // number still coming in (a trailing run of digits) waits until its end is in.
     const masked = shown('assistant', this.target)
-    writeLive(textBox(this.streamLi), this.streamText, masked.replace(NUMBER_TAIL, ''), motionAllowed() && !document.hidden)
+    writeLive(textBox(this.streamLi), this.streamText, holdNumberTail(masked), motionAllowed() && !document.hidden)
     this.hooks.onWrite?.()
     if (this.target === '') return
     const now = performance.now()

@@ -65,6 +65,13 @@ export function createScrollAnchor(parts: AnchorParts): ScrollAnchor {
     root.style.setProperty('--header-h', `${Math.round(shownHeight(header))}px`)
     root.style.setProperty('--session-h', `${Math.round(shownHeight(session))}px`)
     root.style.setProperty('--composer-h', `${Math.round(shownHeight(composer))}px`)
+    // A classic scrollbar keeps its gutter (scrollbar-gutter: stable) in the page's background
+    // colour; only then does the sky ease into that colour at the right edge (chat.css,
+    // html[data-gutter]). Overlay scrollbars — phones, macOS — have none, and the same fade there
+    // would be a dark band down the right edge. The root's box ends where the gutter begins
+    // (clientWidth does not: Chromium leaves a reserved but empty gutter out of it). The header
+    // spans that box, so its observer sees the gutter come and go.
+    root.toggleAttribute('data-gutter', window.innerWidth - root.getBoundingClientRect().width > 1)
   }
 
   /** The bottom of what the last message shows (its body, not the room under it). */

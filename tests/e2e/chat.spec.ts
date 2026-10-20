@@ -236,13 +236,58 @@ test.describe('turn', () => {
     // The last digit comes in its own token: the answer so far is masked as a whole.
     await stream.write(token(`${PAUSED.slice(3)}, але найперше — 112.`))
     const masked = `Можна подзвонити на ${PAUSED_LINE_NOTE}, але найперше — 112.`
-    await expect(reply).toHaveText(masked)
+    // «112.» at the very end may be a number still coming in too: it waits for `done`.
+    await expect(reply).toHaveText(`Можна подзвонити на ${PAUSED_LINE_NOTE}, але найперше —`)
     expect((await markup(page)).includes(PAUSED)).toBe(false)
     await stream.write(done())
     await answered(page, 1)
     await expect(reply).toHaveText(masked)
     await expect.poll(async () => (await announced(page)).includes(`Відповідь AI: ${masked}`)).toBe(true)
     expect((await announced(page)).some((text) => text.includes(PAUSED))).toBe(false)
+  })
+
+  test('#2c a number still coming in waits whatever joins its digits: a dash, a dot, a Cyrillic «З», fullwidth digits', async ({ page }) => {
+    const stream = await streamTurns(page)
+    await openChat(page)
+    // Every state the answer's text passes through, as the screen shows it.
+    await page.evaluate(() => {
+      const seen: string[] = []
+      ;(window as unknown as { __seen: string[] }).__seen = seen
+      const list = document.querySelector('[data-el="talk"]')!
+      new MutationObserver(() => {
+        // The answer of this turn: the last one written live (earlier answers keep the class).
+        const live = Array.from(list.querySelectorAll('li.said--live .said__text')).at(-1)
+        if (live) seen.push(live.textContent ?? '')
+      }).observe(list, { subtree: true, childList: true, characterData: true })
+    })
+    const [a, b, c, d] = [...PAUSED]
+    const wide = (digits: string): string => [...digits].map((digit) => String.fromCodePoint(0xff10 + Number(digit))).join('')
+    const cases: readonly (readonly string[])[] = [
+      [a!, `${b}–${c}`, d!],
+      [`${a}${b}.`, `${c}${d}`],
+      // A Cyrillic capital Ze, which the mask reads as a 3 among digits.
+      [`${a}${b}`, String.fromCodePoint(0x0417), d!],
+      [wide(a!), wide(`${b}${c}`), wide(d!)],
+    ]
+    const frames = (): Promise<unknown> => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    for (const [i, parts] of cases.entries()) {
+      await send(page, `${USER} ${i + 1}`)
+      await stream.requests(i + 1)
+      await stream.write(meta() + token('Подзвоніть на '))
+      for (const part of parts) {
+        await stream.write(token(part))
+        await frames()
+      }
+      await stream.write(token(' або 112.'))
+      await frames()
+      await stream.write(done())
+      await answered(page, i + 1)
+      await expect(aiMessages(page).nth(i + 1).locator('.said__text')).toHaveText(`Подзвоніть на ${PAUSED_LINE_NOTE} або 112.`)
+    }
+    // No digit of the number ever stood on the screen: only «112», after the number was masked.
+    const seen = await page.evaluate(() => (window as unknown as { __seen: string[] }).__seen)
+    expect(seen.length).toBeGreaterThan(cases.length * 2)
+    expect(seen.filter((text) => /\p{N}/u.test(text.replace(/112\.?$/u, '')))).toEqual([])
   })
 
   test('#2 ★ «: ping» before meta, between tokens and before done changes nothing', async ({ page, api }) => {
@@ -2562,6 +2607,48 @@ test.describe('presentation', () => {
     await check(page.getByRole('button', { name: 'Про цю розмову' }), page.locator('#composer-tip'), 'Liora не зберігає цю розмову')
     // The field's description is the same sentence, opened or not.
     await expect(composer(page)).toHaveAccessibleDescription(/Liora не зберігає цю розмову/)
+  })
+
+  test('#61 a toggletip left open closes with its part: «Не зберігати» after the first message, everything on the crisis', async ({ page, api }) => {
+    api.on('POST /chat/turn', { sse: reply() }, { sse: meta() + crisis('keyword') })
+    await openChat(page)
+    const nosaveTip = page.locator('#nosave-tip')
+    const open = (tip: Locator): Promise<boolean> => tip.evaluate((node) => node.matches(':popover-open'))
+    // From the keyboard only: nothing outside is pressed, so no light dismiss closes it first.
+    await page.getByRole('button', { name: 'Що означає «Не зберігати»' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(nosaveTip).toBeVisible()
+    await composer(page).focus()
+    await page.keyboard.type(USER)
+    expect(await open(nosaveTip)).toBe(true)
+    await page.keyboard.press('Control+Enter')
+    await answered(page, 1)
+    expect(await open(nosaveTip)).toBe(false)
+    // The note under the field, open when the crisis comes: the crisis closes it too.
+    const composerTip = page.locator('#composer-tip')
+    await page.getByRole('button', { name: 'Про цю розмову' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(composerTip).toBeVisible()
+    await composer(page).focus()
+    await page.keyboard.type(CRISIS_TEXT)
+    await page.keyboard.press('Control+Enter')
+    await onScreen(page, 'crisis')
+    const left = await page.evaluate(() => Array.from(document.querySelectorAll('[popover]')).filter((node) => node.matches(':popover-open')).map((node) => node.id))
+    expect(left).toEqual([])
+  })
+
+  test('#62 the sky eases into the page colour at the right edge only where a scrollbar keeps a gutter', async ({ page }) => {
+    await openChat(page)
+    // A gutter: the fixed sky stops short of the window's right edge (the gutter shows the page's
+    // background colour there).
+    const edge = await page.evaluate(() => ({
+      gutter: window.innerWidth - document.querySelector('.stage')!.getBoundingClientRect().right > 1,
+      marked: document.documentElement.hasAttribute('data-gutter'),
+      fade: getComputedStyle(document.querySelector('.stage')!, '::after').content,
+    }))
+    expect(edge.marked).toBe(edge.gutter)
+    // Overlay scrollbars (the phone): no fade, so no darker band down the right edge.
+    expect(edge.fade === 'none').toBe(!edge.gutter)
   })
 
   test('#60 a screen rises in only with motion; the crisis stands in one frame, motion or not', async ({ page, api }) => {

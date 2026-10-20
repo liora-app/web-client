@@ -31,8 +31,10 @@ html {
 
 /* No strip of another colour in the scrollbar's gutter: the gutter shows only the page's background
    colour (fixed layers and the root's images stop where it begins), so the sky and its vignette
-   ease into exactly that colour over their last 3rem on the right. No seam, wherever the gutter is. */
-.chat-page .stage::after {
+   ease into exactly that colour over their last 3rem on the right. Only where there is a gutter
+   (html[data-gutter], measured in src/chat/ui/scroll-anchor.ts): with overlay scrollbars — phones,
+   macOS — the sky runs to the edge, and the same fade would be a dark band there. */
+html[data-gutter] .chat-page .stage::after {
   content: '';
   position: absolute;
   inset: 0 0 0 auto;
@@ -41,7 +43,7 @@ html {
   pointer-events: none;
 }
 
-.chat-page .vignette {
+html[data-gutter] .chat-page .vignette {
   background:
     linear-gradient(90deg, var(--color-fade-0) calc(100% - 3rem), var(--color-bg)),
     radial-gradient(130% 110% at 50% 42%, var(--color-vignette-0) 52%, var(--color-vignette) 100%);
@@ -744,6 +746,10 @@ html[data-motion='on'] .chat-page .screen:not(.screen--crisis, [data-screen='boo
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   rotate: 45deg;
+}
+
+/* The chevron turns only with motion; without it, it simply points the other way. */
+html[data-motion='on'] .more summary::after {
   transition: rotate var(--dur-2) var(--ease-standard), margin var(--dur-2) var(--ease-standard);
 }
 
@@ -1078,7 +1084,8 @@ html[data-motion='on'] .more[open] .more__body {
   gap: 0.55rem;
   min-height: 2.5rem;
   padding: 0 1.05rem;
-  border: 1px solid var(--color-line-strong);
+  /* >= 3:1 on the page in both themes, like the starters under it (the fields' token). */
+  border: 1px solid var(--color-field-border);
   border-radius: 999px;
   background: var(--color-surface);
   font-size: 0.9375rem;
@@ -1185,7 +1192,8 @@ html[data-motion='on'] .more[open] .more__body {
   min-height: 2.5rem;
   max-width: 100%;
   padding: 0.35rem 0.95rem;
-  border: 1px solid var(--color-line-strong);
+  /* The chip's edge is what makes it a button: >= 3:1 on the page in both themes (the fields' token). */
+  border: 1px solid var(--color-field-border);
   border-radius: 1.25rem;
   background: transparent;
   font-family: var(--font-body);
@@ -1201,7 +1209,7 @@ html[data-motion='on'] .more[open] .more__body {
 }
 
 .starter:hover {
-  border-color: var(--color-field-border);
+  border-color: var(--color-text-muted);
   background: var(--color-surface);
   color: var(--color-text);
 }
@@ -1764,6 +1772,13 @@ html[data-motion='on'] .said--waiting .said__dots i:nth-child(3) {
   cursor: pointer;
   transition:
     color var(--dur-1) var(--ease-standard),
+    background-color var(--dur-1) var(--ease-standard);
+}
+
+/* It fades in under the pointer only with motion; without it, it is simply there. */
+html[data-motion='on'] .said__copy {
+  transition:
+    color var(--dur-1) var(--ease-standard),
     background-color var(--dur-1) var(--ease-standard),
     opacity var(--dur-2) var(--ease-standard);
 }
@@ -2029,7 +2044,7 @@ html[data-screen='chat'] .chat__text {
 }
 
 .composer__tools:hover,
-.composer__tools[aria-expanded='true'] {
+.composer__field:has(#composer-tools:popover-open) .composer__tools {
   color: var(--color-text);
   background: var(--color-hover);
 }
