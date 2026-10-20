@@ -8,6 +8,7 @@ import type { GlControl } from '../../gl/core/boot'
 import type { PresenceHandle } from '../../gl/presence'
 import type { SkyControl } from '../../ui/sky'
 import type { SoundControl } from '../../ui/sound'
+import { skipThemeTransition } from '../../ui/theme'
 import type { ThemePicker } from '../../ui/theme-picker'
 import { hasUserMessage, sessionOf, type Action, type Model, type State } from '../core/state'
 import { createDialogs, type Dialogs } from './dialogs'
@@ -156,8 +157,10 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky,
       // The crisis keeps the person's theme but takes off the sky preset (and, in chat.css, the
       // haze, the grain and the vignette): the help contacts stand on the theme's plain sky (§9.2).
       sky?.setSuppressed(s === 'crisis')
-      // The «Вигляд» menu does not stay open over a new screen — over the crisis above all.
+      // The «Вигляд» menu does not stay open over a new screen — over the crisis above all — and a
+      // theme cross-fade still running ends at once: a screen comes in one frame (§0).
       theme?.close()
+      skipThemeTransition()
     }
     // «Акаунт» only with a live session: not after a 401 either (§8.1).
     const signedIn = model.ctx.me !== null && s !== 'signed-out' && s !== 'account-deleted' && s !== 'booting' && s !== 'session-expired'

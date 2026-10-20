@@ -105,6 +105,15 @@ function switchInstantly(): void {
   syncThemeColor()
 }
 
+/** The theme's cross-fade while it runs (setTheme), so a new screen can end it at once. */
+let crossFade: ViewTransition | null = null
+
+/** Ends a running theme cross-fade at once: a new screen — the crisis above all — comes in one
+ *  frame, never through a View Transition. The new theme is already applied (or is applied now). */
+export function skipThemeTransition(): void {
+  crossFade?.skipTransition()
+}
+
 export function setTheme(next: ThemeChoice): void {
   if (lockedTo()) return
   const before = resolvedTheme()
@@ -113,21 +122,33 @@ export function setTheme(next: ThemeChoice): void {
   const after = resolvedTheme()
   const animate =
     before !== after && motionAllowed() && !document.hidden && typeof document.startViewTransition === 'function'
-  if (animate) {
-    try {
-      const transition = document.startViewTransition(() => switchInstantly())
-      // A transition skipped or refused (a hidden tab, another one starting) rejects these: the
-      // update still runs, so the theme is right either way.
-      transition.ready.catch(() => {})
-      transition.updateCallbackDone.catch(() => switchInstantly())
-      transition.finished.catch(() => {})
-    } catch {
-      switchInstantly()
-    }
-  } else {
+  // The controls and the WebGL light hear of the new theme only once it is on <html>: during a
+  // cross-fade that is after the old frame was captured, so the old snapshot keeps the old colours.
+  let committed = false
+  const commit = (): void => {
+    if (committed) return
+    committed = true
     switchInstantly()
+    publish()
   }
-  publish()
+  if (!animate) {
+    commit()
+    return
+  }
+  try {
+    const transition = document.startViewTransition(commit)
+    crossFade = transition
+    const clear = (): void => {
+      if (crossFade === transition) crossFade = null
+    }
+    // A transition skipped or refused (a hidden tab, another one starting) rejects these: the update
+    // still runs (or runs here), so the theme is right either way.
+    transition.ready.catch(() => {})
+    transition.updateCallbackDone.catch(commit)
+    transition.finished.then(clear, clear)
+  } catch {
+    commit()
+  }
 }
 
 let started = false

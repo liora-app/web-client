@@ -2090,9 +2090,11 @@ html[data-kb] .composer__keys {
   background: var(--color-bg);
 }
 
+/* An engine whose ::backdrop does not inherit custom properties (Chrome < 122, Safari < 17.4) has
+   no light-dark() either, so it shows the dark theme: the fallback is the dark scrim. */
 .confirm::backdrop,
 .sheet::backdrop {
-  background: var(--color-scrim);
+  background: var(--color-scrim, rgb(6 10 11 / 0.62));
 }
 
 .confirm {

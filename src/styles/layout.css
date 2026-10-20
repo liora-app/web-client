@@ -622,8 +622,10 @@ html:has(.site-menu[open]) {
   gap: 2rem;
 }
 
+/* ::backdrop inherits custom properties only in newer engines (Chrome 122, Safari 17.4): older ones
+   get the literal, the landing's very value. */
 .site-menu::backdrop {
-  background: var(--color-scrim);
+  background: var(--color-scrim, rgb(4 7 8 / 0.6));
 }
 
 .site-menu__head {
