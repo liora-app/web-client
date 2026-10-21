@@ -47,8 +47,9 @@ export const REVISIT_EMPTY =
   'Тут можна повернутися до тем зі щоденника. Поки що в ньому немає записів — вони зʼявляться, коли ви збережете тези після розмови.'
 export const REVISIT_FAILED = 'Не вдалося завантажити збережені тези.'
 
-// One line in the field at 320 px too (≤ 176 px of room at 17 px): a placeholder that wraps makes an
-// empty field two lines tall and pushes a new conversation under it.
+// One line in the field at 320 px too (measured: 182 px of room for a 16 px placeholder there, the widest
+// below 158 px): a placeholder that wraps makes an empty field two lines tall and pushes a new
+// conversation under it.
 const PLACEHOLDER: Readonly<Record<string, string>> = {
   free: 'Пишіть, як думаєте…',
   situation: 'Що сталося?',
