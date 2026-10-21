@@ -3376,10 +3376,12 @@ test.describe('diary', () => {
     // The last page took «Показати ще» away: the focus went on to the first record it brought.
     await expect(entryTitled(page, LATER.title).getByRole('button', { name: 'Редагувати' })).toBeFocused()
 
-    // Enter goes at once; nothing found is one line, and the week and the tools stay.
+    // Enter goes at once; nothing found is one line, and the week and the tools stay. The line is
+    // the live one that said «Завантажуємо записи…»: the answer is said too (WCAG 4.1.3).
     await search.fill('кава')
     await search.press('Enter')
-    await expect(page.locator('[data-el="journal-empty"]')).toHaveText(journalNothing('кава'))
+    await expect(journalStatus(page)).toHaveText(journalNothing('кава'))
+    await expect(journalStatus(page)).toHaveAttribute('role', 'status')
     await expect(entries(page)).toHaveCount(0)
     await expect(page.locator('[data-el="week"]')).toBeVisible()
     await expect(search).toBeVisible()
@@ -3388,7 +3390,7 @@ test.describe('diary', () => {
     await page.clock.runFor(1000)
     expect(listCalls(api)).toHaveLength(sent)
     await page.locator('[data-el="journal-themes"]').getByRole('radio', { name: 'Усі теми' }).check()
-    await expect(page.locator('[data-el="journal-empty"]')).toHaveText(journalNothing('кава'))
+    await expect(journalStatus(page)).toHaveText(journalNothing('кава'))
     expect(listCalls(api).at(-1)!.query.toString()).toBe(`limit=20&q=${encodeURIComponent('кава')}`)
   })
 
@@ -3583,7 +3585,7 @@ test.describe('diary', () => {
     api.on('GET /reviews/weekly', { json: weekly(THIS_WEEK) })
     await openChat(page)
     await openDiary(page)
-    await expect(page.locator('[data-el="journal-empty"]')).toHaveText(JOURNAL_EMPTY)
+    await expect(journalStatus(page)).toHaveText(JOURNAL_EMPTY)
     await expect(page.locator('[data-el="week"]')).toBeHidden()
     await expect(page.locator('[data-el="journal-tools"]')).toBeHidden()
     await expect(page.locator('[data-el="journal-themes"]')).toBeHidden()
@@ -3600,7 +3602,6 @@ test.describe('diary', () => {
     api.on('GET /tags', { json: THEMES })
     await openDiary(page)
     await expect(journalStatus(page)).toHaveText(JOURNAL_FAILED)
-    await expect(page.locator('[data-el="journal-empty"]')).toBeHidden()
     await page.locator('[data-el="journal-retry"]').getByRole('button', { name: 'Спробувати ще раз' }).click()
     await expect(entries(page)).toHaveCount(3)
     await expect(journalStatus(page)).toHaveText('')
@@ -3711,6 +3712,21 @@ test.describe('diary', () => {
     await confirmDialog(page).getByRole('button', { name: 'Почати нову' }).click()
     await onScreen(page, 'chat')
     await expect(page.locator('[data-el="revisit-names"]')).toHaveText('Синтетична назва після правки')
+  })
+
+  test('#112 a theme without records says so in the live line that said «Завантажуємо записи…»', async ({ page, api }) => {
+    await openChat(page)
+    await openDiary(page)
+    await expect(entries(page)).toHaveCount(3)
+    api.on('GET /summaries', (call) => ({ json: diary(call.query.has('tag') ? [] : found(call)) }))
+    await page.locator('[data-el="journal-themes"]').getByRole('radio', { name: '#робота' }).check()
+    await expect(entries(page)).toHaveCount(0)
+    await expect(journalStatus(page)).toHaveText(journalNothing(''))
+    await expect(journalStatus(page)).toHaveAttribute('role', 'status')
+    // Back to every record: the line goes quiet again.
+    await page.locator('[data-el="journal-themes"]').getByRole('radio', { name: 'Усі теми' }).check()
+    await expect(entries(page)).toHaveCount(3)
+    await expect(journalStatus(page)).toHaveText('')
   })
 })
 

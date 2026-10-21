@@ -301,11 +301,18 @@ export function journalScreen(dispatch: (action: Action) => void): JournalScreen
     if (heir !== undefined) (heir?.querySelector<HTMLElement>('[data-act="entry-edit"]') ?? root.querySelector<HTMLElement>('#journal-title'))?.focus()
   }
 
-  function statusText(state: JournalState): string {
+  /** The live line: the list loading or failed, else what just happened and what the list holds
+   *  when it holds nothing — «нічого не знайшлося», the empty diary. One line for both, in the
+   *  region that is always there: «Завантажуємо записи…» is said, so the answer must be said too
+   *  (WCAG 4.1.3), not left in a plain paragraph that appears silently. */
+  function statusText(state: JournalState, nothing: string): string {
     if (state.loading) return JOURNAL_LOADING
     if (state.failed) return JOURNAL_FAILED
-    const notice = state.notice
-    if (notice === null) return ''
+    const notice = state.notice === null ? '' : noticeText(state.notice)
+    return notice === '' ? nothing : nothing === '' ? notice : `${notice} ${nothing}`
+  }
+
+  function noticeText(notice: NonNullable<JournalState['notice']>): string {
     switch (notice.kind) {
       case 'saved':
         return JOURNAL_SAVED
@@ -368,11 +375,9 @@ export function journalScreen(dispatch: (action: Action) => void): JournalScreen
       show(el('journal-tools'), !empty)
       renderThemes(state, empty)
 
-      setText(el('journal-status'), statusText(state))
-      show(el('journal-retry'), state.failed && !state.loading)
       const nothing = state.list !== null && state.list.items.length === 0 && !state.loading && !state.failed
-      setText(el('journal-empty'), nothing ? (empty ? JOURNAL_EMPTY : journalNothing(state.q)) : '')
-      show(el('journal-empty'), nothing)
+      setText(el('journal-status'), statusText(state, nothing ? (empty ? JOURNAL_EMPTY : journalNothing(state.q)) : ''))
+      show(el('journal-retry'), state.failed && !state.loading)
       const more = el('journal-more')
       // «Показати ще» pressed for the last page goes away with it: the focus goes on to the first
       // record it brought, not back up to the heading.
@@ -418,7 +423,7 @@ export function journalScreen(dispatch: (action: Action) => void): JournalScreen
       themes.replaceChildren()
       themeKey = ''
       search.value = ''
-      for (const name of ['week-count', 'week-themes', 'week-status', 'journal-status', 'journal-empty']) setText(el(name), '')
+      for (const name of ['week-count', 'week-themes', 'week-status', 'journal-status']) setText(el(name), '')
     },
   }
 }

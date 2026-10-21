@@ -3246,10 +3246,6 @@ html[data-kb] .composer__keys {
   overflow-wrap: anywhere;
 }
 
-.journal__empty {
-  color: var(--color-text-soft);
-}
-
 /* The records: hairlines between them, no boxes. */
 .entries {
   display: grid;
