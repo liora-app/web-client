@@ -20,7 +20,7 @@
    heights are measured (src/chat/ui/scroll-anchor.ts); --kb is the on-screen keyboard the composer
    stands on in iOS Safari (src/chat/ui/keyboard.ts). */
 html {
-  scroll-padding-top: calc(var(--header-h) + var(--session-h) + max(0.5rem, var(--fade-top, 0rem) - 0.5rem));
+  scroll-padding-top: calc(var(--header-h) + var(--session-h) + var(--header-tail, 0rem) + max(0.5rem, var(--fade-top, 0rem) - 0.5rem));
   scroll-padding-bottom: calc(var(--composer-h) + var(--kb, 0px) + max(0.5rem, var(--fade-bottom, 2rem) - 0.5rem));
   /* A dialog stops the page's scrolling (below): the scrollbar's place stays, so the header, the
      text and the light do not jump sideways under the backdrop. Overlay scrollbars: no effect. */
@@ -120,6 +120,13 @@ html[data-gutter]:has(dialog[open]) {
   background-color: var(--color-bg-under-scrim);
 }
 
+/* «Акаунт» is a sheet the height of the window, flush with the gutter: beside it the gutter is the
+   sheet's own colour, not the scrim's — a strip of that ran down the window's right edge. A confirm
+   stacked over the sheet scrims both, and the gutter goes back to the scrim's colour with them. */
+html[data-gutter]:has(dialog.sheet--side[open]):not(:has(dialog[open]:not(.sheet--side))) {
+  background-color: var(--color-bg);
+}
+
 /* ---------- Header: the landing's, with «Акаунт» in place of «Меню» ---------- */
 
 @media (max-width: 63.99em) {
@@ -129,9 +136,35 @@ html[data-gutter]:has(dialog[open]) {
   }
 }
 
+/* Every chat screen but a running conversation — the diary and its edit form, the theses, «Збережено»,
+   a new conversation — scrolls its text under the header with no session row below it: the band is
+   solid --color-bg as far as the header goes, so no line of a record shows through between the
+   wordmark and «Якщо важко» (the landing's translucent band let 10–55 % of it through), then a short
+   eased tail (--header-tail) instead of a cut. The sky under the header and well below it is
+   --color-bg itself (the vignette's --edge-top), so neither the band nor its tail has an edge. What
+   the page scrolls to stops below the tail too (scroll-padding-top, above). */
+html {
+  --header-tail: 0.75rem;
+}
+
+.chat-page .site-header::before {
+  bottom: calc(-1 * var(--header-tail));
+  background: linear-gradient(
+    180deg,
+    var(--color-bg) calc(100% - var(--header-tail)),
+    color-mix(in srgb, var(--color-bg) 62%, transparent) calc(100% - var(--header-tail) * 0.6),
+    color-mix(in srgb, var(--color-bg) 22%, transparent) calc(100% - var(--header-tail) * 0.25),
+    var(--color-fade-0) 100%
+  );
+}
+
 /* In a running conversation the session row's band carries on from the header's and fades out
    long (below): the header's own soft tail would lie over the row and wash it out, so it ends flat
    where the header ends. */
+html[data-talk='on'] {
+  --header-tail: 0rem;
+}
+
 html[data-talk='on'] .chat-page .site-header::before {
   bottom: 0;
   background: var(--color-band-top);
@@ -3725,6 +3758,13 @@ html[data-motion='on'] :is(.confirm, .sheet--side, .sheet--pick)[open]::backdrop
     padding: 1.75rem;
     border: 1px solid var(--color-line-strong);
     border-radius: var(--radius-dialog);
+  }
+
+  /* «Якщо важко» is taller than most windows: centred in the whole height it rose over the header
+     and hid the pill that opened it. It stands under the header and scrolls inside itself. */
+  .sheet--help {
+    inset: var(--header-h) 0 0;
+    max-height: calc(100dvh - var(--header-h) - 1.5rem);
   }
 
   .sheet--side {
