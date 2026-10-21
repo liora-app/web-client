@@ -3771,6 +3771,40 @@ test.describe('diary', () => {
     expect(api.count(`PATCH /summaries/${target.id}`)).toBe(0)
     expect(await beforeUnload(page)).toBe(0)
   })
+
+  test('#115 «До розмови» held by a change on its way: dim words on the page’s own surface, ≥ 4.5:1 in both themes whatever the sky', async ({ page, api }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'computed colours: one engine is enough')
+    const target = ENTRIES[0]!
+    const held = gate()
+    api.on(`PATCH /summaries/${target.id}`, async (call) => {
+      await held.wait
+      return { json: patched(target, call.body) }
+    })
+    await openChat(page)
+    await openDiary(page)
+    const row = entryTitled(page, target.title)
+    await row.getByRole('button', { name: 'Редагувати' }).click()
+    await row.getByRole('textbox', { name: 'Назва' }).fill('Синтетична назва після правки')
+    await row.getByRole('button', { name: 'Зберегти' }).click()
+    const back = page.locator('[data-act="journal-back"]')
+    await expect(back).toHaveAttribute('aria-disabled', 'true')
+    for (const scheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme: scheme })
+      await settled(page)
+      const s = await back.evaluate((node) => {
+        const style = getComputedStyle(node)
+        return { fill: style.backgroundColor, image: style.backgroundImage, color: style.color }
+      })
+      // An opaque fill under the tint: the sky never shows through (it took the words to 4.33:1).
+      expect(s.fill, scheme).toMatch(/^rgb\(/)
+      const tint = /rgba?\([^)]*\)/.exec(s.image)
+      expect(tint, s.image).not.toBeNull()
+      const ground = over(tint![0], s.fill)
+      expect(contrast(s.color, ground), `${scheme}: ${s.color} on ${ground}`).toBeGreaterThanOrEqual(4.5)
+    }
+    held.open()
+    await expect(journalStatus(page)).toHaveText(JOURNAL_SAVED)
+  })
 })
 
 // ── The self-help tools (spec §3.13): breathing, grounding, the check-in, the shelter ─────────
@@ -4982,9 +5016,17 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     // colour, and so does a phone's bar under a full-screen sheet.
     const rootBg = (): Promise<string> => page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)
     const gutter = await page.evaluate(() => document.documentElement.hasAttribute('data-gutter'))
-    await expect.poll(rootBg).toBe(gutter ? 'rgb(11, 16, 17)' : LAMP)
+    // «Акаунт» is flush with the gutter: beside it the gutter is the sheet's colour (it was a strip of
+    // the scrim's down the window's edge). A centred dialog leaves the scrim beside it.
+    await expect.poll(rootBg).toBe(LAMP)
     await page.keyboard.press('Escape')
     await expect(accountSheet(page)).toBeHidden()
+    await expect.poll(rootBg).toBe(LAMP)
+    await page.locator('.help-link').click()
+    await expect(page.locator('#help-dialog')).toBeVisible()
+    await expect.poll(rootBg).toBe(gutter ? 'rgb(11, 16, 17)' : LAMP)
+    await page.keyboard.press('Escape')
+    await expect(page.locator('#help-dialog')).toBeHidden()
     await expect.poll(rootBg).toBe(LAMP)
 
     await page.emulateMedia({ colorScheme: 'light' })
@@ -4994,7 +5036,14 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     await expect(accountSheet(page).getByRole('radio', { name: 'Вечір' })).toHaveValue('dusk')
     await expect(accountSheet(page).getByRole('radio', { name: 'Ранок' })).toHaveValue('dawn')
     await expect(accountSheet(page).getByRole('radio', { name: 'Сутінки' })).toHaveCount(0)
+    await expect.poll(rootBg).toBe(PAPER)
+    // A confirm stacked over the sheet scrims both: the gutter takes the scrim's colour again.
+    await accountSheet(page).getByRole('button', { name: 'Видалити акаунт…' }).click()
+    await expect(confirmDialog(page)).toBeVisible()
     await expect.poll(rootBg).toBe(gutter ? 'rgb(209, 202, 194)' : PAPER)
+    await confirmDialog(page).getByRole('button', { name: 'Скасувати', exact: true }).click()
+    await expect(confirmDialog(page)).toBeHidden()
+    await expect.poll(rootBg).toBe(PAPER)
     // The scrollbar's thumb is its only shape: the fields' border colour, ≥ 3:1.
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollbarColor)).toMatch(/^rgb\(120, 130, 127\) /)
   })
@@ -5140,6 +5189,14 @@ test.describe('what the review of phase C3 found', () => {
 
 // ── The light (needs WebGL: local only) ──────────────────────────────────────────────────────
 
+/** A computed 'rgba(…)' laid over an opaque 'rgb(…)', as 'rgb(…)'. */
+function over(top: string, ground: string): string {
+  const [r, g, b, a = 1] = top.match(/[\d.]+/g)!.map(Number) as [number, number, number, number?]
+  const [R, G, B] = ground.match(/[\d.]+/g)!.map(Number) as [number, number, number]
+  const mix = (x: number, y: number): number => Math.round(x * a + y * (1 - a))
+  return `rgb(${mix(r, R)}, ${mix(g, G)}, ${mix(b, B)})`
+}
+
 /** WCAG contrast of two computed colours ('rgb(…)' / 'rgba(…)', opaque). */
 function contrast(a: string, b: string): number {
   const lum = (color: string): number => {
@@ -5199,6 +5256,113 @@ test.describe('what the final review found', () => {
     expect(forced.style).toBe('solid')
     expect(forced.width).toBeGreaterThanOrEqual(2)
     await page.emulateMedia({ forcedColors: 'none' })
+  })
+
+  test('#114 every screen but a running conversation stands on a solid band under the header (nothing of the text shows through), then a 12 px tail', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'computed styles: one engine is enough')
+    const band = () =>
+      page.evaluate(() => {
+        const style = getComputedStyle(document.querySelector('.chat-header')!, '::before')
+        return { bottom: style.bottom, image: style.backgroundImage, root: getComputedStyle(document.documentElement).backgroundColor }
+      })
+    for (const scheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme: scheme })
+      await openChat(page)
+      // A new conversation: the page's own colour, opaque, as far as the header goes.
+      let b = await band()
+      expect(b.bottom).toBe('-12px')
+      expect(b.image.startsWith(`linear-gradient(${b.root} calc(100% - 12px),`), b.image).toBe(true)
+      // A running conversation: the band ends flat at the header's edge; the session row carries it on.
+      await exchange(page)
+      b = await band()
+      expect(b.bottom).toBe('0px')
+      // The theses: the solid band again.
+      await toReview(page)
+      b = await band()
+      expect(b.image.startsWith(`linear-gradient(${b.root} calc(100% - 12px),`), b.image).toBe(true)
+      // What the page scrolls to stops below the tail too.
+      expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--header-tail').trim())).toBe('.75rem')
+    }
+  })
+
+  test('#116 the search fields’ «×» is the page’s ink over a file of this origin, not the system’s blue', async ({ page, request }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'one engine is enough')
+    await openChat(page)
+    const rule = await page.evaluate(() => {
+      for (const sheet of Array.from(document.styleSheets)) {
+        for (const r of Array.from(sheet.cssRules)) {
+          if (r instanceof CSSStyleRule && r.selectorText.includes('::-webkit-search-cancel-button') && !r.selectorText.includes(':hover')) {
+            return { selector: r.selectorText, appearance: r.style.getPropertyValue('appearance'), color: r.style.getPropertyValue('background-color'), mask: r.style.getPropertyValue('mask-image') }
+          }
+        }
+      }
+      return null
+    })
+    expect(rule).toMatchObject({ appearance: 'none', color: 'var(--color-text-soft)' })
+    expect(rule!.selector).toContain("[type='search']".replace(/'/g, '"'))
+    const url = /url\("?([^")]+)"?\)/.exec(rule!.mask)?.[1]
+    expect(url, rule!.mask).toMatch(/\/assets\/clear-[\w-]+\.svg$/)
+    const svg = await request.get(new URL(url!, page.url()).toString())
+    expect(svg.status()).toBe(200)
+    expect(svg.headers()['content-type']).toContain('image/svg+xml')
+  })
+
+  test('#117 «Якщо важко» on a wide screen stands under the header and scrolls inside itself: the pill that opened it stays in view', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'the centred dialog of the wide layout')
+    await openChat(page)
+    await page.locator('.help-link').click()
+    const dialog = page.locator('#help-dialog')
+    await expect(dialog).toBeVisible()
+    await settled(page)
+    const header = (await page.locator('.chat-header').boundingBox())!
+    const box = (await dialog.boundingBox())!
+    expect(box.y, 'under the header').toBeGreaterThanOrEqual(header.y + header.height)
+    expect(box.y + box.height).toBeLessThanOrEqual(900)
+    await expect(page.locator('.help-link')).toBeInViewport()
+    expect(await dialog.evaluate((node) => node.scrollHeight > node.clientHeight && getComputedStyle(node).overflowY === 'auto')).toBe(true)
+  })
+
+  test('#118 320 × 640: a new conversation’s field is one line for every scenario, ⓘ beside the disclosure, a smaller light; «Вигляд» is one row', async ({ page, api }, testInfo) => {
+    // A phone (touch, overlay scrollbars), as a 320 px screen is; the size is set here.
+    test.skip(isDesktop(testInfo), 'a phone: the mobile project')
+    const more = ['worry', 'hard_talk', 'gratitude', 'evening'].map((id) => ({ id, title: id, description: '', opening_message: 'Синтетичне перше питання.', needs_summaries: false }))
+    api.on('GET /scenarios', { json: [...SCENARIOS, ...more] })
+    await page.setViewportSize({ width: 320, height: 640 })
+    await openChat(page)
+    const oneLine = async (): Promise<number> => (await composer(page).boundingBox())!.height
+    for (const id of ['free', 'situation', 'day', 'worry', 'hard_talk', 'gratitude', 'evening']) {
+      await page.locator(`.scenarios__list input[value="${id}"]`).check()
+      await expect(composer(page)).toHaveAttribute('placeholder', placeholder(id, true))
+      expect(await oneLine(), `${id}: «${placeholder(id, true)}»`).toBeLessThanOrEqual(53)
+    }
+    const tip = (await page.locator('[data-el="composer-tip-button"]').boundingBox())!
+    const line = (await page.locator('.composer__ai').boundingBox())!
+    expect(tip.y, 'ⓘ on the line’s row, not under it').toBeLessThan(line.y + line.height)
+    expect((await page.locator('.presence__slot').boundingBox())!.width).toBe(96)
+    await accountToggle(page).click()
+    await expect(accountSheet(page)).toBeVisible()
+    const tops = await accountSheet(page)
+      .locator('[data-theme-radios] label.pill')
+      .evaluateAll((pills) => pills.map((p) => Math.round(p.getBoundingClientRect().top)))
+    expect(new Set(tops).size, `rows: ${tops.join(', ')}`).toBe(1)
+  })
+
+  test('#119 the dark theme’s warm tint is warm: the chosen scenario, a chosen mood cell and the breathing circle are amber, not olive grey', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'computed colours: one engine is enough')
+    await openChat(page)
+    const pill = await page.locator('.pill--on').first().evaluate((node) => {
+      const style = getComputedStyle(node)
+      return { fill: style.backgroundColor, image: style.backgroundImage }
+    })
+    const tint = /rgba?\([^)]*\)/.exec(pill.image)![0]
+    const [r, g, b] = over(tint, pill.fill).match(/\d+/g)!.map(Number) as [number, number, number]
+    // It was rgb(53, 55, 49): green above red, an olive grey.
+    expect(r - g, `${r}, ${g}, ${b}`).toBeGreaterThanOrEqual(5)
+    expect(g - b, `${r}, ${g}, ${b}`).toBeGreaterThanOrEqual(5)
+    // The light theme keeps its peach.
+    await page.emulateMedia({ colorScheme: 'light' })
+    await settled(page)
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent-tint').trim())).toMatch(/181,? 83,? 42|b5532a/i)
   })
 })
 
