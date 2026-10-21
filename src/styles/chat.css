@@ -986,8 +986,13 @@ html[data-motion='on'] .more[open] .more__body {
   cursor: progress;
 }
 
+/* On the page's own surface, not on the sky: a translucent fill let the sky's darkest point take the
+   dim words under 4.5:1 («До розмови» while a change is on its way: 4.33 / 4.42). Over the surface
+   they are 5.4:1 light, 4.9:1 dark wherever the button stands. */
 .button[aria-disabled='true'] {
-  background: var(--color-hover);
+  background:
+    linear-gradient(var(--color-hover), var(--color-hover)),
+    var(--color-surface);
   border-color: var(--color-line-strong);
   color: var(--color-text-dim);
   cursor: not-allowed;
@@ -2209,12 +2214,14 @@ html[data-screen='chat'] .chat__text {
   background: var(--color-accent-strong);
 }
 
-/* Ready, the button is filled with the accent — the focus colour itself — and its ring lies inside
-   the fill (offset -2px above): there the ring takes the colour of the arrow on that fill (4.96:1
-   light, 11.46:1 dark; more on the hover fill), or it would vanish into it. Outside, it would run
-   into the pill's border on a phone (4 px away). */
+/* Ready, the button is filled with the accent — the focus colour itself — and its ring lay inside
+   the fill (offset -2px above), the accent on the accent: unseen. There the ring takes the colour of
+   the arrow on that fill (4.96:1 light, 11.46:1 dark; more on the hover fill) and sits 3 px in from
+   the edge, so the fill runs on both sides of it: a ring, not just a thinner disc. Outside, it would
+   run into the pill's border on a phone (4 px away). */
 .composer__send[data-mode='ready']:focus-visible {
   outline-color: var(--color-on-accent);
+  outline-offset: -5px;
 }
 
 /* «Зупинити»: the same place, a square in the accent outline. */
@@ -2810,6 +2817,26 @@ html[data-kb] .composer__keys {
 .field__input:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
+}
+
+/* The search fields' own «×» (the diary, the record picker): Blink and WebKit draw it in the
+   system's blue, a colour from nowhere on the paper. The page's ink instead — a mask over a token,
+   ≥ 3:1 on the field in both themes — and the browser keeps what it does (a press empties the field,
+   so does Esc). A file, not a data: URI (img-src 'self'). */
+.field__input[type='search']::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  margin-inline-start: 0.5rem;
+  background-color: var(--color-text-soft);
+  -webkit-mask: url('../assets/clear.svg') center / contain no-repeat;
+  mask: url('../assets/clear.svg') center / contain no-repeat;
+  cursor: pointer;
+}
+
+.field__input[type='search']::-webkit-search-cancel-button:hover {
+  background-color: var(--color-text);
 }
 
 .field__input--title {
