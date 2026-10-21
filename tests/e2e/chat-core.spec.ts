@@ -3960,7 +3960,7 @@ test.describe('source rules', () => {
     expect(chat).toContain('data-sky-pick')
   })
 
-  test('theme: one module knows the key; public/theme-init.js only reads storage and sets two attributes, first in <head> of both pages', () => {
+  test('theme: one module knows the key; public/theme-init.js only reads storage, sets two attributes and the theme-color, first in <head> of both pages', () => {
     const keyHolders = offenders(sources(''), /liora:theme/).map((o) => o.split(':')[0])
     expect(keyHolders.length).toBeGreaterThan(0)
     expect(keyHolders.every((p) => p === 'src/ui/theme.ts'), keyHolders.join(', ')).toBe(true)
@@ -4001,10 +4001,22 @@ test.describe('source rules', () => {
       const head = html.slice(html.indexOf('<head>'), html.indexOf('</head>'))
       const scripts = head.match(/<script\b[^>]*>/g) ?? []
       expect(scripts[0], page).toBe(sky ? '<script src="/theme-init.js" data-sky>' : '<script src="/theme-init.js">')
-      // Right after the charset, before every other tag of the head.
-      expect(head.replace(/<!--[\s\S]*?-->/g, '').match(/<(?:meta|link|script|title)\b[^>]*>/g)!.slice(0, 2)[1], page).toBe(scripts[0])
+      // Right after the charset and the one theme-color (the script sets the latter in the chat),
+      // before every other tag of the head.
+      const tags = head.replace(/<!--[\s\S]*?-->/g, '').match(/<(?:meta|link|script|title)\b[^>]*>/g)!
+      expect(tags[0], page).toBe('<meta charset="UTF-8" />')
+      expect(tags[1], page).toMatch(/^<meta name="theme-color" content="#[0-9a-f]{6}" \/>$/)
+      expect(tags[2], page).toBe(scripts[0])
       expect(head.match(/<meta name="theme-color"/g), page).toHaveLength(1)
     }
+    // The theme-color it writes before the first frame is --color-bg of each theme, in the very
+    // form theme.ts writes later (getComputedStyle: rgb(r, g, b)) — no change, no flash in the bar.
+    const tokens = readFileSync(join(repo, 'src', 'styles', 'tokens.css'), 'utf8')
+    const bg = /--color-bg: light-dark\(#([0-9a-f]{6}), #([0-9a-f]{6})\)/.exec(tokens)!
+    const rgb = (hex: string): string => `rgb(${[0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`
+    expect(code).toContain(`'${rgb(bg[1]!)}' : '${rgb(bg[2]!)}'`)
+    expect(code).toMatch(/meta\.content = /)
+    expect(code).toMatch(/prefers-color-scheme: light/)
     // The chat follows the system before any CSS; the landing keeps its night until it gets its own
     // light theme (ADR-012).
     const chat = readFileSync(join(repo, 'chat', 'index.html'), 'utf8')

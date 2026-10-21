@@ -4665,6 +4665,30 @@ test.describe('highlights and the reminder in the light theme', () => {
   })
 })
 
+// ── What the review of phase B found: the bar, the Tab order, the edges, the names, 1.4.11 ───────
+
+test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the names, the borders', () => {
+  test('#95 the browser’s bar has the theme’s colour before any module runs (public/theme-init.js): the system’s, or the choice', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'one engine is enough')
+    // The page's module never comes: what the bar shows is theme-init.js's doing alone.
+    await page.route('**/assets/chat-*.js', (route) => route.fulfill({ contentType: 'text/javascript', body: '' }))
+    const themeColor = page.locator('meta[name="theme-color"]')
+    await page.emulateMedia({ colorScheme: 'light' })
+    await page.goto('/chat/')
+    await expect(themeColor).toHaveCount(1)
+    await expect(themeColor).toHaveAttribute('content', PAPER)
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await page.reload()
+    await expect(themeColor).toHaveAttribute('content', LAMP)
+    // A stored choice wins over the system.
+    await page.evaluate(() => localStorage.setItem('liora:theme', 'light'))
+    await page.reload()
+    await expect(html(page)).toHaveAttribute('data-theme', 'light')
+    await expect(themeColor).toHaveAttribute('content', PAPER)
+    await page.evaluate(() => localStorage.removeItem('liora:theme'))
+  })
+})
+
 // ── The light (needs WebGL: local only) ──────────────────────────────────────────────────────
 
 test.describe('the light', () => {
