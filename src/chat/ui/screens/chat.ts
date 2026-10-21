@@ -11,15 +11,21 @@
 // The lines above the composer are live regions that stay rendered while empty (visually hidden
 // by CSS, never [hidden]): a region that appears together with its text is not reliably read
 // (§5.7).
+//
+// The reminder to pause (§3.7.7) is one line in the composer: its 40 minutes are one timer armed
+// here for the time left (the core has no clock), cleared on every way out of the screen — the
+// crisis above all — and armed again on the way back. 60 replies need no timer: the core looks at
+// each answer.
 
 import { maskPausedLine } from '../../core/helplines'
 import type { Action, ChatState, Model } from '../../core/state'
-import { canSendNow, hasReply, hasUserMessage, scenariosOf } from '../../core/state'
+import { canSendNow, hasReply, hasUserMessage, pauseAt, scenariosOf } from '../../core/state'
 import { LONG_CONVERSATION_MESSAGES, SERVER_TRIM_CODE_POINTS, canSend, totalCodePoints } from '../../core/limits'
 import type { ScenarioOut } from '../../core/types'
 import {
   LIMIT_BLOCK,
   NEED_RECORDS,
+  PAUSE_LINE,
   REVISIT_EMPTY,
   REVISIT_FAILED,
   REVISIT_GONE_BLOCK,
@@ -108,6 +114,28 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
   let lastModel: Model | null = null
   let shownNotice: ChatState['notice'] = null
   let repeatTimer = 0
+  /** The reminder's timer, and the moment it is armed for: one timer, never one per render. Once
+   *  it fired for that moment it is not armed again — an answer still coming then takes the
+   *  reminder along with its `done` (the core checks it there). */
+  let pauseTimer = 0
+  let pauseFor: number | null = null
+  const disarmPause = (): void => {
+    window.clearTimeout(pauseTimer)
+    pauseTimer = 0
+    pauseFor = null
+  }
+  const armPause = (at: number | null): void => {
+    if (at === pauseFor) return
+    window.clearTimeout(pauseTimer)
+    pauseTimer = 0
+    pauseFor = at
+    if (at === null) return
+    // setTimeout holds at most 2^31 − 1 ms; 40 minutes are far below it.
+    pauseTimer = window.setTimeout(() => {
+      pauseTimer = 0
+      dispatch({ type: 'chat/pause-due', now: Date.now() })
+    }, Math.max(0, at - Date.now()))
+  }
 
   const anchor = createScrollAnchor({
     header: document.querySelector<HTMLElement>('[data-header]')!,
@@ -204,6 +232,7 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       const active = document.activeElement
       if (active instanceof HTMLElement && root.contains(active)) active.blur()
       closePopovers(root)
+      disarmPause()
       glide?.finish()
       glide = null
       transcript.reset()
@@ -289,6 +318,7 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
         csrfFailures: ctx.csrfFailures,
         cooldownUntil: state.turn.p === 'cooldown' ? state.turn.until : null,
         revisit,
+        marks: s.marks,
       })
 
       if (shift > 1) {
@@ -327,6 +357,15 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       show(composer.element, composerShown)
       if (!composerShown) closePopovers(composer.element)
       show(el('chat-ai'), !composerShown)
+      // The reminder to pause (§3.7.7): with the field, never instead of it. «Зібрати тези» waits
+      // while an answer comes (the confirm opens between answers only).
+      armPause(pauseAt(s))
+      const pause = s.pause === 'time' || s.pause === 'count' ? s.pause : null
+      setText(el('pause-text'), pause !== null && composerShown ? PAUSE_LINE[pause] : '')
+      show(el('pause-actions'), pause !== null && composerShown)
+      const answering = state.turn.p === 'waiting' || state.turn.p === 'streaming' || state.turn.p === 'busy-wait'
+      setAttr(el('pause-collect'), 'aria-disabled', answering ? 'true' : null)
+
       // Starters: a new conversation with the field there to take them (§3.6).
       renderStarters(s.scenario, !started && composerShown)
       composer.setPlaceholder(placeholder(s.scenario, !hasUserMessage(s, null)))

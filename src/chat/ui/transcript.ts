@@ -5,7 +5,9 @@
 // - Text goes in through textContent, Text.appendData and new nodes only (I8), split into <p> on "\n\n".
 // - The person's message is a bubble on the right; the AI's reply stands on the page under a small
 //   light and the label «AI». Under each: its time (Session.times, never inside .said__text) and,
-//   under a reply, «Копіювати» (copies the reply from the model, the paused number masked).
+//   under a reply, «Копіювати» (copies the reply from the model, the paused number masked) and «→ У
+//   тези» (a toggle: Session.marks). Each action's name says which reply: «Копіювати відповідь 2,
+//   23:10» — the visible words first (WCAG 2.5.3), two replies of one minute still apart.
 // - The answer being streamed is written once per frame (requestAnimationFrame), every 250 ms in a
 //   hidden tab (rAF stands still there, so a frame already asked for is swapped for the timer), every
 //   300 ms without motion. Its target is the state's `partial`; the DOM catches up. With motion each
@@ -27,7 +29,7 @@
 
 import { maskPausedLine } from '../core/helplines'
 import type { Msg, Pending } from '../core/state'
-import { busyWait, clock, requestIdLine, turnError, waitLabel } from './copy'
+import { busyWait, clock, replyWhich, requestIdLine, turnError, waitLabel } from './copy'
 import { fromTemplate, setAttr, setText, show } from './dom'
 import { motionAllowed } from '../../ui/motion'
 
@@ -53,6 +55,8 @@ export type TranscriptView = Readonly<{
   cooldownUntil: number | null
   /** After a 404 on a revisit turn: «Обрати записи» instead of «Надіслати ще раз». */
   revisit: boolean
+  /** «→ У тези» (Session.marks): indices of the marked replies. */
+  marks: readonly number[]
 }>
 
 type Para = { readonly paras: Text[] }
@@ -176,22 +180,27 @@ function textBox(li: HTMLElement): HTMLElement {
   return li.querySelector<HTMLElement>('.said__text')!
 }
 
-/** The line under a message: its time, and «Копіювати» under a reply of the AI (`index` in the
- *  history; the opening message has nothing to copy). */
-function writeMeta(li: HTMLLIElement, role: Msg['role'], index: number | null, time: number | null): void {
+/** The line under a message: its time, and under a reply of the AI (`index` in the history; the
+ *  opening message is no reply) «Копіювати» and «→ У тези». `replyNo`: the reply's number among the
+ *  AI's replies, for the names of its actions. */
+function writeMeta(li: HTMLLIElement, role: Msg['role'], index: number | null, time: number | null, replyNo = 0): void {
   const meta = li.querySelector<HTMLElement>('.said__meta')
   if (meta === null) return
   const stamp = meta.querySelector<HTMLTimeElement>('.said__time')!
-  const copy = meta.querySelector<HTMLElement>('.said__copy')!
   if (time !== null) {
     setText(stamp, clock(time))
     setAttr(stamp, 'datetime', new Date(time).toISOString())
   }
   show(stamp, time !== null)
-  const copyable = role === 'assistant' && index !== null && index > 0
-  if (copyable) copy.dataset.i = String(index)
-  show(copy, copyable)
-  show(meta, time !== null || copyable)
+  const reply = role === 'assistant' && index !== null && index > 0
+  for (const action of Array.from(meta.querySelectorAll<HTMLElement>('.said__act'))) {
+    if (reply) {
+      action.dataset.i = String(index)
+      setText(action.querySelector('.said__which')!, replyWhich(replyNo, time === null ? null : clock(time)))
+    }
+    show(action, reply)
+  }
+  show(meta, time !== null || reply)
 }
 
 /** A read-only copy of a conversation (crisis, not-invited, session-expired): no actions — not
@@ -221,6 +230,8 @@ export class Transcript {
   private readonly list: HTMLOListElement
   private readonly hooks: TranscriptHooks
   private items: Item[] = []
+  /** The AI's replies among `items` so far (the opening message not counted). */
+  private replies = 0
   private lastMessages: readonly Msg[] | null = null
   private pendingLi: HTMLLIElement | null = null
   private pendingText: Para = { paras: [] }
@@ -268,6 +279,7 @@ export class Transcript {
     if (stream !== null && this.streamLi !== null && stream.id !== this.streamId) this.dropStream()
 
     if (messagesChanged) this.reconcile(view, finished)
+    this.syncMarks(view.marks)
     this.syncPending(view, previous)
     if (stream !== null) this.syncStream(stream)
     this.syncTicker(view)
@@ -285,6 +297,7 @@ export class Transcript {
   reset(): void {
     this.dropStream()
     this.items = []
+    this.replies = 0
     this.lastMessages = null
     this.pendingLi = null
     this.pendingKey = ''
@@ -314,6 +327,7 @@ export class Transcript {
       const keepStream = finished ? null : this.streamLi
       this.list.replaceChildren()
       this.items = []
+      this.replies = 0
       this.pendingLi = null
       this.pendingKey = ''
       if (keepStream) this.list.append(keepStream)
@@ -353,11 +367,22 @@ export class Transcript {
         if (before) this.list.insertBefore(li, before)
         else this.list.append(li)
       }
-      writeMeta(li, m.role, i, time)
+      if (m.role === 'assistant' && i > 0) this.replies++
+      writeMeta(li, m.role, i, time, this.replies)
       this.items.push({ li, role: m.role, content: m.content, text })
     }
     for (const [i, item] of this.items.entries()) show(item.li.querySelector<HTMLElement>('.said__cut')!, view.cut.includes(i))
     this.lastMessages = messages
+  }
+
+  /** «→ У тези»: pressed on the marked replies, on every sync (cheap: an attribute that only
+   *  changes when a mark does). */
+  private syncMarks(marks: readonly number[]): void {
+    for (const [i, item] of this.items.entries()) {
+      if (item.role !== 'assistant' || i === 0) continue
+      const keep = item.li.querySelector<HTMLElement>('.said__keep')
+      if (keep !== null) setAttr(keep, 'aria-pressed', marks.includes(i) ? 'true' : 'false')
+    }
   }
 
   // ── the person's message that is not in the history yet ──

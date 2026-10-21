@@ -541,3 +541,22 @@ export const moodSentence = (word: string): string => `Зараз у мене �
 /** The end of a conversation (§3.13): before → after in words, no «краще/гірше». */
 export const moodLine = (before: string, after: string | null): string =>
   after === null ? `Спершу — ${before}.` : `Спершу — ${before}, зараз — ${after}.`
+
+// ── «→ У тези», the reminder to pause, the end (§3.7.2, §3.7.7, §7.2, §7.5) ────────────────────
+// No praise, no pressure, no streaks: what happened, in one short line.
+
+/** The words a screen reader hears after «Копіювати» / «У тези»: which reply — its number among
+ *  the AI's replies and its time (two replies often share a minute). */
+export const replyWhich = (n: number, time: string | null): string => (time === null ? ` відповідь ${n}` : ` відповідь ${n}, ${time}`)
+/** Said when a reply is marked or its mark taken off: how many of the five are taken. */
+export const sayMarked = (n: number, max: number): string => `Додано до тез · ${n} з ${max}`
+export const sayUnmarked = (n: number, max: number): string => `Прибрано з тез · ${n} з ${max}`
+export const sayMarksFull = (max: number): string => `У тезах уже ${max} з ${max}. Щоб додати цю, приберіть іншу.`
+/** The theses screen: the candidate is full of theses already. */
+export const MARKS_FULL = 'Тез уже пʼять — щоб додати цю, приберіть одну з них.'
+
+/** The reminder to pause: what is true — the time or the count — and the two ways on. */
+export const PAUSE_LINE: Readonly<Record<'time' | 'count', string>> = {
+  time: 'Ви тут уже 40 хвилин. Можна зробити паузу або зібрати тези.',
+  count: 'У розмові вже 60 реплік. Можна зробити паузу або зібрати тези.',
+}

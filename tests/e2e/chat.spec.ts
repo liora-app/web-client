@@ -2563,14 +2563,16 @@ test.describe('presentation', () => {
     await exchange(page, USER)
     const answer = aiMessages(page).nth(1)
     await expect(answer.locator('.said__text')).toHaveText(NUMBERED_SHOWN)
-    // Its name is its words: «Копіювати», then «Скопійовано» for 2 s (the live region says it too).
+    // Its name is its words, then which reply (§3.7.2): «Копіювати відповідь 1, HH:MM»; then
+    // «Скопійовано» for 2 s (the live region says it too).
     const button = answer.locator('[data-act="copy-reply"]')
-    await expect(button).toHaveAccessibleName('Копіювати')
+    await expect(button).toHaveAccessibleName(/^Копіювати відповідь 1, \d\d:\d\d$/)
     await button.click()
-    await expect(button).toHaveText('Скопійовано')
+    await expect(button.locator('.said__copy-label')).toHaveText('Скопійовано')
     await expect(announcer(page)).toHaveText('Скопійовано')
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(NUMBERED_SHOWN)
-    await expect(button).toHaveText('Копіювати', { timeout: 4000 })
+    await expect(button.locator('.said__copy-label')).toHaveText('Копіювати', { timeout: 4000 })
+    await expect(button).toHaveAccessibleName(/^Копіювати відповідь 1, \d\d:\d\d$/)
     // The crisis keeps the conversation as a read-only copy: no «Копіювати» under any reply.
     await send(page, CRISIS_TEXT)
     await onScreen(page, 'crisis')
@@ -4433,6 +4435,233 @@ test.describe('tools', () => {
     await expect(after).not.toHaveAttribute('aria-disabled', 'true')
     await after.click()
     await expect(page.getByRole('dialog', { name: 'А зараз?' })).toBeVisible()
+  })
+})
+
+// ── «→ У тези», the reminder to pause, the soft end, and what reviewers found (phase C3) ──────
+
+/** Which reply a per-reply action is about: its number among the AI's replies and its time. */
+const which = async (li: Locator, n: number): Promise<string> => `відповідь ${n}, ${(await li.locator('.said__time').textContent())!.trim()}`
+const keepOf = (li: Locator): Locator => li.locator('[data-act="keep-reply"]')
+const pauseText = (page: Page): Locator => page.locator('[data-el="pause-text"]')
+const pauseActions = (page: Page): Locator => page.locator('[data-el="pause-actions"]')
+const candidates = (page: Page): Locator => page.locator('[data-el="candidates"]')
+const SHARE = 'Можливо, варто поділитися цим із кимось близьким?'
+const PRAISE = /Добре, що ви|молодець|чудово|пишаю/i
+
+test.describe('highlights, the reminder to pause, the soft end', () => {
+  test('#88 ★ «→ У тези» under a reply: a toggle whose name says which reply; marked replies wait on the theses screen; one becomes a thesis, is saved and is «Взяти з собою»', async ({ page, api }, testInfo) => {
+    await openChat(page)
+    await exchange(page, USER)
+    await exchange(page, 'Друге синтетичне повідомлення.')
+    const [first, second] = [aiMessages(page).nth(1), aiMessages(page).nth(2)]
+    // Every action under a reply has a name of its own: the visible words, then which reply.
+    await expect(keepOf(first)).toHaveAccessibleName(`У тези ${await which(first, 1)}`)
+    await expect(first.locator('[data-act="copy-reply"]')).toHaveAccessibleName(`Копіювати ${await which(first, 1)}`)
+    await expect(keepOf(second)).toHaveAccessibleName(`У тези ${await which(second, 2)}`)
+    const names = await page.locator('[data-el="talk"] .said__act:not([hidden])').evaluateAll((nodes) => nodes.map((n) => n.textContent!.trim()))
+    expect(names).toHaveLength(4)
+    expect(new Set(names).size, names.join(' | ')).toBe(4)
+    // The opening message is no reply: nothing under it.
+    await expect(aiMessages(page).first().locator('.said__act:not([hidden])')).toHaveCount(0)
+    await expect(keepOf(first)).toHaveAttribute('aria-pressed', 'false')
+    const opacity = (l: Locator): Promise<string> => l.evaluate((n) => getComputedStyle(n).opacity)
+    if (isDesktop(testInfo)) {
+      // A mouse: the actions wait for the pointer or the focus.
+      await page.mouse.move(2, 2)
+      await expect.poll(() => opacity(keepOf(first))).toBe('0')
+    } else {
+      await expect(keepOf(first)).toBeVisible()
+      expect(await opacity(keepOf(first))).toBe('1')
+    }
+    await keepOf(first).click()
+    await expect(keepOf(first)).toHaveAttribute('aria-pressed', 'true')
+    await expect(announcer(page)).toHaveText('Додано до тез · 1 з 5')
+    // The words stay the same; pressed says the state (a tick beside them, not colour alone).
+    await expect(keepOf(first)).toHaveAccessibleName(`У тези ${await which(first, 1)}`)
+    if (isDesktop(testInfo)) {
+      await page.mouse.move(2, 2)
+      await expect.poll(() => opacity(keepOf(first))).toBe('1')
+      await expect.poll(() => opacity(keepOf(second))).toBe('0')
+    }
+    await keepOf(first).click()
+    await expect(keepOf(first)).toHaveAttribute('aria-pressed', 'false')
+    await expect(announcer(page)).toHaveText('Прибрано з тез · 0 з 5')
+    await keepOf(first).click()
+    await keepOf(second).click()
+    await expect(announcer(page)).toHaveText('Додано до тез · 2 з 5')
+    // Nothing of it goes to the server with a turn.
+    for (const body of turnBodies(api.bodies('POST /chat/turn'))) expect(Object.keys(body).sort()).toEqual(['messages', 'scenario'])
+
+    await toReview(page)
+    expect(Object.keys(api.bodies('POST /chat/summarize')[0] as object).sort()).toEqual(['messages', 'scenario'])
+    await expect(candidates(page)).toBeVisible()
+    await expect(candidates(page).getByRole('heading', { name: 'Позначене в розмові' })).toBeVisible()
+    await expect(candidates(page).locator('.candidate__text')).toHaveText([REPLY_TEXT, REPLY_TEXT])
+    await axe(page, 'the theses with two marked replies')
+    // «Додати до тез»: a thesis (the draft had four; now five), the focus in it.
+    await candidates(page).getByRole('button', { name: 'Додати до тез (позначене 1)' }).click()
+    await expect(page.locator('#thesis-m2')).toBeFocused()
+    await expect(page.locator('#thesis-m2')).toHaveValue(REPLY_TEXT)
+    await expect(page.locator('.thesis:not(.thesis--removed)')).toHaveCount(5)
+    // Five theses: the other one waits, and says why.
+    const rest = candidates(page).getByRole('button', { name: 'Додати до тез (позначене 1)' })
+    await expect(rest).toHaveAttribute('aria-disabled', 'true')
+    await expect(rest).toHaveAccessibleDescription('Тез уже пʼять — щоб додати цю, приберіть одну з них.')
+    // Pressed anyway (aria-disabled keeps it focusable and clickable): nothing comes in.
+    await rest.click({ force: true })
+    await expect(page.locator('.thesis:not(.thesis--removed)')).toHaveCount(5)
+    // «Прибрати»: the candidate goes, the focus stays near (not at the top of the screen).
+    await candidates(page).getByRole('button', { name: 'Прибрати (позначене 1)' }).click()
+    await expect(candidates(page)).toBeHidden()
+    await expect(page.locator('#review-title')).not.toBeFocused()
+    await expect(page.locator('body')).not.toBeFocused()
+
+    await page.locator('[data-el="review-save"]').click()
+    await onScreen(page, 'saved')
+    const saved = api.bodies('POST /summaries')[0] as { bullets: string[] }
+    expect(saved.bullets).toEqual([...DRAFT.bullets, REPLY_TEXT])
+    await expect(page.locator('[data-el="saved-keep"]')).toBeVisible()
+    await expect(page.locator('[data-el="saved-keep"] .closing__label')).toHaveText('Взяти з собою')
+    await expect(page.locator('[data-el="saved-keep-text"]')).toHaveText(REPLY_TEXT)
+    await expect(page.locator('section[data-screen="saved"] .closing__share')).toHaveText(SHARE)
+    await expect(page.locator('section[data-screen="saved"]')).not.toContainText(PRAISE)
+    await axe(page, 'saved with a thought to take along')
+  })
+
+  test('#89 marks belong to the conversation: the theses and back keep them; five at most; the crisis has none and its copy no actions', async ({ page, api }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'state, not layout')
+    api.on('POST /chat/turn', { sse: reply() }, { sse: reply() }, { sse: reply() }, { sse: reply() }, { sse: reply() }, { sse: reply() }, { sse: meta() + crisis('keyword') })
+    await openChat(page)
+    for (let i = 1; i <= 6; i++) await exchange(page, `Синтетичне повідомлення ${i}.`)
+    for (let i = 1; i <= 5; i++) await keepOf(aiMessages(page).nth(i)).click()
+    await expect(announcer(page)).toHaveText('Додано до тез · 5 з 5')
+    // The sixth: nothing changes, and the live region says why.
+    await keepOf(aiMessages(page).nth(6)).click()
+    await expect(keepOf(aiMessages(page).nth(6))).toHaveAttribute('aria-pressed', 'false')
+    await expect(announcer(page)).toHaveText('У тезах уже 5 з 5. Щоб додати цю, приберіть іншу.')
+    await toReview(page)
+    await expect(candidates(page).locator('.candidate')).toHaveCount(5)
+    await page.getByRole('button', { name: 'Повернутися до розмови' }).click()
+    await onScreen(page, 'chat')
+    await expect(page.locator('[data-el="talk"] [data-act="keep-reply"][aria-pressed="true"]')).toHaveCount(5)
+    await send(page, CRISIS_TEXT)
+    await onScreen(page, 'crisis')
+    await expect(page.locator('[data-el="crisis-talk"] li')).not.toHaveCount(0)
+    await expect(page.locator('[data-el="crisis-talk"] [data-act="keep-reply"], [data-el="crisis-talk"] .said__meta')).toHaveCount(0)
+    await expect(page.locator('[data-el="pause-text"]')).toHaveCount(0)
+  })
+
+  test('#90 ★ the reminder to pause (fake clock): one quiet line over the field 40 minutes after the first message; nothing blocked; «Сховати» for good', async ({ page }) => {
+    await page.clock.install()
+    await openChat(page)
+    // A live line, there while empty (§5.7): no text, no buttons.
+    await expect(pauseText(page)).toHaveAttribute('role', 'status')
+    await expect(pauseText(page)).toHaveText('')
+    await exchange(page, USER)
+    await page.clock.fastForward('39:30')
+    await expect(pauseActions(page)).toBeHidden()
+    await expect(pauseText(page)).toHaveText('')
+    await page.clock.fastForward('00:30')
+    await expect(pauseText(page)).toHaveText('Ви тут уже 40 хвилин. Можна зробити паузу або зібрати тези.')
+    await expect(pauseActions(page)).toBeVisible()
+    // Never in the way: the focus stays, the field takes a message, the answer comes.
+    await expect(page.locator('body')).not.toBeFocused()
+    await exchange(page, 'Ще одне синтетичне повідомлення.')
+    await expect(pauseText(page)).not.toHaveText('')
+    await axe(page, 'the reminder to pause')
+    await page.getByRole('button', { name: 'Сховати' }).click()
+    await expect(pauseText(page)).toHaveText('')
+    await expect(pauseActions(page)).toBeHidden()
+    await expect(page.locator('body')).not.toBeFocused()
+    // Once a conversation: not with time, not with an answer.
+    await page.clock.fastForward('01:30:00')
+    await exchange(page, 'І ще одне.')
+    await expect(pauseText(page)).toHaveText('')
+  })
+
+  test('#91 the reminder’s timer goes with the screen and the conversation: back from the diary it comes once; «Зібрати тези» opens «Завершити розмову?»; none in or after the crisis', async ({ page, api }) => {
+    api.on('GET /tags', { json: [] })
+    api.on('GET /reviews/weekly', { json: weekly('2026-10-19') })
+    api.on('POST /chat/turn', { sse: reply() }, { sse: meta() + crisis('keyword') })
+    await page.clock.install()
+    await openChat(page)
+    await exchange(page, USER)
+    await page.clock.fastForward('30:00')
+    await openDiary(page)
+    // The diary has no composer and no reminder; time passes there.
+    await page.clock.fastForward('15:00')
+    await page.getByRole('button', { name: 'До розмови' }).click()
+    await onScreen(page, 'chat')
+    await expect(pauseText(page)).toHaveText('Ви тут уже 40 хвилин. Можна зробити паузу або зібрати тези.')
+    // «Зібрати тези»: the confirm that says the text goes to the AI once more; the line is gone.
+    await page.getByRole('button', { name: 'Зібрати тези' }).click()
+    await expect(confirmDialog(page)).toBeVisible()
+    await expect(confirmDialog(page).getByRole('heading', { name: 'Завершити розмову?' })).toBeVisible()
+    await expect(pauseText(page)).toHaveText('')
+    await page.keyboard.press('Escape')
+    await expect(confirmDialog(page)).toBeHidden()
+    await expect(page.locator('[data-el="session-end"]')).toBeFocused()
+    // The crisis: no line now, none later, none in the next conversation before its own time.
+    await send(page, CRISIS_TEXT)
+    await onScreen(page, 'crisis')
+    await page.clock.fastForward('02:00:00')
+    await expect(page.locator('[data-el="pause-text"]')).toHaveCount(0)
+    await page.locator('[data-act="new-after-crisis"]').click()
+    await confirmDialog(page).getByRole('button', { name: 'Почати нову', exact: true }).click()
+    await onScreen(page, 'chat')
+    await page.clock.fastForward('01:00:00')
+    await expect(pauseText(page)).toHaveText('')
+  })
+
+  test('#92 a soft end: no praise and nothing that holds on; one line about people on «Збережено» and «Розмову завершено»; no thought to take along without a mark', async ({ page }) => {
+    await openChat(page)
+    await exchange(page, USER)
+    await page.locator('[data-el="session-end"]').click()
+    await confirmDialog(page).getByRole('button', { name: 'Завершити без тез' }).click()
+    await confirmDialog(page).getByRole('button', { name: 'Завершити', exact: true }).click()
+    await onScreen(page, 'ended')
+    const ended = page.locator('section[data-screen="ended"]')
+    await expect(ended.locator('.closing__share')).toHaveText(SHARE)
+    await expect(ended).not.toContainText(PRAISE)
+    await expect(ended.locator('a[href="tel:112"]')).toBeVisible()
+    await axe(page, 'ended, the soft end')
+    await ended.getByRole('button', { name: 'Почати нову розмову' }).click()
+    await onScreen(page, 'chat')
+    await exchange(page, USER)
+    await toReview(page)
+    await expect(candidates(page)).toBeHidden()
+    await page.locator('[data-el="review-save"]').click()
+    await onScreen(page, 'saved')
+    await expect(page.locator('[data-el="saved-keep"]')).toBeHidden()
+    await expect(page.locator('section[data-screen="saved"] .closing__share')).toHaveText(SHARE)
+    await expect(page.locator('section[data-screen="saved"]')).not.toContainText(PRAISE)
+  })
+
+})
+
+test.describe('highlights and the reminder in the light theme', () => {
+  test.use({ colorScheme: 'light' })
+
+  test('#98 axe in the light theme: a marked reply, the reminder to pause, the candidates, «Взяти з собою»', async ({ page }) => {
+    await page.clock.install()
+    await openChat(page)
+    await exchange(page, USER)
+    await keepOf(aiMessages(page).nth(1)).click()
+    await page.mouse.move(2, 2)
+    await axe(page, 'light: a marked reply')
+    await page.clock.fastForward('40:00')
+    await expect(pauseText(page)).not.toHaveText('')
+    await axe(page, 'light: the reminder to pause')
+    await toReview(page)
+    await expect(candidates(page)).toBeVisible()
+    await axe(page, 'light: the candidates')
+    await candidates(page).getByRole('button', { name: 'Додати до тез (позначене 1)' }).click()
+    // DRAFT has four theses: the fifth fits.
+    await page.locator('[data-el="review-save"]').click()
+    await onScreen(page, 'saved')
+    await expect(page.locator('[data-el="saved-keep"]')).toBeVisible()
+    await axe(page, 'light: «Збережено» with a thought to take along')
   })
 })
 

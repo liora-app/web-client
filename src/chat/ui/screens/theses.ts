@@ -5,9 +5,11 @@
 // review: while `saving` is 'unknown' the draft is read-only — the retry first compares the newest
 // record with the body that went out (§7.3). A 422 lands on the field the core mapped it to through
 // the index tables of the filtered body (§7.2). «Повернути» has no timer; one thesis always stays.
+// The replies marked «→ У тези» in the conversation wait under the theses as candidates: «Додати до
+// тез» makes one a thesis (never a sixth), «Прибрати» takes its mark off.
 
 import { BULLET_COUNTER_FROM, MAX_BULLET, MAX_BULLETS, MAX_TITLE, TITLE_COUNTER_FROM, codePoints, newTagIssue, type Draft } from '../../core/limits'
-import type { Action, Model, State } from '../../core/state'
+import { markCandidates, type Action, type Model, type State } from '../../core/state'
 import { BUSY_NOW, DRAFT_TEXT, busyRetryIn, counter, requestIdLine, saveError, summarizeError, summarizeRetryIn } from '../copy'
 import { byEl, fromTemplate, screenOf, setAttr, setText, show } from '../dom'
 import type { Screen } from './text'
@@ -91,6 +93,8 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
   const tags = el('review-tags')
   const tagInput = el<HTMLInputElement>('review-tag-input')
   const tagError = el('review-tag-error')
+  const candidates = el('candidates')
+  const candidateList = el('candidates-list')
   let last: Model | null = null
   let seq = 0
   let focusId: string | null = null
@@ -195,6 +199,39 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
     show(el('review-add-wrap'), active < MAX_BULLETS && state.saving === 'idle')
   }
 
+  /** The marked replies not in the draft yet, keyed by their place in the conversation: a render
+   *  keeps the rows (and the focus in them) where they are. Full of theses, «Додати до тез» says
+   *  why it waits (described by the line under the list). */
+  const renderCandidates = (state: Review): void => {
+    const items = markCandidates(state)
+    const full = activeCount(state.draft) >= MAX_BULLETS
+    const busy = state.saving !== 'idle'
+    const rows = new Map(Array.from(candidateList.querySelectorAll<HTMLLIElement>('li[data-i]')).map((li) => [li.dataset.i!, li]))
+    let previous: HTMLLIElement | null = null
+    for (const [n, item] of items.entries()) {
+      const key = String(item.index)
+      let li = rows.get(key)
+      if (li === undefined) {
+        li = fromTemplate<HTMLLIElement>('candidate')
+        li.dataset.i = key
+        for (const button of Array.from(li.querySelectorAll<HTMLElement>('button'))) button.dataset.i = key
+      }
+      rows.delete(key)
+      const next: ChildNode | null = previous === null ? candidateList.firstChild : previous.nextSibling
+      if (next !== li) candidateList.insertBefore(li, next)
+      previous = li
+      setText(li.querySelector('.candidate__text')!, item.text)
+      for (const which of Array.from(li.querySelectorAll<HTMLElement>('.candidate__which'))) setText(which, ` (позначене ${n + 1})`)
+      const take = li.querySelector<HTMLElement>('[data-act="candidate-take"]')!
+      setAttr(take, 'aria-disabled', full || busy ? 'true' : null)
+      setAttr(take, 'aria-describedby', full ? 'candidates-full' : null)
+      setAttr(li.querySelector<HTMLElement>('[data-act="candidate-drop"]')!, 'aria-disabled', busy ? 'true' : null)
+    }
+    for (const stale of rows.values()) stale.remove()
+    show(candidates, items.length > 0)
+    show(el('candidates-full'), items.length > 0 && full)
+  }
+
   /** The pills are keyed by the tag's id, like the theses: a render keeps the node (and the focus
    *  on its «×») in place. A wrong tag says so in text, not only by its border (SC 1.4.1, 3.3.1):
    *  the line under the field names every wrong tag, and each one's «×» is described by that line. */
@@ -264,6 +301,28 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
           update({ ...state.draft, bullets: [...state.draft.bullets, { id: fresh, text: '', removed: false }] })
           return true
         }
+        case 'candidate-take': {
+          const index = Number(target.dataset.i)
+          dispatch({ type: 'review/take', index })
+          // The new thesis takes the focus: the person reads and trims what came in.
+          root.querySelector<HTMLElement>(`#thesis-m${index}`)?.focus()
+          return true
+        }
+        case 'candidate-drop': {
+          if (state.saving !== 'idle') return true
+          const row = target.closest<HTMLElement>('li[data-i]')
+          const after = row?.nextElementSibling ?? row?.previousElementSibling ?? null
+          dispatch({ type: 'review/unmark', index: Number(target.dataset.i) })
+          // The focus stays in the list (the next candidate, or the one before), else on «+ Додати
+          // тезу» above it or the save — never back at the top of the screen.
+          const nextFocus =
+            after?.isConnected === true
+              ? after.querySelector<HTMLElement>('[data-act="candidate-drop"]')
+              : root.querySelector<HTMLElement>('[data-el="review-add-wrap"]:not([hidden]) button') ??
+                root.querySelector<HTMLElement>('.review__actions button:not([hidden])')
+          nextFocus?.focus()
+          return true
+        }
         case 'tag-remove':
           if (state.saving !== 'idle') return true
           update({ ...state.draft, tags: state.draft.tags.filter((t) => t.id !== id) })
@@ -297,6 +356,7 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
       setAttr(title, 'aria-invalid', titleIssue ? 'true' : null)
 
       renderBullets(state)
+      renderCandidates(state)
       renderTags(state)
       tagInput.readOnly = state.saving !== 'idle'
       setAttr(el('review-tag-add'), 'aria-disabled', state.saving !== 'idle' ? 'true' : null)
@@ -344,6 +404,7 @@ export function reviewScreen(dispatch: (action: Action) => void): ReviewScreen {
       title.value = ''
       tagInput.value = ''
       bullets.replaceChildren()
+      candidateList.replaceChildren()
       tags.replaceChildren()
     },
   }

@@ -62,12 +62,19 @@ import { MAX_FRAME_BUFFER, ProtocolError, chatEvents, readFrames, type TurnEvent
 import {
   FALLBACK_SCENARIO,
   INITIAL_MODEL,
+  MAX_MARKS,
+  PAUSE_AFTER_MS,
+  PAUSE_AFTER_REPLIES,
   authErrorFrom,
   canOpenJournal,
   journalBusy,
   leaveGuard,
   llmInFlight,
+  markCandidates,
+  markText,
   matchesSaved,
+  pauseAt,
+  pauseDue,
   reduce,
   topTool,
   transferAskable,
@@ -76,6 +83,7 @@ import {
   type Effect,
   type JournalState,
   type Model,
+  type ReviewState,
   type State,
 } from '../../src/chat/core/state'
 import {
@@ -2129,6 +2137,217 @@ test.describe('state: theses', () => {
 })
 
 // ── The diary (§7.7): the wrappers, the helpers, the screen's steps ──────────────────────────
+
+// ── «→ У тези», the reminder to pause, the end (spec §3.7.2, §3.7.7, §7.2, §7.5) ─────────────
+
+test.describe('state: «→ У тези», the reminder to pause, the soft end', () => {
+  /** A conversation of `turns` exchanges; message n (from 0) sent at `start + n·step`. */
+  function talk(turns: number, opts: Readonly<{ start?: number; step?: number; reply?: (n: number) => string }> = {}): Model {
+    const start = opts.start ?? NOW
+    const step = opts.step ?? 1000
+    let m = booted()
+    for (let n = 0; n < turns; n++) {
+      const at = start + n * step
+      const sent = run(m, { type: 'chat/send', text: `Синтетичне повідомлення ${n + 1}.`, now: at })
+      const text = opts.reply?.(n) ?? `Синтетична відповідь ${n + 1}.`
+      m = run(sent.model, { type: 'turn/outcome', id: turnEffect(sent.effects).id, now: at + 500, outcome: { kind: 'done', text, finishReason: 'stop', requestId: 'r' } }).model
+    }
+    return m
+  }
+  const toReview = (m: Model, bullets: readonly string[] = ['перша', 'друга', 'третя']): Model => {
+    const s = run(m, { type: 'chat/summarize' })
+    const fx = s.effects.find((e): e is Extract<Effect, { type: 'summarize' }> => e.type === 'summarize')!
+    return run(s.model, { type: 'summarize/ok', id: fx.id, draft: { title: 'Розмова про день', bullets: [...bullets], tags: ['день'] } }).model
+  }
+  const reviewOf = (m: Model): ReviewState => {
+    expect(m.state.s).toBe('review')
+    return m.state as ReviewState
+  }
+
+  test('a reply is marked and unmarked; only the AI’s replies, never the opening one; five at most; the turn and the theses bodies never carry a mark', () => {
+    const m = talk(7)
+    // Replies sit at 2, 4, 6…; 0 is the opening message, odd indices are the person's.
+    const marked = run(m, { type: 'chat/mark', index: 2 }, { type: 'chat/mark', index: 4 }).model
+    expect(chatOf(marked).session.marks).toEqual([2, 4])
+    expect(chatOf(run(marked, { type: 'chat/mark', index: 2 }).model).session.marks).toEqual([4])
+    for (const index of [0, 1, 3, 99, -2, 2.5, Number.NaN]) {
+      expect(run(m, { type: 'chat/mark', index }).model, `index ${index}`).toBe(m)
+    }
+    const full = run(m, ...[2, 4, 6, 8, 10].map((index): Action => ({ type: 'chat/mark', index }))).model
+    expect(chatOf(full).session.marks).toHaveLength(MAX_MARKS)
+    expect(run(full, { type: 'chat/mark', index: 12 }).model).toBe(full)
+    // Taking one off makes room again.
+    expect(chatOf(run(full, { type: 'chat/mark', index: 6 }, { type: 'chat/mark', index: 12 }).model).session.marks).toEqual([2, 4, 8, 10, 12])
+
+    const sent = run(full, { type: 'chat/send', text: 'Ще одне.', now: NOW + 99_000 })
+    expect(Object.keys(turnEffect(sent.effects).body).sort()).toEqual(['messages', 'scenario'])
+    const sum = run(full, { type: 'chat/summarize' })
+    const fx = sum.effects.find((e): e is Extract<Effect, { type: 'summarize' }> => e.type === 'summarize')!
+    expect(Object.keys(fx.body).sort()).toEqual(['messages', 'scenario'])
+    expect(JSON.stringify(fx.body)).not.toContain('marks')
+  })
+
+  test('marks live with the conversation: the theses and back keep them; a new conversation and the crisis have none; no mark is set outside the conversation', () => {
+    const m = run(talk(2), { type: 'chat/mark', index: 2 }).model
+    const back = run(toReview(m), { type: 'review/back' }).model
+    expect(chatOf(back).session.marks).toEqual([2])
+    const review = toReview(m)
+    expect(run(review, { type: 'chat/mark', index: 4 }).model).toBe(review)
+    const sent = run(m, { type: 'chat/send', text: 'Синтетичне повідомлення.', now: NOW + 9000 })
+    const crisis = run(sent.model, { type: 'turn/outcome', id: turnEffect(sent.effects).id, now: NOW, outcome: { kind: 'crisis', source: 'keyword', helplines: FALLBACK } }).model
+    expect(crisis.state.s).toBe('crisis')
+    expect(run(crisis, { type: 'chat/mark', index: 2 }).model).toBe(crisis)
+    expect(chatOf(run(booted(), { type: 'chat/scenario', id: 'day' }).model).session.marks).toEqual([])
+  })
+
+  test('on the theses the marked replies wait as candidates: «Додати до тез» makes one a thesis (never a sixth), «Прибрати» takes its mark off; not while saving', () => {
+    const m = run(talk(4), { type: 'chat/mark', index: 4 }, { type: 'chat/mark', index: 2 }).model
+    const review = toReview(m)
+    expect(markCandidates(reviewOf(review))).toEqual([
+      { index: 4, text: 'Синтетична відповідь 2.' },
+      { index: 2, text: 'Синтетична відповідь 1.' },
+    ])
+    const taken = run(review, { type: 'review/take', index: 2 }).model
+    expect(reviewOf(taken).draft.bullets.map((b) => [b.id, b.text])).toEqual([
+      ['b0', 'перша'],
+      ['b1', 'друга'],
+      ['b2', 'третя'],
+      ['m2', 'Синтетична відповідь 1.'],
+    ])
+    expect(markCandidates(reviewOf(taken)).map((c) => c.index)).toEqual([4])
+    // A taken thesis is a thesis: removed, it does not come back as a candidate (it has «Повернути»).
+    const removed = run(taken, {
+      type: 'review/update',
+      draft: { ...reviewOf(taken).draft, bullets: reviewOf(taken).draft.bullets.map((b) => (b.id === 'm2' ? { ...b, removed: true } : b)) },
+    }).model
+    expect(markCandidates(reviewOf(removed)).map((c) => c.index)).toEqual([4])
+    // Five theses: the candidate waits.
+    const five = toReview(m, ['1', '2', '3', '4', '5'])
+    expect(run(five, { type: 'review/take', index: 2 }).model).toBe(five)
+    // «Прибрати»: off the candidates and off the conversation.
+    const dropped = run(review, { type: 'review/unmark', index: 4 }).model
+    expect(markCandidates(reviewOf(dropped)).map((c) => c.index)).toEqual([2])
+    expect(chatOf(run(dropped, { type: 'review/back' }).model).session.marks).toEqual([2])
+    // While the save is on its way the draft is read-only.
+    const saving = run(review, { type: 'review/save' }).model
+    expect(reviewOf(saving).saving).toBe('saving')
+    expect(run(saving, { type: 'review/take', index: 2 }).model).toBe(saving)
+    expect(run(saving, { type: 'review/unmark', index: 2 }).model).toBe(saving)
+    // «Скласти заново»: a new draft, the candidates again.
+    const again = run(taken, { type: 'confirm/open', kind: 'regenerate' }, { type: 'confirm/accept' })
+    const fx = again.effects.find((e): e is Extract<Effect, { type: 'summarize' }> => e.type === 'summarize')!
+    const fresh = run(again.model, { type: 'summarize/ok', id: fx.id, draft: { title: 'Інша', bullets: ['одна'], tags: [] } }).model
+    expect(markCandidates(reviewOf(fresh)).map((c) => c.index)).toEqual([4, 2])
+  })
+
+  test('a marked reply becomes one line of at most 500 code points, the paused number masked with the short note and never cut', () => {
+    const spaced = PAUSED.slice(0, 1) + ' ' + PAUSED.slice(1)
+    expect(markText('Перше.\n\nДруге   речення.')).toBe('Перше. Друге речення.')
+    const masked = markText(`Можна подзвонити на ${spaced}, це безкоштовно.`)
+    expect(masked).toContain(PAUSED_LINE_NOTE_SHORT)
+    expect(masked).not.toMatch(/\p{N}/u)
+    const long = markText(`${'слово '.repeat(120)}${spaced} кінець`)
+    expect(codePoints(long)).toBeLessThanOrEqual(500)
+    expect(long.endsWith('…')).toBe(true)
+    expect(long).not.toMatch(/\p{N}/u)
+    // Near the end the note goes whole or not at all.
+    for (let pad = 470; pad <= 500; pad += 3) {
+      const text = markText(`${'а'.repeat(pad)} ${spaced} хвіст`)
+      expect(codePoints(text), `pad ${pad}`).toBeLessThanOrEqual(500)
+      if (text.includes(PAUSED_LINE_NOTE_SHORT.slice(0, 3))) expect(text, `pad ${pad}`).toContain(PAUSED_LINE_NOTE_SHORT)
+      expect(text, `pad ${pad}`).not.toMatch(/\p{N}/u)
+    }
+    // The candidate on the theses screen is that text.
+    const m = run(talk(1, { reply: () => `Номер ${spaced} не відповідає.` }), { type: 'chat/mark', index: 2 }).model
+    expect(markCandidates(reviewOf(toReview(m)))[0]!.text).toBe(`Номер ${PAUSED_LINE_NOTE_SHORT} не відповідає.`)
+  })
+
+  test('«Збережено» keeps one thought to take along: the first saved thesis that came from a mark — none without one', () => {
+    const m = run(talk(2), { type: 'chat/mark', index: 4 }).model
+    const review = run(toReview(m), { type: 'review/take', index: 4 }).model
+    const save = run(review, { type: 'review/save' })
+    const fx = save.effects[0] as Extract<Effect, { type: 'save' }>
+    expect(fx.body.bullets).toEqual(['перша', 'друга', 'третя', 'Синтетична відповідь 2.'])
+    const stored: SummaryOut = { ...SUMMARY, bullets: ['перша', 'друга', 'третя', 'Синтетична відповідь 2 (як зберіг сервер).'] }
+    expect(run(save.model, { type: 'save/ok', id: fx.id, summary: stored }).model.state).toEqual({ s: 'saved', summary: stored, keep: 'Синтетична відповідь 2 (як зберіг сервер).' })
+    // Not taken: nothing to take along (the shape of `saved` stays as it was).
+    const plain = run(toReview(m), { type: 'review/save' })
+    const pfx = plain.effects[0] as Extract<Effect, { type: 'save' }>
+    expect(run(plain.model, { type: 'save/ok', id: pfx.id, summary: SUMMARY }).model.state).toEqual({ s: 'saved', summary: SUMMARY })
+    // A save confirmed by the newest record after an unknown result keeps it too.
+    const unknown = run(review, { type: 'review/save' })
+    const ufx = unknown.effects[0] as Extract<Effect, { type: 'save' }>
+    const lost = run(unknown.model, { type: 'save/fail', id: ufx.id, error: apiError(0, 'network') }).model
+    const retry = run(lost, { type: 'review/save' })
+    const check = retry.effects[0] as Extract<Effect, { type: 'save-check' }>
+    expect(check.type).toBe('save-check')
+    const newest: SummaryOut = { ...SUMMARY, scenario: 'free', title: 'Розмова про день', bullets: ['перша', 'друга', 'третя', 'Синтетична відповідь 2.'], tags: [{ id: 't', name: 'день', source: 'ai' }] }
+    const matched = run(retry.model, { type: 'save/check', id: check.id, list: { items: [newest], next_cursor: null }, date: null }).model
+    expect(matched.state).toMatchObject({ s: 'saved', keep: 'Синтетична відповідь 2.' })
+  })
+
+  test('the reminder to pause: after 60 replies with the answer that makes them, or 40 minutes after the first message — once, never mid-answer', () => {
+    expect(PAUSE_AFTER_MS).toBe(40 * 60_000)
+    expect(PAUSE_AFTER_REPLIES).toBe(60)
+    // 29 exchanges = 58 replies: nothing; the 30th answer brings it, as `count`.
+    const almost = talk(29)
+    expect(chatOf(almost).session.pause).toBe('none')
+    expect(pauseDue(chatOf(almost).session, NOW + 60_000)).toBeNull()
+    const sixty = run(almost, { type: 'chat/send', text: 'Ще.', now: NOW + 60_000 })
+    const counted = run(sixty.model, { type: 'turn/outcome', id: turnEffect(sixty.effects).id, now: NOW + 61_000, outcome: { kind: 'done', text: 'Відповідь.', finishReason: 'stop', requestId: 'r' } }).model
+    expect(chatOf(counted).session.messages.length - 1).toBe(60)
+    expect(chatOf(counted).session.pause).toBe('count')
+
+    // Time: the first message's press starts the 40 minutes; the page's timer asks.
+    const m = talk(2, { start: NOW })
+    expect(pauseAt(chatOf(m).session)).toBe(NOW + PAUSE_AFTER_MS)
+    expect(run(m, { type: 'chat/pause-due', now: NOW + PAUSE_AFTER_MS - 1 }).model).toBe(m)
+    const due = run(m, { type: 'chat/pause-due', now: NOW + PAUSE_AFTER_MS }).model
+    expect(chatOf(due).session.pause).toBe('time')
+    expect(pauseAt(chatOf(due).session)).toBeNull()
+    // Once: «Сховати», and it never comes back — not with the timer, not with an answer.
+    const hidden = run(due, { type: 'chat/pause-hide' }).model
+    expect(chatOf(hidden).session.pause).toBe('hidden')
+    expect(run(hidden, { type: 'chat/pause-due', now: NOW + 10 * PAUSE_AFTER_MS }).model).toBe(hidden)
+    const later = run(hidden, { type: 'chat/send', text: 'Ще.', now: NOW + 3 * PAUSE_AFTER_MS })
+    const after = run(later.model, { type: 'turn/outcome', id: turnEffect(later.effects).id, now: NOW + 3 * PAUSE_AFTER_MS, outcome: { kind: 'done', text: 'Так.', finishReason: 'stop', requestId: 'r' } }).model
+    expect(chatOf(after).session.pause).toBe('hidden')
+
+    // Mid-answer the timer is ignored; the answer's `done` brings the reminder.
+    const sent = run(m, { type: 'chat/send', text: 'Довге питання.', now: NOW + PAUSE_AFTER_MS - 5000 })
+    expect(run(sent.model, { type: 'chat/pause-due', now: NOW + PAUSE_AFTER_MS }).model).toBe(sent.model)
+    const done = run(sent.model, { type: 'turn/outcome', id: turnEffect(sent.effects).id, now: NOW + PAUSE_AFTER_MS + 2000, outcome: { kind: 'done', text: 'Відповідь.', finishReason: 'stop', requestId: 'r' } }).model
+    expect(chatOf(done).session.pause).toBe('time')
+    // The clock starts at the press of the first message (answered() sends without one: its time
+    // is that of `done`).
+    expect(pauseAt(chatOf(answered(booted())).session)).toBe(NOW + PAUSE_AFTER_MS)
+    expect(pauseAt(chatOf(booted()).session)).toBeNull()
+  })
+
+  test('the reminder lives with its conversation: the diary and the theses keep it; the crisis takes it; a new conversation starts over; «Зібрати тези» opens «Завершити розмову?»', () => {
+    const due = run(talk(2), { type: 'chat/pause-due', now: NOW + PAUSE_AFTER_MS }).model
+    expect(chatOf(due).session.pause).toBe('time')
+    const journal = run(due, { type: 'journal/open', tz: 'Europe/Kyiv' }).model
+    expect(journal.state.s).toBe('journal')
+    expect(run(journal, { type: 'chat/pause-hide' }).model).toBe(journal)
+    expect(chatOf(run(journal, { type: 'journal/back' }).model).session.pause).toBe('time')
+    expect(chatOf(run(toReview(due), { type: 'review/back' }).model).session.pause).toBe('time')
+    // «Зібрати тези»: the line goes, and the confirm that says the text goes to the provider again.
+    const collect = run(due, { type: 'chat/pause-collect' })
+    expect(chatOf(collect.model).session.pause).toBe('hidden')
+    expect(collect.model.overlay).toEqual([{ o: 'confirm', kind: 'end', revoke: null, leaveTo: null, back: false }])
+    expect(collect.effects).toEqual([])
+    // While an answer comes: nothing (the button waits).
+    const sent = run(due, { type: 'chat/send', text: 'Ще.', now: NOW + PAUSE_AFTER_MS + 1000 })
+    expect(run(sent.model, { type: 'chat/pause-collect' }).model).toBe(sent.model)
+    // The crisis: the conversation and its reminder are gone; a new conversation starts at none.
+    const crisis = run(sent.model, { type: 'turn/outcome', id: turnEffect(sent.effects).id, now: NOW, outcome: { kind: 'crisis', source: 'keyword', helplines: FALLBACK } }).model
+    expect(crisis.state.s).toBe('crisis')
+    expect(run(crisis, { type: 'chat/pause-due', now: NOW + 9 * PAUSE_AFTER_MS }).model).toBe(crisis)
+    const fresh = run(crisis, { type: 'confirm/open', kind: 'new-after-crisis' }, { type: 'confirm/accept' }).model
+    expect(chatOf(fresh).session).toMatchObject({ pause: 'none', marks: [] })
+  })
+})
 
 test.describe('api: the diary', () => {
   function recorder(responder: (url: string, init: RequestInit) => Response = () => new Response('{}', { status: 200 })) {

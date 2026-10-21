@@ -18,11 +18,11 @@ import { initSound } from '../../ui/sound'
 import { initThemePicker } from '../../ui/theme-picker'
 import { createApi } from '../core/api'
 import { maskPausedLine } from '../core/helplines'
-import { draftOf, leaveGuard, pendingOf, sessionOf, type Action, type Model } from '../core/state'
+import { MAX_MARKS, draftOf, leaveGuard, pendingOf, sessionOf, type Action, type Model } from '../core/state'
 import type { ConsentKind } from '../core/types'
 import { createAnnouncer } from './announcer'
 import { conversationText, copyText, entryMarkdown, thesesText } from './clipboard'
-import { COPIED, COPY_FAILED_LABEL, copyFailed } from './copy'
+import { COPIED, COPY_FAILED_LABEL, copyFailed, sayMarked, sayMarksFull, sayUnmarked } from './copy'
 import { createEffects } from './effects'
 import { initKeyboard } from './keyboard'
 import { createLeaveGuard } from './leave-guard'
@@ -270,6 +270,30 @@ function act(name: string, target: HTMLElement, event: Event): void {
       return
     case 'starter':
       return view.chat.start(Number(target.dataset.i))
+    // «→ У тези» under a reply (§3.7.2): a toggle. What changed is said in the live region — the
+    // pressed state alone is not announced by every screen reader.
+    case 'keep-reply': {
+      if (state.s !== 'chat') return
+      const index = Number(target.dataset.i)
+      const before = state.session.marks
+      const on = before.includes(index)
+      if (!on && before.length >= MAX_MARKS) return announcer.say(sayMarksFull(MAX_MARKS))
+      dispatch({ type: 'chat/mark', index })
+      const after = store.model().state
+      if (after.s !== 'chat' || after.session.marks === before) return
+      announcer.say((on ? sayUnmarked : sayMarked)(after.session.marks.length, MAX_MARKS))
+      return
+    }
+    // The reminder to pause (§3.7.7).
+    case 'pause-hide':
+      return dispatch({ type: 'chat/pause-hide' })
+    case 'pause-collect': {
+      // The line goes as the confirm opens; the confirm gives the focus back to «Завершити
+      // розмову», the control it stands for, not to a button that is no longer there.
+      const end = document.querySelector<HTMLElement>('[data-el="session-end"]')
+      if (end !== null && end.closest('[hidden]') === null) end.focus({ preventScroll: true })
+      return dispatch({ type: 'chat/pause-collect' })
+    }
     // The diary (§7.7).
     case 'journal-open':
       return dispatch({ type: 'journal/open', tz: timeZone() })

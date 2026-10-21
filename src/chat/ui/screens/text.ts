@@ -129,6 +129,7 @@ export function savedScreen(): Screen {
       setText(byEl('saved-title', root), '')
       byEl('saved-bullets', root).replaceChildren()
       setText(byEl('saved-tags', root), '')
+      setText(byEl('saved-keep-text', root), '')
     },
     render(model, entered) {
       if (!entered) return
@@ -152,6 +153,10 @@ export function savedScreen(): Screen {
       const tags = byEl('saved-tags', root)
       setText(tags, summary.tags.map((t) => `#${maskPausedLine(t.name)}`).join(' '))
       show(tags, summary.tags.length > 0)
+      // «Взяти з собою» (§7.5): only a thesis the person marked themselves; nothing otherwise.
+      const { keep } = model.state as On<'saved'>
+      setText(byEl('saved-keep-text', root), keep === undefined ? '' : maskPausedLine(keep))
+      show(byEl('saved-keep', root), keep !== undefined)
     },
   }
 }

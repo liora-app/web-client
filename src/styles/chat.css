@@ -621,6 +621,7 @@ html[data-motion='on'] .chat-page .screen:not(.screen--crisis, [data-screen='boo
 .status-line--quiet,
 .composer__status:empty,
 .chat-line:empty,
+.pause__text:empty,
 #review-tag-error:empty {
   position: absolute;
   display: block;
@@ -1741,9 +1742,10 @@ html[data-motion='on'] .said--waiting .said__dots i:nth-child(3) {
   }
 }
 
-/* The time and «Копіювати» under a message. */
+/* The time and, under a reply, «Копіювати» and «→ У тези». */
 .said__meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 0.75rem;
   min-height: 1.5rem;
@@ -1755,7 +1757,9 @@ html[data-motion='on'] .said--waiting .said__dots i:nth-child(3) {
   color: var(--color-text-dim);
 }
 
-.said__copy {
+/* Small word-buttons: identified by their words and an icon in the same colour (≥ 4.5:1), so no
+   outline is needed (WCAG 1.4.11). */
+.said__act {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -1776,41 +1780,62 @@ html[data-motion='on'] .said--waiting .said__dots i:nth-child(3) {
 }
 
 /* It fades in under the pointer only with motion; without it, it is simply there. */
-html[data-motion='on'] .said__copy {
+html[data-motion='on'] .said__act {
   transition:
     color var(--dur-1) var(--ease-standard),
     background-color var(--dur-1) var(--ease-standard),
     opacity var(--dur-2) var(--ease-standard);
 }
 
-.said__copy svg {
+.said__act svg {
   width: 0.95rem;
   height: 0.95rem;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.4;
+  stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.said__copy:hover {
+.said__act:hover {
   color: var(--color-text);
   background: var(--color-hover);
 }
 
-/* A mouse: the action shows on the reply under the pointer or with the keyboard focus in it (never
-   hidden from Tab). A touch screen: always there, small. */
+/* «→ У тези»: an arrow into the list; marked, a tick in the AI's colour on a faint ground — the
+   state is in the icon too, and aria-pressed says it (not colour alone). */
+.said__keep-on {
+  display: none;
+}
+
+.said__keep[aria-pressed='true'] {
+  color: var(--color-ai);
+  background: var(--color-hover);
+}
+
+.said__keep[aria-pressed='true'] .said__keep-add {
+  display: none;
+}
+
+.said__keep[aria-pressed='true'] .said__keep-on {
+  display: block;
+}
+
+/* A mouse: the actions show on the reply under the pointer or with the keyboard focus in it (never
+   hidden from Tab); a marked reply keeps its mark in view. A touch screen: always there, small. */
 @media (hover: hover) and (pointer: fine) {
-  .said__copy {
+  .said__act {
     opacity: 0;
   }
 
-  .said:is(:hover, :focus-within) .said__copy {
+  .said:is(:hover, :focus-within) .said__act,
+  .said__keep[aria-pressed='true'] {
     opacity: 1;
   }
 }
 
 @media (pointer: coarse) {
-  .said__copy {
+  .said__act {
     min-height: 2.75rem;
     margin-block: -0.6rem;
   }
@@ -2277,6 +2302,38 @@ html[data-motion='on'] .composer__send svg {
 .composer__status {
   margin-top: 0.5rem;
   padding-inline: 0.75rem;
+}
+
+/* The reminder to pause (§3.7.7): one quiet line over the field with its two ways on — no box, no
+   colour that calls; empty, it takes no room (its sentence is a live line, visually hidden then). */
+.pause {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 1.25rem;
+  padding: 0 0.75rem 0.4rem;
+}
+
+.pause:has(.pause__text:empty) {
+  padding: 0;
+}
+
+.pause__text {
+  font-size: var(--step--1);
+  line-height: 1.45;
+  color: var(--color-text-soft);
+}
+
+.pause__actions {
+  gap: 0 1.25rem;
+}
+
+.pause__actions button {
+  font-size: 0.875rem;
+}
+
+html[data-motion='on'] .pause:has(.pause__text:not(:empty)) {
+  animation: fade-in var(--dur-3) var(--ease-standard) backwards;
 }
 
 /* «↓ Далі відповідь»: over the field, only while the end of the answer is out of view. */
@@ -2816,6 +2873,73 @@ html[data-kb] .composer__keys {
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
+}
+
+/* «Позначене в розмові» (§7.2): the replies marked «→ У тези», each a quote in the AI's line with
+   «Додати до тез» and «Прибрати» under it — hairlines, no cards. */
+.candidates {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.candidates__list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--color-line);
+}
+
+.candidate {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.85rem 0 0.1rem;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.candidate__text {
+  max-width: 38rem;
+  padding-left: 0.85rem;
+  border-left: 2px solid var(--color-ai);
+  color: var(--color-text-soft);
+  overflow-wrap: anywhere;
+}
+
+.candidate__actions {
+  padding-left: 0.85rem;
+}
+
+/* The end of a conversation (§7.5, §7.6): one thought to take along, if the person marked one, and
+   one line about people — quiet, no praise. */
+.closing {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.closing__keep {
+  display: grid;
+  gap: 0.35rem;
+  max-width: 38rem;
+}
+
+.closing__label {
+  font-family: var(--font-mono);
+  font-size: var(--step-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-soft);
+}
+
+.closing__thought {
+  font-size: var(--step-1);
+  line-height: 1.5;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.closing__share {
+  color: var(--color-text-soft);
 }
 
 @media (max-width: 47.99em) {

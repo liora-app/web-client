@@ -389,6 +389,15 @@
 
             <div class="composer" data-el="composer">
               <button class="jump" type="button" data-act="jump-end" data-el="jump" hidden><span aria-hidden="true">↓</span> <span data-el="jump-text">Далі відповідь</span></button>
+              <!-- The reminder to pause (spec §3.7.7): once a conversation, never in the way. The sentence is a
+                   live line rendered while empty; its two buttons come with it. -->
+              <div class="pause" data-el="pause">
+                <p class="pause__text" data-el="pause-text" role="status"></p>
+                <ul class="arrows arrows--row pause__actions" role="list" data-el="pause-actions" hidden>
+                  <li><button type="button" data-act="pause-collect" aria-haspopup="dialog" data-el="pause-collect">Зібрати тези</button></li>
+                  <li><button type="button" data-act="pause-hide">Сховати</button></li>
+                </ul>
+              </div>
               <label class="visually-hidden" for="composer-input">Ваше повідомлення для AI</label>
               <div class="composer__field">
                 <textarea class="composer__input" id="composer-input" rows="1" autocomplete="off" placeholder="Пишіть так, як думаєте…" aria-describedby="composer-note"></textarea>
@@ -554,6 +563,14 @@
               </ul>
             </fieldset>
 
+            <!-- «→ У тези» (spec §7.2): replies the person marked in the conversation wait here; one press
+                 makes one a thesis. The quotes are the AI's words — data, like the transcript. -->
+            <section class="candidates" aria-labelledby="candidates-title" data-el="candidates" hidden>
+              <h2 class="field__label" id="candidates-title">Позначене в розмові</h2>
+              <ol class="candidates__list" role="list" data-el="candidates-list" data-no-stoplist></ol>
+              <p class="small" id="candidates-full" data-el="candidates-full" hidden>Тез уже пʼять — щоб додати цю, приберіть одну з них.</p>
+            </section>
+
             <fieldset class="tags">
               <legend class="field__label">Теги</legend>
               <ul class="tags__list" role="list" data-el="review-tags"></ul>
@@ -607,7 +624,15 @@
             <ul class="arrows" role="list">
               <li><a href="/api/v1/export?format=md" download>Завантажити щоденник (.md)</a></li>
             </ul>
-            <p class="quiet">Добре, що ви знайшли на це час.</p>
+            <!-- The end (spec §7.5): no praise, nothing that holds the person here. One thought to take along
+                 — only a thesis they brought in themselves with «→ У тези» — and one line about people. -->
+            <div class="closing">
+              <div class="closing__keep" data-el="saved-keep" hidden>
+                <p class="closing__label">Взяти з собою</p>
+                <p class="closing__thought" data-el="saved-keep-text"></p>
+              </div>
+              <p class="closing__share">Можливо, варто поділитися цим із кимось близьким?</p>
+            </div>
             <!-- «Як ви зараз?» of this conversation (spec §3.13): words, never scores; in this tab only. -->
             <div class="mood-after" data-el="mood-after" hidden>
               <p class="mood-after__line" data-el="mood-line"></p>
@@ -641,7 +666,11 @@
                 <li><a href="/api/v1/export?format=md" download>Завантажити щоденник (.md)</a></li>
               </ul>
             </div>
-            <p class="quiet">Добре, що ви знайшли на це час. Якщо після розмови стало важче — <a href="tel:112">112</a>, <a href="tel:103">103</a> або <a href="https://howareu.com/hot-lines" target="_blank" rel="noopener noreferrer">гарячі лінії «Ти як?»<span class="visually-hidden"> (відкриється в новій вкладці)</span></a>.</p>
+            <!-- The end (spec §7.6): no praise; one line about people, then where to call if it got harder. -->
+            <div class="closing">
+              <p class="closing__share">Можливо, варто поділитися цим із кимось близьким?</p>
+            </div>
+            <p class="quiet">Якщо після розмови стало важче — <a href="tel:112">112</a>, <a href="tel:103">103</a> або <a href="https://howareu.com/hot-lines" target="_blank" rel="noopener noreferrer">гарячі лінії «Ти як?»<span class="visually-hidden"> (відкриється в новій вкладці)</span></a>.</p>
             <!-- «Як ви зараз?» of this conversation (spec §3.13): words, never scores; in this tab only. -->
             <div class="mood-after" data-el="mood-after" hidden>
               <p class="mood-after__line" data-el="mood-line"></p>
@@ -1061,9 +1090,17 @@
           <p class="said__cut" hidden>Відповідь обрізано за довжиною.</p>
           <div class="said__meta" hidden>
             <time class="said__time" hidden></time>
-            <button class="said__copy" type="button" data-act="copy-reply" hidden>
+            <!-- Per-reply actions: the visible words first, then (for a screen reader) which reply —
+                 «Копіювати відповідь 2, 23:10». Never in a read-only copy (the crisis above all). -->
+            <button class="said__copy said__act" type="button" data-act="copy-reply" hidden>
               <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="5.5" y="5.5" width="7.5" height="7.5" rx="1.75" /><path d="M10.5 3.25H4.75a1.5 1.5 0 0 0-1.5 1.5v5.75" /></svg>
-              <span class="said__copy-label">Копіювати</span>
+              <span class="said__copy-label">Копіювати</span><span class="visually-hidden said__which"></span>
+            </button>
+            <!-- «→ У тези»: a toggle; the marked reply waits on the theses screen as a candidate. -->
+            <button class="said__keep said__act" type="button" data-act="keep-reply" aria-pressed="false" hidden>
+              <svg class="said__keep-add" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M2.75 8h8.5M8.25 4.75 11.5 8l-3.25 3.25M13.75 3.5v9" /></svg>
+              <svg class="said__keep-on" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3.25 8.25 6.5 11.5l6.25-7" /></svg>
+              <span class="said__keep-label">У тези</span><span class="visually-hidden said__which"></span>
             </button>
           </div>
           <div class="said__status" hidden>
@@ -1117,6 +1154,16 @@
           <p>Тезу прибрано.</p>
           <span class="arrows arrows--inline"><button type="button" data-act="bullet-restore">Повернути</button></span>
         </div>
+      </li>
+    </template>
+
+    <template data-tpl="candidate">
+      <li class="candidate">
+        <p class="candidate__text"></p>
+        <ul class="arrows arrows--row candidate__actions" role="list">
+          <li><button type="button" data-act="candidate-take">Додати до тез<span class="visually-hidden candidate__which"></span></button></li>
+          <li><button type="button" data-act="candidate-drop">Прибрати<span class="visually-hidden candidate__which"></span></button></li>
+        </ul>
       </li>
     </template>
 

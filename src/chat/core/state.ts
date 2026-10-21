@@ -63,6 +63,13 @@ import {
 export const RATE_LIMIT_FALLBACK_MS = 60_000
 /** A record counts as "ours" after an unknown save result only if it is this fresh (§7.3). */
 export const SAVE_MATCH_WINDOW_MS = 2 * 60_000
+/** «→ У тези»: as many candidates as a record can hold theses (§3.7.2). */
+export const MAX_MARKS = MAX_BULLETS
+/** The reminder to pause (§3.7.7): 40 minutes after the first message was sent… */
+export const PAUSE_AFTER_MS = 40 * 60_000
+/** …or 60 replies in the conversation — the person's messages and the AI's answers, the opening
+ *  message not counted — whichever comes first. */
+export const PAUSE_AFTER_REPLIES = 60
 
 export const AUTH_CODES = ['access_denied', 'state_mismatch', 'expired', 'server_error', 'auth_unavailable', 'not_invited'] as const
 export type AuthCode = (typeof AUTH_CODES)[number] | 'unknown'
@@ -94,7 +101,17 @@ export type Session = Readonly<{
    *  the page shows it as HH:MM under the reply. null where the page did not see it come (the
    *  opening message). Never sent: the turn body carries only role and content. */
   times: readonly (number | null)[]
+  /** «→ У тези» (spec §3.7.2): indices in `messages` of the AI's replies the person marked, in the
+   *  order marked, at most MAX_MARKS. They wait on the theses screen as candidates (§7.2); never
+   *  sent — neither the turn nor the summarize body carries them. */
+  marks: readonly number[]
+  /** The reminder to pause (spec §3.7.7): 'none' until it is due, then why it stands above the
+   *  composer ('time' or 'count'), 'hidden' after «Сховати» or «Зібрати тези» — once a
+   *  conversation. */
+  pause: PauseState
 }>
+
+export type PauseState = 'none' | 'time' | 'count' | 'hidden'
 
 /** The person's message that is not in `messages` yet. */
 export type Pending = Readonly<{
@@ -202,7 +219,9 @@ export type State =
       sent: DraftBody | null
       id: number
     }>
-  | Readonly<{ s: 'saved'; summary: SummaryOut }>
+  /** `keep`: «Взяти з собою» (§7.5) — the first saved thesis the person brought in with «→ У
+   *  тези», as the server stored it; absent when none of the saved theses came from a mark. */
+  | Readonly<{ s: 'saved'; summary: SummaryOut; keep?: string }>
   | Readonly<{ s: 'ended' }>
   | JournalState
   | Readonly<{ s: 'account-deleted'; variant: 'confirmed' | 'presumed' }>
@@ -441,6 +460,14 @@ export type Action =
   | Readonly<{ type: 'chat/start-free' }>
   | Readonly<{ type: 'chat/summarize' }>
   | Readonly<{ type: 'chat/new' }>
+  /** «→ У тези» under a reply of the AI: marks it, or takes the mark off (`index` in `messages`). */
+  | Readonly<{ type: 'chat/mark'; index: number }>
+  /** The page's timer: the reminder to pause may be due (`now`: the page's clock). */
+  | Readonly<{ type: 'chat/pause-due'; now: number }>
+  /** «Сховати» on the reminder. */
+  | Readonly<{ type: 'chat/pause-hide' }>
+  /** «Зібрати тези» on the reminder: it goes, and «Завершити розмову?» opens (§3.7.8). */
+  | Readonly<{ type: 'chat/pause-collect' }>
   | Readonly<{ type: 'turn/meta'; id: number }>
   | Readonly<{ type: 'turn/token'; id: number; text: string }>
   | Readonly<{ type: 'turn/reset'; id: number }>
@@ -465,6 +492,10 @@ export type Action =
   | Readonly<{ type: 'review/save' }>
   | Readonly<{ type: 'review/done' }>
   | Readonly<{ type: 'review/back' }>
+  /** A marked reply becomes a thesis of the draft (`index` in `messages`). */
+  | Readonly<{ type: 'review/take'; index: number }>
+  /** A marked reply leaves the candidates (and its mark leaves the conversation). */
+  | Readonly<{ type: 'review/unmark'; index: number }>
   | Readonly<{ type: 'save/ok'; id: number; summary: SummaryOut }>
   | Readonly<{ type: 'save/fail'; id: number; error: ApiError }>
   | Readonly<{ type: 'save/check'; id: number; list: SummaryList; date: string | null }>
@@ -624,6 +655,63 @@ export function scenariosOf(ctx: Ctx): readonly ScenarioOut[] {
   return ctx.scenarios.status === 'ok' ? ctx.scenarios.value : [FALLBACK_SCENARIO]
 }
 
+/** When the conversation began: the press of its first message (Session.times), null where the
+ *  page had no clock. The reminder to pause counts from here (§3.7.7). */
+export function conversationStart(session: Session): number | null {
+  for (let i = 1; i < session.messages.length; i++) {
+    if (session.messages[i]!.role === 'user') return session.times[i] ?? null
+  }
+  return null
+}
+
+/** Is the reminder to pause due, and why (§3.7.7)? 60 replies, or 40 minutes since the first
+ *  message — once a conversation: never again after it showed. */
+export function pauseDue(session: Session, now: number): 'time' | 'count' | null {
+  if (session.pause !== 'none') return null
+  if (session.messages.length - 1 >= PAUSE_AFTER_REPLIES) return 'count'
+  const start = conversationStart(session)
+  return start !== null && Number.isFinite(now) && now - start >= PAUSE_AFTER_MS ? 'time' : null
+}
+
+/** When the 40 minutes run out (the page arms one timer for it), or null: no clock, or the
+ *  reminder already showed. */
+export function pauseAt(session: Session): number | null {
+  if (session.pause !== 'none') return null
+  const start = conversationStart(session)
+  return start === null ? null : start + PAUSE_AFTER_MS
+}
+
+/** A marked reply as a thesis: the paused number masked with the short note, as in the AI's
+ *  theses (the draft is what gets saved), one line, cut at a word to fit 500 code points — never
+ *  inside the note. */
+export function markText(content: string): string {
+  const flat = maskPausedLineShort(content).replace(/\s+/g, ' ').trim()
+  return clampWords(flat, MAX_BULLET, PAUSED_LINE_NOTE_SHORT)
+}
+
+export type MarkCandidate = Readonly<{ index: number; text: string }>
+
+/** The draft's id of a thesis taken from the reply at `index`. */
+const markId = (index: number): string => `m${index}`
+
+/** The marked replies still waiting on the theses screen: those the draft does not hold yet — a
+ *  taken one is a thesis now, «×» and «Повернути» included (§7.2). */
+export function markCandidates(review: ReviewState): readonly MarkCandidate[] {
+  const taken = new Set(review.draft.bullets.map((b) => b.id))
+  return review.session.marks.flatMap((index) => {
+    const message = review.session.messages[index]
+    return taken.has(markId(index)) || message?.role !== 'assistant' ? [] : [{ index, text: markText(message.content) }]
+  })
+}
+
+/** «Взяти з собою» on «Збережено» (§7.5): the first saved thesis that came from a mark, as the
+ *  server stored it. `sent.bulletIndex` names the field each saved thesis came from. */
+function keepOf(review: ReviewState, summary: SummaryOut): string | null {
+  const at = review.sent?.bulletIndex.findIndex((id) => id.startsWith('m')) ?? -1
+  const text = at < 0 ? undefined : summary.bullets[at]
+  return text === undefined || text.trim() === '' ? null : text
+}
+
 /** After an unknown save result: is the newest record the one we sent? (§7.3) */
 export function matchesSaved(body: SummaryCreate, item: SummaryOut, dateHeader: string | null): boolean {
   if (item.scenario !== body.scenario || item.title.trim() !== body.title.trim()) return false
@@ -664,6 +752,8 @@ function freshSession(ctx: Ctx, scenario: ScenarioId, noSave: boolean): Session 
     noSave,
     cut: Object.freeze([]),
     times: Object.freeze([null]),
+    marks: Object.freeze([]),
+    pause: 'none',
   })
 }
 
@@ -1008,7 +1098,11 @@ function onTurnOutcome(model: Model, state: ChatState, outcome: TurnOutcome, now
       const messages = freezeMessages([...request, { role: 'assistant', content: clampCodePoints(outcome.text, MAX_CONTENT) }])
       const cut = outcome.finishReason === 'length' ? [...state.session.cut, messages.length - 1] : state.session.cut
       const times = timesAfter(state.session, messages.length, pending.at, now)
-      return withState(model, { ...state, session: { ...state.session, messages, cut, times }, turn: IDLE, pending: null, notice: null })
+      // The reminder to pause comes with an answer, never in the middle of one (§3.7.7).
+      const next: Session = { ...state.session, messages, cut, times }
+      const why = pauseDue(next, now)
+      const session: Session = why === null ? next : { ...next, pause: why }
+      return withState(model, { ...state, session, turn: IDLE, pending: null, notice: null })
     }
     case 'crisis':
       // I3, I5: the partial answer is gone, the conversation is locked.
@@ -1110,9 +1204,10 @@ function onSaveFail(model: Model, state: ReviewState, error: ApiError): Step {
   return [{ ...model, ctx, state: { ...state, saving: 'idle', error: toUiError(error) } }, NONE]
 }
 
-function saved(model: Model, summary: SummaryOut): Step {
+function saved(model: Model, summary: SummaryOut, keep: string | null = null): Step {
+  const state: State = keep === null ? { s: 'saved', summary } : { s: 'saved', summary, keep }
   return [
-    { ...model, ctx: { ...model.ctx, diary: { status: 'loading' }, maybeSaved: false }, state: { s: 'saved', summary } },
+    { ...model, ctx: { ...model.ctx, diary: { status: 'loading' }, maybeSaved: false }, state },
     [{ type: 'diary' }, { type: 'announcer/clear' }],
   ]
 }
@@ -1851,6 +1946,34 @@ function step(model: Model, action: Action): Step {
     case 'chat/new':
       if (state.s !== 'saved' && state.s !== 'ended') return [model, NONE]
       return startChat(model)
+    case 'chat/mark': {
+      // Only in a running conversation: the crisis, read-only copies and the theses have no marks
+      // to set. The opening message is not a reply.
+      if (state.s !== 'chat' || !Number.isInteger(action.index) || action.index <= 0) return [model, NONE]
+      const { session } = state
+      if (session.messages[action.index]?.role !== 'assistant') return [model, NONE]
+      const on = session.marks.includes(action.index)
+      if (!on && session.marks.length >= MAX_MARKS) return [model, NONE]
+      const marks = Object.freeze(on ? session.marks.filter((i) => i !== action.index) : [...session.marks, action.index])
+      return withState(model, { ...state, session: { ...session, marks } })
+    }
+    case 'chat/pause-due': {
+      // Between answers only: a reminder that comes while the AI writes waits for its `done`.
+      if (state.s !== 'chat' || (state.turn.p !== 'idle' && state.turn.p !== 'cooldown')) return [model, NONE]
+      const why = pauseDue(state.session, action.now)
+      return why === null ? [model, NONE] : withState(model, { ...state, session: { ...state.session, pause: why } })
+    }
+    case 'chat/pause-hide':
+      if (state.s !== 'chat' || (state.session.pause !== 'time' && state.session.pause !== 'count')) return [model, NONE]
+      return withState(model, { ...state, session: { ...state.session, pause: 'hidden' } })
+    case 'chat/pause-collect': {
+      // «Зібрати тези» goes the way «Завершити розмову» goes: through the confirm that says the
+      // text goes to the AI's provider once more (§3.7.8). While an answer comes, nothing.
+      if (state.s !== 'chat' || (state.session.pause !== 'time' && state.session.pause !== 'count')) return [model, NONE]
+      if (!confirmAllowed(model, 'end', undefined)) return [model, NONE]
+      const [hidden] = withState(model, { ...state, session: { ...state.session, pause: 'hidden' } })
+      return step(hidden, { type: 'confirm/open', kind: 'end' })
+    }
     case 'turn/meta': {
       const t = turnActive(state, action.id)
       if (t === null || t.p !== 'waiting' || state.s !== 'chat') return [model, NONE]
@@ -2010,16 +2133,31 @@ function step(model: Model, action: Action): Step {
     case 'review/back':
       if (state.s !== 'review' || state.saving === 'saving') return [model, NONE]
       return withState(model, backToChat(ctx, state.session, state.pending))
+    case 'review/take': {
+      // Not while saving or after an unknown result (the draft is read-only then, §7.3), and never
+      // past five theses: a full draft says so beside the candidate instead (§7.2).
+      if (state.s !== 'review' || state.saving !== 'idle') return [model, NONE]
+      const candidate = markCandidates(state).find((c) => c.index === action.index)
+      const active = state.draft.bullets.filter((b) => !b.removed).length
+      if (candidate === undefined || active >= MAX_BULLETS) return [model, NONE]
+      const bullets = [...state.draft.bullets, { id: markId(candidate.index), text: candidate.text, removed: false }]
+      return withState(model, { ...state, draft: { ...state.draft, bullets }, issues: [], error: null })
+    }
+    case 'review/unmark': {
+      if (state.s !== 'review' || state.saving !== 'idle' || !state.session.marks.includes(action.index)) return [model, NONE]
+      const marks = Object.freeze(state.session.marks.filter((i) => i !== action.index))
+      return withState(model, { ...state, session: { ...state.session, marks } })
+    }
     case 'save/ok':
       if (state.s !== 'review' || state.id !== action.id || state.saving !== 'saving') return [model, NONE]
-      return saved(model, action.summary)
+      return saved(model, action.summary, keepOf(state, action.summary))
     case 'save/fail':
       if (state.s !== 'review' || state.id !== action.id || state.saving !== 'saving') return [model, NONE]
       return onSaveFail(model, state, action.error)
     case 'save/check': {
       if (state.s !== 'review' || state.id !== action.id || state.saving !== 'saving' || state.sent === null) return [model, NONE]
       const newest = action.list.items[0]
-      if (newest !== undefined && matchesSaved(state.sent.body, newest, action.date)) return saved(model, newest)
+      if (newest !== undefined && matchesSaved(state.sent.body, newest, action.date)) return saved(model, newest, keepOf(state, newest))
       // The newest record is not ours: the earlier POST did not land. This one may again.
       return [{ ...model, ctx: { ...ctx, maybeSaved: false } }, [{ type: 'save', id: state.id, body: state.sent.body }]]
     }
