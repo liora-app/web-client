@@ -154,6 +154,41 @@ test.describe('«Вигляд» on the landing', () => {
     await page.evaluate(() => localStorage.removeItem('liora:theme'))
   })
 
+  test('the dark bar is the night from the early script on — never the chat’s lamp in between, with or without the page module', async ({ page }) => {
+    // Every write to the one theme-color, in order: each attribute record's old value is the value
+    // before that write, so the writes are the old values after the first, then the current value.
+    await page.addInitScript(() => {
+      const olds: (string | null)[] = []
+      ;(window as unknown as { __olds: (string | null)[] }).__olds = olds
+      new MutationObserver((records) => {
+        for (const record of records) if (record.target instanceof HTMLMetaElement && record.target.name === 'theme-color') olds.push(record.oldValue)
+      }).observe(document, { subtree: true, attributes: true, attributeFilter: ['content'], attributeOldValue: true })
+    })
+    const writes = async (): Promise<(string | null)[]> => {
+      const olds = await page.evaluate(() => (window as unknown as { __olds: (string | null)[] }).__olds)
+      expect(olds[0], 'the meta ships the night').toBe('#040708')
+      return [...olds.slice(1), await themeColor(page)]
+    }
+    // The suite's dark system, no key: the early script writes the night, theme.ts has nothing to change.
+    await page.goto('/')
+    await staticPage(page)
+    expect(await writes()).toEqual([NIGHT])
+    // Without the page module the early script alone: the same night (the lamp before this fix).
+    await page.route('**/assets/main-*.js', (route) => route.fulfill({ contentType: 'text/javascript', body: '' }))
+    await page.reload()
+    await expect(toggle(page)).toBeHidden()
+    expect(await writes()).toEqual([NIGHT])
+    expect(await rootBg(page)).toBe(NIGHT)
+    // A light system with «Темна» stored: the night too.
+    await page.emulateMedia({ colorScheme: 'light' })
+    await page.evaluate(() => localStorage.setItem('liora:theme', 'dark'))
+    await page.reload()
+    await expect(html(page)).toHaveAttribute('data-theme', 'dark')
+    expect(await writes()).toEqual([NIGHT])
+    expect(await rootBg(page)).toBe(NIGHT)
+    await page.evaluate(() => localStorage.removeItem('liora:theme'))
+  })
+
   test('«Як у системі» removes the key and follows the system again', async ({ page }) => {
     await page.goto('/')
     await staticPage(page)

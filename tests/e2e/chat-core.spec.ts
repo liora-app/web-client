@@ -4011,10 +4011,22 @@ test.describe('source rules', () => {
     }
     // The theme-color it writes before the first frame is --color-bg of each theme, in the very
     // form theme.ts writes later (getComputedStyle: rgb(r, g, b)) — no change, no flash in the bar.
+    // Light is the same paper on both pages (a literal); dark is each page's own, read from the hex
+    // its meta ships: the chat's lamp (tokens.css), the landing's night (landing.css).
     const tokens = readFileSync(join(repo, 'src', 'styles', 'tokens.css'), 'utf8')
-    const bg = /--color-bg: light-dark\(#([0-9a-f]{6}), #([0-9a-f]{6})\)/.exec(tokens)!
+    const landingCss = readFileSync(join(repo, 'src', 'styles', 'landing.css'), 'utf8')
+    const bgOf = (css: string): RegExpExecArray => /--color-bg: light-dark\(#([0-9a-f]{6}), #([0-9a-f]{6})\)/.exec(css)!
     const rgb = (hex: string): string => `rgb(${[0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`
-    expect(code).toContain(`'${rgb(bg[1]!)}' : '${rgb(bg[2]!)}'`)
+    expect(bgOf(landingCss)[1]).toBe(bgOf(tokens)[1])
+    expect(code).toContain(`'${rgb(bgOf(tokens)[1]!)}' : 'rgb(' + (n >> 16)`)
+    expect(code).toMatch(/var n = parseInt\(meta\.content\.slice\(1\), 16\)/)
+    for (const [page, css] of [
+      ['index.html', landingCss],
+      [join('chat', 'index.html'), tokens],
+    ] as const) {
+      const html = readFileSync(join(repo, page), 'utf8')
+      expect(/<meta name="theme-color" content="#([0-9a-f]{6})" \/>/.exec(html)![1], page).toBe(bgOf(css)[2])
+    }
     expect(code).toMatch(/meta\.content = /)
     expect(code).toMatch(/prefers-color-scheme: light/)
     // Both pages follow the system before any CSS (ADR-012); no page is pinned to one theme.

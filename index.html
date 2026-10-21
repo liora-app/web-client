@@ -2,8 +2,9 @@
 <html lang="uk">
   <head>
     <meta charset="UTF-8" />
-    <!-- One theme-color, before public/theme-init.js (it sets it for the theme before the first frame;
-         src/ui/theme.ts keeps it on the page's background from then on: the night in dark, paper in light). -->
+    <!-- One theme-color, before public/theme-init.js. Its hex is this page's dark background, the night: the
+         script reads it for the dark theme (paper for the light one) before the first frame, and
+         src/ui/theme.ts keeps it on the page's background from then on. -->
     <meta name="theme-color" content="#040708" />
     <!-- First, before any stylesheet: the chosen theme on <html> before the first frame (ADR-012). -->
     <script src="/theme-init.js"></script>

@@ -1,7 +1,5 @@
-// Liora: the theme (and on /chat/ the sky preset) before the first frame. A classic synchronous
-// script, first in <head> after the charset and the theme-color: the CSP allows no inline script.
-// It only reads storage, sets attributes on <html> and the theme-color; src/ui/theme.ts and
-// src/ui/sky.ts write the choices.
+// Liora: the theme (on /chat/ also the sky preset) before the first frame: a classic script first in
+// <head> (the CSP allows no inline one). It only reads storage and sets <html> attributes and the bar.
 ;(function () {
   var root = document.documentElement
   try {
@@ -17,14 +15,14 @@
       var sky = localStorage.getItem('liora:sky')
       if (sky === 'dusk' || sky === 'dawn') root.setAttribute('data-sky', sky)
     }
-  } catch (e) {
-    // Blocked storage: the system's theme and the night.
-  }
+  } catch (e) {}
   try {
-    // The bar in --color-bg: the choice, else the system (no light-dark(): dark).
+    // The bar in --color-bg, as theme.ts writes it later: paper, or the page's own dark — the hex its
+    // meta ships (the landing's night, the chat's lamp). Without light-dark(): dark.
     var t = root.getAttribute('data-theme')
     var day = t ? t === 'light' : matchMedia('(prefers-color-scheme: light)').matches
     var meta = document.querySelector('meta[name="theme-color"]')
-    if (meta) meta.content = day && CSS.supports('color', 'light-dark(#000, #fff)') ? 'rgb(246, 241, 234)' : 'rgb(18, 26, 27)'
+    var n = parseInt(meta.content.slice(1), 16)
+    meta.content = day && CSS.supports('color', 'light-dark(#000, #fff)') ? 'rgb(246, 241, 234)' : 'rgb(' + (n >> 16) + ', ' + ((n >> 8) & 255) + ', ' + (n & 255) + ')'
   } catch (e) {}
 })()
