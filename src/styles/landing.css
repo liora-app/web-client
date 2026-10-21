@@ -514,6 +514,11 @@ html[data-gl='on'] .final__art::before { visibility: hidden; }
   .brand__mark { display: none; }
   /* With «Вигляд» the row is full at 320 px: the wordmark's hit area stops where «Якщо важко» starts. */
   .brand { padding-inline: 0.25rem; margin-inline: -0.25rem; }
+  /* The crisis chapter in view: a ring round «Якщо важко» came 3 px from «Liora» here. The current
+     chapter is a small light under the words instead, as in the navigation — still not colour alone
+     (SC 1.4.1). */
+  .site-header .help-link[aria-current] { position: relative; border-color: transparent; }
+  .site-header .help-link[aria-current]::after { content: ''; position: absolute; left: 50%; bottom: 0.3rem; width: 4px; height: 4px; border-radius: 50%; background: var(--color-light); translate: -50% 0; }
   .site-header { gap: 0.25rem; }
   .hero__links { gap: 0.75rem; }
   .hero__links .cta--primary { padding-inline: 1rem; gap: 0.65rem; font-size: 0.8125rem; }
@@ -732,4 +737,6 @@ html:not([data-motion='on']) .qa summary::after {
   .transcript { background: Canvas; border-color: CanvasText; }
   .cta { background: ButtonFace; color: ButtonText; border-color: ButtonText; }
   .site-header .help-link { border-color: LinkText; }
+  /* The small light of a narrow header is a background, which forced colours drop: the ring again. */
+  .site-header .help-link[aria-current] { border-color: Highlight; }
 }

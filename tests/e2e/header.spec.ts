@@ -127,6 +127,26 @@ test.describe('header', () => {
     expect(summary).toEqual([])
   })
 
+  test('at 320 px the crisis chapter in view marks «Якщо важко» with a small light under it, not a ring against «Liora»', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'mobile', 'one engine is enough for computed styles')
+    await page.setViewportSize({ width: 320, height: 640 })
+    await page.goto('/')
+    const link = page.locator('.site-header .help-link')
+    await link.click()
+    await expect(page.locator('#safety')).toBeInViewport({ ratio: 0.2 })
+    await expect(link).toHaveAttribute('aria-current', /.+/)
+    const mark = await link.evaluate((node) => {
+      const own = getComputedStyle(node)
+      const light = getComputedStyle(node, '::after')
+      return { ring: own.borderTopColor, light: light.content, width: light.width, colour: light.backgroundColor, text: own.color }
+    })
+    // The ring came 3 px from the wordmark; the light is the navigation's own mark (not colour alone).
+    expect(mark.ring).toBe('rgba(0, 0, 0, 0)')
+    expect(mark.light).not.toBe('none')
+    expect(mark.width).toBe('4px')
+    expect(mark.colour).toBe(mark.text)
+  })
+
   test('the header fits at 320 px with the menu and «Вигляд»', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile', 'one engine is enough for the fit')
     await page.setViewportSize({ width: 320, height: 640 })
