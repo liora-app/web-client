@@ -25,28 +25,79 @@ html {
   /* A dialog stops the page's scrolling (below): the scrollbar's place stays, so the header, the
      text and the light do not jump sideways under the backdrop. Overlay scrollbars: no effect. */
   scrollbar-gutter: stable;
-  /* The gutter shows the page's own background, not a grey strip: a quiet thumb on no track. */
-  scrollbar-color: var(--color-line-strong) transparent;
+  /* The gutter shows the page's own background, not a grey strip: a thumb on no track. The thumb is
+     the scrollbar's only shape, so it takes the fields' border colour (≥ 3:1, WCAG 1.4.11), not
+     --color-line-strong. */
+  scrollbar-color: var(--color-field-border) transparent;
 }
 
-/* No strip of another colour in the scrollbar's gutter: the gutter shows only the page's background
-   colour (fixed layers and the root's images stop where it begins), so the sky and its vignette
-   ease into exactly that colour over their last 3rem on the right. Only where there is a gutter
-   (html[data-gutter], measured in src/chat/ui/scroll-anchor.ts): with overlay scrollbars — phones,
-   macOS — the sky runs to the edge, and the same fade would be a dark band there. */
+/* No band, no seam (brief §2). The header, the session row and the composer stand on bands of
+   --color-bg from edge to edge; the sky is not that colour (its haze, glows and vignette tint it),
+   so a band's fade would meet it at a visible edge. Instead the sky itself eases into --color-bg
+   where the bands are — under them it is their very colour, and their fades fall on it unseen:
+   at the top under the header and the session row, at the bottom under the composer (the chat
+   screen only), at the right into a classic scrollbar's gutter (html[data-gutter], measured in
+   src/chat/ui/scroll-anchor.ts: the gutter shows only the root's background — fixed layers stop
+   where it begins; with overlay scrollbars — phones, macOS — the sky runs to the edge). Long and
+   eased at both ends (a smoothstep over 10rem, 8rem at the side): the eye finds no line where the
+   sky comes back. The layers lie on the vignette, the highest decoration under the text. */
+.chat-page .vignette {
+  --edge-top-at: calc(var(--header-h) + var(--session-h) + max(var(--fade-top), 2rem));
+  --edge-top: linear-gradient(
+    180deg,
+    var(--color-bg) var(--edge-top-at),
+    color-mix(in srgb, var(--color-bg) 84%, transparent) calc(var(--edge-top-at) + 2.5rem),
+    color-mix(in srgb, var(--color-bg) 50%, transparent) calc(var(--edge-top-at) + 5rem),
+    color-mix(in srgb, var(--color-bg) 16%, transparent) calc(var(--edge-top-at) + 7.5rem),
+    var(--color-fade-0) calc(var(--edge-top-at) + 10rem)
+  );
+  --edge-bottom: linear-gradient(var(--color-fade-0), var(--color-fade-0));
+  --edge-right: linear-gradient(var(--color-fade-0), var(--color-fade-0));
+  background:
+    var(--edge-top),
+    var(--edge-bottom),
+    var(--edge-right),
+    radial-gradient(130% 110% at 50% 42%, var(--color-vignette-0) 52%, var(--color-vignette) 100%);
+}
+
+html[data-screen='chat'] .chat-page .vignette {
+  --edge-bottom-at: calc(var(--composer-h) + var(--kb, 0px) + var(--fade-bottom));
+  --edge-bottom: linear-gradient(
+    0deg,
+    var(--color-bg) var(--edge-bottom-at),
+    color-mix(in srgb, var(--color-bg) 84%, transparent) calc(var(--edge-bottom-at) + 2.5rem),
+    color-mix(in srgb, var(--color-bg) 50%, transparent) calc(var(--edge-bottom-at) + 5rem),
+    color-mix(in srgb, var(--color-bg) 16%, transparent) calc(var(--edge-bottom-at) + 7.5rem),
+    var(--color-fade-0) calc(var(--edge-bottom-at) + 10rem)
+  );
+}
+
+html[data-gutter] .chat-page .vignette {
+  --edge-right: linear-gradient(
+    270deg,
+    var(--color-bg) 0,
+    color-mix(in srgb, var(--color-bg) 84%, transparent) 2rem,
+    color-mix(in srgb, var(--color-bg) 50%, transparent) 4rem,
+    color-mix(in srgb, var(--color-bg) 16%, transparent) 6rem,
+    var(--color-fade-0) 8rem
+  );
+}
+
+/* The same right edge on the sky itself (under the haze's own layer and the grain). */
 html[data-gutter] .chat-page .stage::after {
   content: '';
   position: absolute;
   inset: 0 0 0 auto;
-  width: 3rem;
-  background: linear-gradient(90deg, var(--color-fade-0), var(--color-bg));
+  width: 8rem;
+  background: linear-gradient(
+    270deg,
+    var(--color-bg) 0,
+    color-mix(in srgb, var(--color-bg) 84%, transparent) 2rem,
+    color-mix(in srgb, var(--color-bg) 50%, transparent) 4rem,
+    color-mix(in srgb, var(--color-bg) 16%, transparent) 6rem,
+    var(--color-fade-0) 8rem
+  );
   pointer-events: none;
-}
-
-html[data-gutter] .chat-page .vignette {
-  background:
-    linear-gradient(90deg, var(--color-fade-0) calc(100% - 3rem), var(--color-bg)),
-    radial-gradient(130% 110% at 50% 42%, var(--color-vignette-0) 52%, var(--color-vignette) 100%);
 }
 
 /* `hidden` wins over every display rule on this page (screens, buttons, banners). */
@@ -54,9 +105,13 @@ html[data-gutter] .chat-page .vignette {
   display: none !important;
 }
 
-/* An open modal keeps the page inert; it should not scroll under the dialog either. */
+/* An open modal keeps the page inert; it should not scroll under the dialog either. The gutter of a
+   classic scrollbar is painted by the root's background alone, which no ::backdrop covers: under a
+   dialog's scrim it takes the scrim's colour over the page's, not a light strip (the shelter keeps
+   its own dark one, below). */
 html:has(dialog[open]) {
   overflow: hidden;
+  background-color: var(--color-bg-under-scrim);
 }
 
 /* ---------- Header: the landing's, with «Акаунт» in place of «Меню» ---------- */
@@ -84,14 +139,16 @@ html {
   --fade-bottom: 2rem;
 }
 
+/* The top fade is as tall as the gap above a sent message (1.75rem, .said--ai + .said--you): the
+   send anchor puts the message just under it, so the reply above rests wholly under the band —
+   never a time or a line half-faded at rest. */
 html[data-talk='on'] {
-  --fade-top: 3.5rem;
+  --fade-top: 1.75rem;
   --fade-bottom: 4rem;
 }
 
 @media (max-width: 63.99em) {
   html[data-talk='on'] {
-    --fade-top: 2.5rem;
     --fade-bottom: 3rem;
   }
 }
@@ -553,11 +610,12 @@ html[data-motion='on'] .chat-page .screen:not(.screen--crisis, [data-screen='boo
   align-items: center;
 }
 
+/* A whole sentence (the sign-in screen's «Саморефлексія, а не терапія…»): the reading face in
+   sentence case — the mono capitals are for small labels only. */
 .note {
-  font-family: var(--font-mono);
-  font-size: max(0.875rem, var(--step--1));
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-family: var(--font-body);
+  font-size: var(--step-0);
+  font-weight: 500;
   color: var(--color-ai);
 }
 
@@ -1489,6 +1547,16 @@ html[data-motion='on'] .session:not([hidden]) {
   white-space: nowrap;
 }
 
+/* A desktop: the light's «AI · не людина» stands beside the conversation and the line under the
+   field says it too, so the row does not repeat it (G2: the light's label, the line under the field
+   and «AI» on every reply). On a phone the row's small light is the light: its words stay by it. */
+@media (min-width: 64em) {
+  .session__ai,
+  .session__label > .session__sep {
+    display: none;
+  }
+}
+
 /* A phone: two short lines — the scenario, then «AI, не людина · Не зберігати» — beside the small
    light and «Завершити». */
 @media (max-width: 63.99em) {
@@ -1528,6 +1596,16 @@ html[data-motion='on'] .session:not([hidden]) {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* The transcript's geometry never transitions. Under prefers-reduced-motion base.css gives every
+   property a 0.01 ms transition (transition-property is `all` by default), so the talk's end and
+   the answer's room took their size a frame after «Надіслати» — after the send anchor had scrolled,
+   clamped short — and the reply above rested half under the top fade (#93, a phone's first
+   message). */
+.talk,
+.said {
+  transition-property: none;
 }
 
 /* A reply of the AI: a small light and «AI» above the text, the text across the column in the
@@ -1613,6 +1691,9 @@ html[data-motion='on'] .said--waiting .said__mark::after {
 .said--you .said__text {
   max-width: min(34rem, 85%);
   padding: 0.6rem 1rem 0.7rem;
+  /* A hairline holds the bubble's shape on the paper and the haze alike (decoration, not a
+     control: no 3:1 needed); the text inside stays ≥ 4.5:1 on its fill. */
+  border: 1px solid var(--color-bubble-line);
   border-radius: 1.25rem 1.25rem 0.375rem 1.25rem;
   background: var(--color-bubble-you);
 }
@@ -3501,6 +3582,34 @@ html[data-motion='on'] :is(.confirm, .sheet--side, .sheet--pick)[open]::backdrop
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+/* The presets' names follow the theme: «Ніч · Сутінки · Світанок» on the evening lamp, «День ·
+   Вечір · Ранок» on the paper (stage.css: the light «night» is paper, its «dusk» warm sand, its
+   «dawn» a blue morning mist). The other name is display: none — out of the accessible name too.
+   An engine without light-dark() keeps the dark theme, and so the dark names. */
+.sky-name--light {
+  display: none;
+}
+
+@supports (color: light-dark(#000, #fff)) {
+  :root[data-theme='light']:not([data-theme-lock]) .sky-name--light {
+    display: inline;
+  }
+
+  :root[data-theme='light']:not([data-theme-lock]) .sky-name--dark {
+    display: none;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]):not([data-theme-lock]) .sky-name--light {
+      display: inline;
+    }
+
+    :root:not([data-theme]):not([data-theme-lock]) .sky-name--dark {
+      display: none;
+    }
+  }
 }
 
 .sheet__note {

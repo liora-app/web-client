@@ -1026,9 +1026,11 @@
           <fieldset class="sky-pick" data-sky-pick aria-describedby="sky-note">
             <legend class="sky-pick__legend">Фон</legend>
             <div class="sky-pick__list">
-              <label class="pill"><input class="pill__input" type="radio" name="sky" value="night" checked /><span class="pill__text">Ніч</span></label>
-              <label class="pill"><input class="pill__input" type="radio" name="sky" value="dusk" /><span class="pill__text">Сутінки</span></label>
-              <label class="pill"><input class="pill__input" type="radio" name="sky" value="dawn" /><span class="pill__text">Світанок</span></label>
+              <!-- One name per theme (chat.css shows the theme's own): the light theme's «night» is paper, not a
+                   night. The values stay night / dusk / dawn (liora:sky). -->
+              <label class="pill"><input class="pill__input" type="radio" name="sky" value="night" checked /><span class="pill__text"><span class="sky-name sky-name--dark">Ніч</span><span class="sky-name sky-name--light">День</span></span></label>
+              <label class="pill"><input class="pill__input" type="radio" name="sky" value="dusk" /><span class="pill__text"><span class="sky-name sky-name--dark">Сутінки</span><span class="sky-name sky-name--light">Вечір</span></span></label>
+              <label class="pill"><input class="pill__input" type="radio" name="sky" value="dawn" /><span class="pill__text"><span class="sky-name sky-name--dark">Світанок</span><span class="sky-name sky-name--light">Ранок</span></span></label>
             </div>
           </fieldset>
           <p class="small" id="sky-note">Вибір памʼятає цей браузер, на сервер він не потрапляє.</p>

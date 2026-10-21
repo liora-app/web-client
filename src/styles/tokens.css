@@ -155,7 +155,10 @@
   --color-bg: light-dark(#f6f1ea, #121a1b);
   --color-sky: light-dark(#f6f1ea, #121a1b);
   --color-surface: light-dark(#fffcf7, #192324);
-  --color-bubble-you: light-dark(#e6efec, #1f2d2d);
+  /* The person's bubble: a sea-green fill a step deeper than the paper, and a hairline that keeps
+     its shape on the haze too (text on it ≥ 4.5:1 in both themes, review-contrast.cjs). */
+  --color-bubble-you: light-dark(#dce9e4, #1f2d2d);
+  --color-bubble-line: light-dark(rgb(14 92 85 / 0.2), rgb(143 227 212 / 0.12));
   --color-panel: light-dark(rgb(255 252 247 / 0.62), rgb(25 35 36 / 0.62));
   --color-text: light-dark(#1c2626, #ecf1ed);
   --color-text-soft: light-dark(#36423f, #c9d3cf);
@@ -183,6 +186,9 @@
   --color-shelter-bg: #121a1b;
   /* Light: a warm veil, not a grey-green one; the paper stays paper under a dialog. */
   --color-scrim: light-dark(rgb(60 48 36 / 0.2), rgb(6 10 11 / 0.62));
+  /* The scrim laid over --color-bg, as one solid colour: the root's background (and so a classic
+     scrollbar's gutter) while a dialog is open. */
+  --color-bg-under-scrim: light-dark(#d1cac2, #0b1011);
   --color-band-top: light-dark(rgb(246 241 234 / 0.97), rgb(18 26 27 / 0.97));
   --color-band-mid: light-dark(rgb(246 241 234 / 0.9), rgb(18 26 27 / 0.9));
   --color-band-tail: light-dark(rgb(246 241 234 / 0.45), rgb(18 26 27 / 0.45));
@@ -255,6 +261,7 @@ html[data-theme-switching] *::after {
     --color-sky: #121a1b;
     --color-surface: #192324;
     --color-bubble-you: #1f2d2d;
+    --color-bubble-line: rgb(143 227 212 / 0.12);
     --color-panel: rgb(25 35 36 / 0.62);
     --color-text: #ecf1ed;
     --color-text-soft: #c9d3cf;
@@ -278,6 +285,7 @@ html[data-theme-switching] *::after {
     --color-pressed: rgb(236 241 237 / 0.14);
     --color-field-border: #6f7c78;
     --color-scrim: rgb(6 10 11 / 0.62);
+    --color-bg-under-scrim: #0b1011;
     --color-band-top: rgb(18 26 27 / 0.97);
     --color-band-mid: rgb(18 26 27 / 0.9);
     --color-band-tail: rgb(18 26 27 / 0.45);

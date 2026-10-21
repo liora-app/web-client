@@ -3097,8 +3097,8 @@ test.describe('theme: a light system', () => {
     await settled(page)
     await axe(page, 'light: the account sheet')
     for (const [label, value] of [
-      ['Сутінки', 'dusk'],
-      ['Світанок', 'dawn'],
+      ['Вечір', 'dusk'],
+      ['Ранок', 'dawn'],
     ] as const) {
       await accountSheet(page).getByRole('radio', { name: label }).check()
       await expect(html(page)).toHaveAttribute('data-sky', value)
@@ -4667,7 +4667,168 @@ test.describe('highlights and the reminder in the light theme', () => {
 
 // ── What the review of phase B found: the bar, the Tab order, the edges, the names, 1.4.11 ───────
 
+/** The top band's solid part ends under the session row; its fade is --fade-top tall. Every line of
+ *  the transcript that lies partly inside the fade (rect of the words, not of a 44 px hit area). */
+async function halfFaded(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize)
+    const fade = getComputedStyle(document.documentElement).getPropertyValue('--fade-top').trim()
+    const fadePx = fade.endsWith('rem') ? parseFloat(fade) * rem : parseFloat(fade) || 0
+    const solid = document.querySelector('[data-el="session"]')!.getBoundingClientRect().bottom
+    const hits: string[] = []
+    const words = document.querySelectorAll('[data-el="talk"] :is(.said__time, .said__text p, .said__who, .said__copy-label, .said__keep-label)')
+    for (const node of Array.from(words)) {
+      if (node.closest('[hidden]') !== null || node.getClientRects().length === 0) continue
+      for (const r of Array.from(node.getClientRects())) {
+        if (r.bottom > solid + 0.5 && r.top < solid + fadePx - 0.5) hits.push(`${node.className || node.tagName}: ${Math.round(r.top)}..${Math.round(r.bottom)} in ${Math.round(solid)}..${Math.round(solid + fadePx)}`)
+      }
+    }
+    return hits
+  })
+}
+
+/** WCAG 1.4.11 on every operable control in view (the open modal's only, when one is open): a
+ *  control drawn with a border under 3:1 must be named by visible words or an icon ≥ 3:1. Fields
+ *  never count as identified by their words: their border is their shape. */
+async function borderOnlyControls(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const parse = (c: string): number[] | null => {
+      const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(c)
+      return m ? [+m[1]!, +m[2]!, +m[3]!, m[4] === undefined ? 1 : +m[4]] : null
+    }
+    const lin = (v: number): number => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+    const lum = (c: number[]): number => 0.2126 * lin(c[0]!) + 0.7152 * lin(c[1]!) + 0.0722 * lin(c[2]!)
+    const ratio = (a: number[], b: number[]): number => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05)
+    const over = (fg: number[], bg: number[]): number[] => [0, 1, 2].map((i) => fg[i]! * fg[3]! + bg[i]! * (1 - fg[3]!)).concat(1)
+    const page = parse(getComputedStyle(document.documentElement).backgroundColor)!
+    const ground = (el: Element): number[] => {
+      const layers: number[][] = []
+      for (let n = el.parentElement; n; n = n.parentElement) {
+        const c = parse(getComputedStyle(n).backgroundColor)
+        if (c && c[3]! > 0) layers.push(c)
+        if ((c && c[3] === 1) || n.tagName === 'DIALOG') break
+      }
+      return layers.reverse().reduce((base, c) => over(c, base), page)
+    }
+    const modal = Array.from(document.querySelectorAll('dialog[open]')).filter((d) => d.matches(':modal')).pop() ?? document
+    const bad: string[] = []
+    for (const el of Array.from(modal.querySelectorAll<HTMLElement>('button, a[href], input, textarea, [role="switch"], label.pill'))) {
+      const r = el.getBoundingClientRect()
+      if (r.width === 0 || el.closest('[hidden]') !== null || getComputedStyle(el).visibility === 'hidden') continue
+      if ((el.tagName === 'INPUT' && el.closest('label.pill') !== null) || el.getAttribute('aria-disabled') === 'true') continue
+      const cs = getComputedStyle(el)
+      const g = ground(el)
+      const own = parse(cs.backgroundColor)
+      const fill = own && own[3]! > 0 ? over(own, g) : g
+      let border = Infinity
+      for (const side of ['Top', 'Right', 'Bottom', 'Left'] as const) {
+        const b = parse(cs.getPropertyValue(`border-${side.toLowerCase()}-color`))
+        if (parseFloat(cs.getPropertyValue(`border-${side.toLowerCase()}-width`)) < 0.5 || !b || b[3] === 0) continue
+        const seen = over(b, g)
+        border = Math.min(border, ratio(seen, g), ratio(seen, fill))
+      }
+      if (border >= 3) continue
+      let words = ''
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      for (let t = walker.nextNode(); t; t = walker.nextNode()) if (t.parentElement!.closest('.visually-hidden') === null) words += t.textContent
+      const color = parse(cs.color)!
+      let icon = 0
+      for (const svg of Array.from(el.querySelectorAll('svg'))) if (svg.getBoundingClientRect().width > 0) icon = Math.max(icon, ratio(over(parse(getComputedStyle(svg).color)!, fill), fill))
+      const field = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'
+      const named = !field && ((words.trim() !== '' && ratio(over(color, fill), fill) >= 3) || icon >= 3)
+      if (!named) bad.push(`${el.tagName.toLowerCase()}.${el.className} «${el.getAttribute('aria-label') ?? words.trim()}» border ${border.toFixed(2)}`)
+    }
+    return bad
+  })
+}
+
 test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the names, the borders', () => {
+  test('#93 at rest no line of the conversation sits half under the top fade; the person’s bubble has its own edge; «+» comes before the field in Tab order', async ({ page }, testInfo) => {
+    await openChat(page)
+    // At rest also means with the page's own faces in: line heights are theirs.
+    await page.evaluate(async () => {
+      await document.fonts.ready
+    })
+    for (const text of [USER, 'Друге синтетичне повідомлення.', 'Третє синтетичне повідомлення.']) {
+      await exchange(page, text)
+      // At rest: the send anchor's smooth scroll is over — the page has not moved for 400 ms (two
+      // frames alike are not enough: a smooth scroll can hold a position for a frame or two).
+      await expect
+        .poll(async () => {
+          const before = await page.evaluate(() => scrollY)
+          await page.waitForTimeout(400)
+          return Math.abs((await page.evaluate(() => scrollY)) - before)
+        })
+        .toBe(0)
+      expect(await halfFaded(page), `after «${text}»`).toEqual([])
+    }
+    // The top fade is the gap above a sent message (1.75rem), the send anchor stops right under it.
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--fade-top').trim())).toBe('1.75rem')
+    const bubble = lastUser(page).locator('.said__text')
+    const look = await bubble.evaluate((node) => {
+      const s = getComputedStyle(node)
+      return { width: s.borderTopWidth, style: s.borderTopStyle, color: s.borderTopColor, fill: s.backgroundColor, page: getComputedStyle(document.documentElement).backgroundColor }
+    })
+    expect(look.width).toBe('1px')
+    expect(look.style).toBe('solid')
+    expect(look.color).not.toMatch(/rgba\(\d+, \d+, \d+, 0\)/)
+    expect(look.fill).not.toBe(look.page)
+    // «Інструменти» stands left of the field: before it in Tab order, its menu right after it.
+    const order = await page.evaluate(() => {
+      const tools = document.querySelector('[data-el="composer-tools"]')!
+      const field = document.querySelector('#composer-input')!
+      const menu = document.querySelector('#composer-tools')!
+      return {
+        toolsFirst: Boolean(tools.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING),
+        menuNext: tools.nextElementSibling === menu,
+        toolsLeft: tools.getBoundingClientRect().left < field.getBoundingClientRect().left + 20,
+      }
+    })
+    expect(order).toEqual({ toolsFirst: true, menuNext: true, toolsLeft: true })
+    if (isDesktop(testInfo)) {
+      await composer(page).focus()
+      await page.keyboard.press('Shift+Tab')
+      await expect(page.locator('[data-el="composer-tools"]')).toBeFocused()
+      await page.keyboard.press('Tab')
+      await expect(composer(page)).toBeFocused()
+    }
+  })
+
+  test('#93b without motion the first message lands where it should too: the anchor scrolls once the render is through, and the transcript’s size never transitions', async ({ page }) => {
+    // prefers-reduced-motion: base.css gives every property a 0.01 ms transition and the scroll is
+    // instant — the anchor used to land short on the first message, the opening line under the fade.
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await openChat(page)
+    await page.evaluate(async () => {
+      await document.fonts.ready
+    })
+    await exchange(page, USER)
+    expect(await halfFaded(page)).toEqual([])
+    const placed = await lastUser(page).evaluate((li) => {
+      const root = getComputedStyle(document.documentElement)
+      return Math.round(li.getBoundingClientRect().top - parseFloat(root.scrollPaddingTop) - parseFloat(getComputedStyle(li).scrollMarginTop))
+    })
+    expect(placed).toBe(0)
+  })
+
+  test('#94 the session row says «AI, не людина» only where its small light is the light (the phone); the desktop has the big light’s label and the line under the field', async ({ page }, testInfo) => {
+    await openChat(page)
+    await exchange(page, USER)
+    const row = page.locator('[data-el="session"] .session__ai')
+    await expect(page.locator('.composer__ai')).toBeVisible()
+    await expect(page.locator('.composer__ai')).toHaveText('AI, не людина · може помилятися · не терапія')
+    await expect(aiMessages(page).nth(1).locator('.said__who')).toHaveText('AI')
+    if (isDesktop(testInfo)) {
+      await expect(row).toBeHidden()
+      await expect(page.locator('.presence__ai')).toBeVisible()
+      await expect(page.locator('.presence__ai')).toHaveText('AI · не людина')
+      await expect(page.locator('[data-el="session"] .session__label')).toHaveText('Вільна розмова', { useInnerText: true })
+    } else {
+      await expect(row).toBeVisible()
+      await expect(page.locator('.session .orb--mini')).toBeVisible()
+    }
+  })
+
   test('#95 the browser’s bar has the theme’s colour before any module runs (public/theme-init.js): the system’s, or the choice', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'one engine is enough')
     // The page's module never comes: what the bar shows is theme-init.js's doing alone.
@@ -4686,6 +4847,69 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
     await expect(themeColor).toHaveAttribute('content', PAPER)
     await page.evaluate(() => localStorage.removeItem('liora:theme'))
+  })
+
+  test('#96 the sky presets are named for the theme (the values stay night / dusk / dawn); the sign-in note reads in the body face; a dialog’s scrim covers a scrollbar’s gutter too', async ({ page, api }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'one layout is enough')
+    api.on('GET /me', fail(401, 'unauthenticated'))
+    await openChat(page, '/chat/', 'signed-out')
+    const note = await page.locator('section[data-screen="signed-out"] .note').evaluate((n) => {
+      const s = getComputedStyle(n)
+      return { family: s.fontFamily, transform: s.textTransform }
+    })
+    expect(note.family).toMatch(/^"?Onest/)
+    expect(note.transform).toBe('none')
+
+    api.on('GET /me', { json: ME })
+    await openChat(page)
+    const names = async (): Promise<string[]> =>
+      accountSheet(page).locator('[data-sky-pick] label.pill').evaluateAll((labels) => labels.map((l) => (l as HTMLElement).innerText.trim()))
+    await accountToggle(page).click()
+    await expect(accountSheet(page)).toBeVisible()
+    expect(await names()).toEqual(['Ніч', 'Сутінки', 'Світанок'])
+    await expect(accountSheet(page).getByRole('radio', { name: 'Сутінки' })).toHaveValue('dusk')
+    // The gutter of a classic scrollbar under the scrim: the root takes the scrim over the page.
+    const rootBg = (): Promise<string> => page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)
+    await expect.poll(rootBg).toBe('rgb(11, 16, 17)')
+    await page.keyboard.press('Escape')
+    await expect(accountSheet(page)).toBeHidden()
+    await expect.poll(rootBg).toBe(LAMP)
+
+    await page.emulateMedia({ colorScheme: 'light' })
+    await accountToggle(page).click()
+    await expect(accountSheet(page)).toBeVisible()
+    expect(await names()).toEqual(['День', 'Вечір', 'Ранок'])
+    await expect(accountSheet(page).getByRole('radio', { name: 'Вечір' })).toHaveValue('dusk')
+    await expect(accountSheet(page).getByRole('radio', { name: 'Ранок' })).toHaveValue('dawn')
+    await expect(accountSheet(page).getByRole('radio', { name: 'Сутінки' })).toHaveCount(0)
+    await expect.poll(rootBg).toBe('rgb(209, 202, 194)')
+    // The scrollbar's thumb is its only shape: the fields' border colour, ≥ 3:1.
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollbarColor)).toMatch(/^rgb\(120, 130, 127\) /)
+  })
+
+  test('#97 WCAG 1.4.11: no control relies on a border under 3:1 — in both themes, on the conversation, the theses, the sheets and the tools', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'computed colours: one engine is enough')
+    for (const scheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' })
+      await openChat(page)
+      expect(await borderOnlyControls(page), `${scheme}: a new conversation`).toEqual([])
+      await exchange(page, USER)
+      await aiMessages(page).nth(1).hover()
+      expect(await borderOnlyControls(page), `${scheme}: a conversation`).toEqual([])
+      await accountToggle(page).click()
+      await expect(accountSheet(page)).toBeVisible()
+      expect(await borderOnlyControls(page), `${scheme}: the account sheet`).toEqual([])
+      await page.keyboard.press('Escape')
+      await keepOf(aiMessages(page).nth(1)).click()
+      await toReview(page)
+      expect(await borderOnlyControls(page), `${scheme}: the theses with a candidate`).toEqual([])
+      await page.getByRole('button', { name: 'Повернутися до розмови' }).click()
+      await onScreen(page, 'chat')
+      await page.locator('.help-link').click()
+      await expect(page.locator('#help-dialog')).toBeVisible()
+      expect(await borderOnlyControls(page), `${scheme}: «Якщо важко»`).toEqual([])
+      await page.keyboard.press('Escape')
+    }
   })
 })
 

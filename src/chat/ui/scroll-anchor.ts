@@ -60,6 +60,8 @@ export function createScrollAnchor(parts: AnchorParts): ScrollAnchor {
   let ctx: AnchorContext = { shown: false, streaming: false }
   let room: HTMLElement | null = null
   let frame = 0
+  /** Counts the sends (and the resets): a scroll queued for an earlier one does not run. */
+  let sends = 0
 
   const measure = (): void => {
     root.style.setProperty('--header-h', `${Math.round(shownHeight(header))}px`)
@@ -137,14 +139,24 @@ export function createScrollAnchor(parts: AnchorParts): ScrollAnchor {
         room.style.removeProperty('--sent-h')
       }
       room = answer
-      if (answer !== null) {
-        answer.style.setProperty('--sent-h', `${Math.round(message.getBoundingClientRect().height)}px`)
-        answer.classList.add(ROOM)
-      }
-      // The header and the session row are measured by now: scroll-padding-top is right.
-      measure()
-      message.scrollIntoView({ block: 'start', behavior: motionAllowed() ? 'smooth' : 'auto' })
-      update()
+      const turn = ++sends
+      // After the whole render, not in the middle of it: the first message also hides the phone's
+      // light slot, the starters and the composer's note in the same render, after the transcript.
+      // Measured and scrolled before that, the room was sized for the old composer, the page then got
+      // shorter and an instant scroll ended clamped short — the reply above rested half under the top
+      // fade. A microtask still comes before the frame is painted.
+      queueMicrotask(() => {
+        if (turn !== sends || !message.isConnected) return
+        if (answer !== null && answer.isConnected) {
+          answer.style.setProperty('--sent-h', `${Math.round(message.getBoundingClientRect().height)}px`)
+          answer.classList.add(ROOM)
+        }
+        // The header, the session row and the composer are measured now: scroll-padding-top and the
+        // room are right.
+        measure()
+        message.scrollIntoView({ block: 'start', behavior: motionAllowed() ? 'smooth' : 'auto' })
+        update()
+      })
     },
     context(next) {
       // Renders come with every token: no layout read here (ResizeObserver tracks the sizes).
@@ -168,6 +180,7 @@ export function createScrollAnchor(parts: AnchorParts): ScrollAnchor {
     },
     reset() {
       room = null
+      sends++
       if (frame !== 0) window.cancelAnimationFrame(frame)
       frame = 0
       ctx = { shown: false, streaming: false }
