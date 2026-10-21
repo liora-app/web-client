@@ -2757,7 +2757,8 @@ parameter properties.
      `--still-*` у двох світлих блоках (`[data-theme='light']` і системна світла, лише з `light-dark()`) ведуть
      на CSS-малюнки — кільця чорнилом (`--color-ai`) і теракотою (`--color-accent`) з мʼяким краєм. У темній —
      PNG, як були: обчислені стилі темного лендингу до й після збігаються, крім нової кнопки, ширини
-     `.site-header__actions`, тексту п. «Копірайт» нижче і мертвого `.final::before`.
+     `.site-header__actions`, ширини `.brand` до 23em (поле кліку 64 → 53 px, текст на місці), висот
+     абзаців п. «Копірайт» нижче і мертвого `.final::before`.
    - **WebGL** (`gl/scene.ts`): палітра на тему `GL_PALETTES[theme].scene` (`gl/core/palette.ts`). Кожен колір,
      що був у шейдерах нитей, пилу, ореолу, портрета, слідів і малюнка розмови, став uniform; темні значення —
      ті самі літерали. Вдень — `NormalBlending` замість `AdditiveBlending`, premultiplied (rgb ≤ alpha), тонше
