@@ -23,6 +23,7 @@ import {
 } from '../core/selfhelp'
 import type { Composer } from './composer'
 import { BREATH_CLOSE, BREATH_DONE, BREATH_PHASE, BREATH_STOP, MOOD_TITLE, groundProgress, moodLine, moodSentence } from './copy'
+import { refreshThemeColor } from '../../ui/theme'
 import { byEl, setAttr, setText, show } from './dom'
 
 type Kind = ToolOverlay['o']
@@ -146,7 +147,9 @@ export function createTools(dispatch: (action: Action) => void, composer: () => 
   const groundRender = (say: boolean): void => {
     const end = step >= GROUND_STEPS
     for (const node of groundSteps) show(node, Number(node.dataset.step) === step)
-    const progress = end ? '' : groundProgress(step + 1, GROUND_STEPS)
+    // At the end the line keeps its last words, unseen (chat.css): its height stays, and so do the
+    // buttons under it.
+    const progress = groundProgress(Math.min(step + 1, GROUND_STEPS), GROUND_STEPS)
     setText(g('ground-progress'), progress)
     show(g('ground-progress'), !end)
     show(g('ground-back'), step > 0 && !end)
@@ -216,6 +219,9 @@ export function createTools(dispatch: (action: Action) => void, composer: () => 
 
   // ── open, close, sync ──
 
+  /** «В укритті» (or a tool over it) is open: the root is dark, and so is the browser's bar. */
+  let darkRoot = false
+
   const tools: Tools = {
     open(overlay, model, overShelter) {
       last = model
@@ -264,14 +270,27 @@ export function createTools(dispatch: (action: Action) => void, composer: () => 
         show(block, here)
         setText(byEl('mood-line', block), here && before !== null ? moodLine(before, ctx.mood.after) : '')
       }
+      // While the theses are being saved, «А зараз?» waits like the other controls there: the
+      // «Збережено» that follows would close a check-in opened now, half chosen (I6).
+      const saving = state.s === 'review' && state.saving === 'saving'
+      for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-el="mood-after"] [data-act="tool"]'))) {
+        setAttr(button, 'aria-disabled', saving ? 'true' : null)
+      }
       show(byEl('help-tools'), state.s !== 'crisis')
       if (mood.open) moodRender()
+      // After dialogs.ts has opened or closed the dialogs of this render — the crisis closes the
+      // shelter in this same step, and the bar turns back with it.
+      const dark = model.overlay.some((o) => o.o === 'shelter')
+      if (dark !== darkRoot) {
+        darkRoot = dark
+        refreshThemeColor()
+      }
     },
     act(name, target) {
       switch (name) {
         case 'tool': {
           const kind = target.dataset.tool ?? ''
-          if (!isToolKind(kind)) return true
+          if (!isToolKind(kind) || target.getAttribute('aria-disabled') === 'true') return true
           // From the «+» menu: the menu closes first, and «Інструменти» takes the focus — the dialog
           // gives it back there (an item of a closed menu cannot hold it).
           const menu = target.closest<HTMLElement>('[popover]')

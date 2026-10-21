@@ -3,8 +3,9 @@
 // `listening` is the page's own: while the person types (and the AI is idle in the conversation)
 // the light is a little more awake. It never reaches the state machine — a keystroke is not an
 // action — and nothing is sent: the label says so («Ви пишете…»). `breathing` while «Подихати
-// хвилину» is open (spec §3.13): the light (later the character) keeps the slow pace with the
-// person. «В укритті» is silent, like «Якщо важко».
+// хвилину» is open (spec §3.13): the CSS light holds still beside the exercise's circle (one pace on
+// the screen); the scene and later the character get the state through setPresence. «В укритті»
+// is silent, like «Якщо важко».
 
 import type { GlControl } from '../../gl/core/boot'
 import type { PresenceHandle } from '../../gl/presence'

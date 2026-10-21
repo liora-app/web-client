@@ -1252,8 +1252,10 @@ function openTool(model: Model, kind: ToolKind, when: MoodWhen | undefined): Ste
   const { state, ctx } = model
   if (state.s === 'crisis' || state.s === 'booting') return [model, NONE]
   const after = kind === 'mood' && when === 'after'
-  // «А зараз?» compares with a word from the start: without one there is nothing to ask after.
+  // «А зараз?» compares with a word from the start: without one there is nothing to ask after. Not
+  // while the theses are being saved: «Збережено» would close it half chosen (I6); it asks there.
   if (after && (ctx.mood.before === null || !AFTER_SCREENS.has(state.s))) return [model, NONE]
+  if (after && state.s === 'review' && state.saving === 'saving') return [model, NONE]
   const overlay: ToolOverlay = kind === 'mood' ? { o: 'mood', when: after ? 'after' : 'before' } : { o: kind }
   const top = topOverlay(model)
   if (top !== undefined && top.o === overlay.o) return [model, NONE]

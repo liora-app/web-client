@@ -82,6 +82,13 @@ function syncThemeColor(): void {
   if (meta && color && meta.content !== color) meta.content = color
 }
 
+/** The page's background changed without a theme change (the chat's «В укритті» is dark in both
+ *  themes and darkens the root while it is open): the browser's bar follows it. This module stays
+ *  the meta's only writer. */
+export function refreshThemeColor(): void {
+  syncThemeColor()
+}
+
 function applyAttribute(): void {
   const lock = lockedTo()
   const value = lock ?? (choice === 'system' ? null : choice)

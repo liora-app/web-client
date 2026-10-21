@@ -131,6 +131,7 @@
   --ease-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1); /* entering */
   --ease-standard: cubic-bezier(0.2, 0, 0, 1); /* a change in place */
   --ease-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15); /* leaving */
+  --ease-breath: cubic-bezier(0.37, 0, 0.63, 1); /* a sine: the circle of «Подихати хвилину» */
   /* The older names, still used by the landing and the atmosphere (slow by design). */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);

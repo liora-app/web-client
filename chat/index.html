@@ -796,7 +796,9 @@
          them, and a new screen — the crisis above all — closes them in the same frame. Nothing about an
          exercise or a check-in leaves this page or stays after it. -->
 
-    <dialog class="sheet sheet--tool breathe" id="breathe-dialog" aria-labelledby="breathe-title" data-dialog="breathe">
+    <!-- Described by the line of the chosen breathing (the hidden one is not read): the focus starts
+         on «Почати», past the instruction. -->
+    <dialog class="sheet sheet--tool breathe" id="breathe-dialog" aria-labelledby="breathe-title" aria-describedby="breathe-lines" data-dialog="breathe">
       <div class="sheet__head">
         <p class="sheet__kicker">Вправа</p>
         <!-- «Стоп» while the minute runs: always in view, it ends the exercise. -->
@@ -808,8 +810,10 @@
         <!-- The step, said once when it changes; never every second. -->
         <p class="visually-hidden" role="status" data-el="breathe-status"></p>
         <div class="breathe__ready" data-el="breathe-ready">
-          <p data-el="breathe-line-slow">Вдих на 4, видих на 6. Можна зупинитися будь-коли.</p>
-          <p data-el="breathe-line-sigh" hidden>Вдих носом, ще короткий довдих — і довгий повільний видих.</p>
+          <div class="breathe__lines" id="breathe-lines">
+            <p data-el="breathe-line-slow">Вдих на 4, видих на 6. Можна зупинитися будь-коли.</p>
+            <p data-el="breathe-line-sigh" hidden>Вдих носом, ще короткий довдих — і довгий повільний видих.</p>
+          </div>
           <button class="switch" type="button" role="switch" aria-checked="false" data-act="breathe-sigh" data-el="breathe-sigh">
             <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
             <span class="switch__label">Циклічне зітхання</span>
@@ -841,7 +845,8 @@
       </div>
     </dialog>
 
-    <dialog class="sheet sheet--tool ground" id="ground-dialog" aria-labelledby="ground-title" data-dialog="ground">
+    <!-- Described by the step on screen (the hidden steps are not read): the focus starts on «Далі». -->
+    <dialog class="sheet sheet--tool ground" id="ground-dialog" aria-labelledby="ground-title" aria-describedby="ground-steps" data-dialog="ground">
       <div class="sheet__head">
         <p class="sheet__kicker">Вправа</p>
         <button class="sheet__close" type="button" data-act="close">Закрити</button>
@@ -851,7 +856,8 @@
         <h2 class="sheet__title" id="ground-title">Заземлення 5-4-3-2-1</h2>
         <p class="visually-hidden" role="status" data-el="ground-status"></p>
         <p class="ground__progress" data-el="ground-progress" aria-hidden="true"></p>
-        <div class="ground__steps">
+        <!-- The steps share one place, as tall as the tallest: the buttons under them never move. -->
+        <div class="ground__steps" id="ground-steps">
           <div class="ground__step" data-step="0"><p class="ground__text">Повільно видихніть. Відчуйте ступні на підлозі.</p></div>
           <div class="ground__step" data-step="1" hidden><span class="ground__num" aria-hidden="true">5</span><p class="ground__text">Знайдіть поглядом 5 речей довкола.</p></div>
           <div class="ground__step" data-step="2" hidden><span class="ground__num" aria-hidden="true">4</span><p class="ground__text">Торкніться 4 речей поруч. Які вони на дотик?</p></div>
@@ -860,10 +866,12 @@
           <div class="ground__step" data-step="5" hidden><span class="ground__num" aria-hidden="true">1</span><p class="ground__text">Назвіть одне, що ви відчуваєте просто зараз. Можна подумки.</p></div>
           <div class="ground__step ground__step--end" data-step="6" hidden><p class="ground__text">Ви тут. Рухайтеся далі у своєму темпі.</p></div>
         </div>
+        <!-- The main button first, always in the same place: «Далі» on every step, «Готово» at the end.
+             A second press on the same spot never goes back and never starts over. -->
         <div class="ground__nav">
-          <button class="button button--secondary" type="button" data-act="ground-back" data-el="ground-back" hidden>Назад</button>
           <button class="button button--primary" type="button" data-act="ground-next" data-el="ground-next" data-focus>Далі</button>
           <button class="button button--primary" type="button" data-act="close" data-el="ground-done" hidden>Готово</button>
+          <button class="button button--secondary" type="button" data-act="ground-back" data-el="ground-back" hidden>Назад</button>
           <button class="button button--secondary" type="button" data-act="ground-again" data-el="ground-again" hidden>Ще раз</button>
         </div>
         <p class="small" data-el="ground-safety">Якщо зараз повітряна небезпека — спершу в укриття. Вправу можна зробити там.</p>

@@ -170,7 +170,9 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       }
       starterBox.append(checkin)
     }
-    show(starterBox, visible && lines.length > 0)
+    // «Як ви зараз?» is always there before the first message, a scenario without starters of its
+    // own (one the server added later) included.
+    show(starterBox, visible)
   }
 
   const streamOf = (state: ChatState): StreamView | null => {

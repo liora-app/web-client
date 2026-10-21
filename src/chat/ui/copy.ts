@@ -361,8 +361,9 @@ export const PRESENCE_LABEL: Readonly<Record<Presence, string>> = {
   summary: 'Складає тези',
   saved: 'Тези збережено',
   quiet: 'Розмову зупинено',
-  // «Подихати хвилину» is open (spec §3.13): the light keeps the 4/6 pace, the label says what it is.
-  breathing: 'Повільне дихання',
+  // «Подихати хвилину» is open (spec §3.13): the light holds still beside the circle; the label
+  // names the exercise, whichever breathing is chosen (slow or the cyclic sigh).
+  breathing: 'Дихальна вправа',
 }
 
 // ── Announcer (§5.7) ─────────────────────────────────────────────────────────────────────────
