@@ -3783,8 +3783,10 @@ test.describe('tools', () => {
     const start = dialog.getByRole('button', { name: 'Почати' })
     await expect(start).toBeFocused()
     await expect(dialog).toContainText('Вдих на 4, видих на 6. Можна зупинитися будь-коли.')
+    // The focus starts past the instruction: the dialog says it as its description.
+    await expect(page.getByRole('dialog', { name: 'Подихати хвилину' })).toHaveAccessibleDescription('Вдих на 4, видих на 6. Можна зупинитися будь-коли.')
     await expect(presence(page)).toHaveAttribute('data-presence', 'breathing')
-    await expect(page.locator('[data-presence-label]')).toHaveText('Повільне дихання')
+    await expect(page.locator('[data-presence-label]')).toHaveText('Дихальна вправа')
     const calls = api.calls.length
     await page.keyboard.press('Enter')
     const stop = dialog.getByRole('button', { name: 'Стоп' })
@@ -3794,6 +3796,9 @@ test.describe('tools', () => {
     await expect(status).toHaveText('Вдих')
     await expect(dialog.locator('[data-el="breathe-phase"]')).toHaveText('Вдих')
     await expect(count).toHaveText('4')
+    // One pace on the screen: the light beside the dialog (the CSS orb, WebGL is off here) holds
+    // still instead of breathing on a clock of its own, out of step with the circle.
+    expect(await page.locator('.presence .orb').evaluate((node) => node.getAnimations().filter((a) => a instanceof CSSAnimation).length)).toBe(0)
     await status.evaluate((node) => {
       const w = window as unknown as { __said: string[] }
       w.__said = []
@@ -3831,6 +3836,8 @@ test.describe('tools', () => {
     await sigh.click()
     await expect(sigh).toHaveAttribute('aria-checked', 'true')
     await expect(dialog).toContainText('Вдих носом, ще короткий довдих — і довгий повільний видих.')
+    await expect(page.getByRole('dialog', { name: 'Подихати хвилину' })).toHaveAccessibleDescription('Вдих носом, ще короткий довдих — і довгий повільний видих.')
+    await expect(page.locator('[data-presence-label]')).toHaveText('Дихальна вправа')
     await start.click()
     await expect(status).toHaveText('Вдих')
     await page.clock.runFor(2100)
@@ -3901,6 +3908,8 @@ test.describe('tools', () => {
     await expect(back).toBeHidden()
     await expect(dialog.locator('[data-el="ground-progress"]')).toHaveText('Крок 1 з 6')
     await expect(dialog.locator('.ground__step:not([hidden]) .ground__text')).toHaveText('Повільно видихніть. Відчуйте ступні на підлозі.')
+    // The focus starts on «Далі»: the step on screen is the dialog's description (the others are not).
+    await expect(page.getByRole('dialog', { name: 'Заземлення 5-4-3-2-1' })).toHaveAccessibleDescription('Повільно видихніть. Відчуйте ступні на підлозі.')
     // The shelter first, in the words of the brief (never the stop-list word for an alert).
     await expect(dialog.locator('[data-el="ground-safety"]')).toHaveText('Якщо зараз повітряна небезпека — спершу в укриття. Вправу можна зробити там.')
     await page.keyboard.press('Enter')
@@ -4086,6 +4095,9 @@ test.describe('tools', () => {
       text: 'rgb(236, 241, 237)',
     })
     await expect(html(page)).toHaveCSS('background-color', LAMP)
+    // The browser's own bar goes dark with it (the one theme-color, still theme.ts's).
+    const themeColor = page.locator('meta[name="theme-color"]')
+    await expect(themeColor).toHaveAttribute('content', LAMP)
     // Large controls: 64 px for the tools, 56 px for «Закрити».
     for (const button of await dialog.locator('.shelter__button').all()) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(63.5)
     expect((await dialog.getByRole('button', { name: 'Закрити' }).boundingBox())!.height).toBeGreaterThanOrEqual(55.5)
@@ -4110,8 +4122,58 @@ test.describe('tools', () => {
     await expect(dialog).toBeHidden()
     await expect(toolsButton(page)).toBeFocused()
     await expect(html(page)).toHaveCSS('background-color', PAPER)
+    await expect(themeColor).toHaveAttribute('content', PAPER)
     await expect(breatheDialog(page)).not.toHaveAttribute('data-shelter', '')
     expect(api.count('GET /helplines')).toBe(0)
+  })
+
+  test('#81b the shelter is the dark theme to the last edge: every colour inside it, and inside breathing and grounding over it, is the same in both themes', async ({ page }) => {
+    // Computed colours of every node shown (and its ::before/::after): a token the shelter does not
+    // restate would bring the light theme's value in (tokens.css resolves light-dark() on :root).
+    const colours = (dialog: Locator): Promise<Record<string, string>> =>
+      dialog.evaluate((root) => {
+        const props = ['color', 'backgroundColor', 'backgroundImage', 'borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor', 'outlineColor', 'boxShadow', 'fill', 'stroke', 'textDecorationColor', 'caretColor', 'accentColor'] as const
+        const out: Record<string, string> = {}
+        for (const [i, node] of [root, ...Array.from(root.querySelectorAll('*'))].entries()) {
+          if (node.getClientRects().length === 0) continue
+          for (const pseudo of [null, '::before', '::after']) {
+            const style = getComputedStyle(node, pseudo)
+            if (pseudo !== null && (style.content === 'none' || style.content === 'normal')) continue
+            out[`${i} ${node.tagName.toLowerCase()}.${String(node.getAttribute('class') ?? '')}${pseudo ?? ''}`] = props.map((p) => style[p]).join(' | ')
+          }
+        }
+        return out
+      })
+    const same = async (dialog: Locator, label: string): Promise<void> => {
+      // No hover and no colour still easing: the pointer leaves, the transitions end.
+      await page.mouse.move(1, 1)
+      await dialog.evaluate((node) => Promise.all(node.getAnimations({ subtree: true }).map((a) => a.finished)))
+      // The page under it says which theme is on: its text is --color-text of that theme.
+      await page.emulateMedia({ colorScheme: 'dark' })
+      await expect(page.locator('body')).toHaveCSS('color', 'rgb(236, 241, 237)')
+      const dark = await colours(dialog)
+      await page.emulateMedia({ colorScheme: 'light' })
+      await expect(page.locator('body')).toHaveCSS('color', 'rgb(28, 38, 38)')
+      expect(await colours(dialog), label).toEqual(dark)
+      expect(Object.keys(dark).length, label).toBeGreaterThan(8)
+    }
+    await page.emulateMedia({ colorScheme: 'light' })
+    await openChat(page)
+    await openTool(page, 'В укритті')
+    await same(shelterDialog(page), 'the shelter')
+    // Breathing over it, before «Почати»: the switch, the open «Чому це може допомогти», a focus ring.
+    await shelterDialog(page).getByRole('button', { name: 'Подихати хвилину' }).click()
+    await breatheDialog(page).locator('summary').click()
+    await breatheDialog(page).getByRole('switch').focus()
+    await page.keyboard.press('Tab')
+    await page.keyboard.press('Shift+Tab')
+    await same(breatheDialog(page), 'breathing, ready')
+    await breatheDialog(page).getByRole('button', { name: 'Почати' }).click()
+    await same(breatheDialog(page), 'breathing, running')
+    await page.keyboard.press('Escape')
+    await shelterDialog(page).getByRole('button', { name: 'Заземлення 5-4-3-2-1' }).click()
+    await groundDialog(page).getByRole('button', { name: 'Далі' }).click()
+    await same(groundDialog(page), 'grounding')
   })
 
   test('#82 ★ the kit without a conversation: from the signed-out screen and «Якщо важко», no request and no storage; the new conversation stays unstarted', async ({ page, api }) => {
@@ -4273,6 +4335,104 @@ test.describe('tools', () => {
     await expect(stop).toBeInViewport({ ratio: 1 })
     await breatheDialog(page).locator('.tool__body').evaluate((node) => node.scrollTo({ top: node.scrollHeight }))
     await expect(stop).toBeInViewport({ ratio: 1 })
+  })
+
+  test('#86 ★ the tools hold still under the pointer: «Далі» in one place on every step and two presses go two steps on; the check-in and breathing keep their head where they opened', async ({ page }) => {
+    await openChat(page)
+    /** Where a control is once the dialog's entrance (a fade and a short rise) is over. */
+    const at = async (dialog: Locator, control: Locator, edge: 'left' | 'right' = 'left'): Promise<{ x: number; y: number }> => {
+      await dialog.evaluate((node) => Promise.all(node.getAnimations({ subtree: true }).map((a) => a.finished)))
+      const box = (await control.boundingBox())!
+      return { x: Math.round(edge === 'left' ? box.x : box.x + box.width), y: Math.round(box.y) }
+    }
+    // Grounding: «Назад» comes after «Далі», never before it; the steps share one box as tall as the
+    // tallest, so «Далі» stays where it was from the first step to the last.
+    const ground = groundDialog(page)
+    await openTool(page, 'Заземлення 5-4-3-2-1')
+    const next = ground.getByRole('button', { name: 'Далі' })
+    const progress = ground.locator('[data-el="ground-progress"]')
+    const first = await at(ground, next)
+    const box = (await next.boundingBox())!
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+    await expect(progress).toHaveText('Крок 2 з 6')
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+    await expect(progress).toHaveText('Крок 3 з 6')
+    for (let n = 3; n <= 6; n++) {
+      await expect(progress).toHaveText(`Крок ${n} з 6`)
+      expect(await at(ground, next), `«Далі» on step ${n}`).toEqual(first)
+      if (n < 6) await next.click()
+    }
+    // The end: «Готово» where «Далі» was — a second press there ends, it never starts over.
+    await next.click()
+    const done = ground.getByRole('button', { name: 'Готово' })
+    await expect(done).toBeVisible()
+    expect(await at(ground, done)).toEqual(first)
+    await done.click()
+    await expect(ground).toBeHidden()
+    // «Як ви зараз?»: the words appear under the cells; the cell just pressed and «Пропустити» stay.
+    const mood = moodDialog(page)
+    await openTool(page, 'Як ви зараз?')
+    const cell = mood.getByRole('button', { name: 'Мало сил, неприємно' })
+    const skip = mood.getByRole('button', { name: 'Пропустити' })
+    const cellAt = await at(mood, cell)
+    const skipAt = await at(mood, skip)
+    await cell.click()
+    await expect(mood.locator('.mood__word:visible')).toHaveCount(6)
+    expect(await at(mood, cell)).toEqual(cellAt)
+    await mood.getByRole('button', { name: 'втома', exact: true }).click()
+    await expect(mood.getByRole('button', { name: 'Готово' })).toBeVisible()
+    expect(await at(mood, cell)).toEqual(cellAt)
+    expect(await at(mood, skip)).toEqual(skipAt)
+    await page.keyboard.press('Escape')
+    // Breathing: «Закрити» turns into «Стоп» in the same place (the head's right edge) when the
+    // circle replaces «Почати».
+    const breathe = breatheDialog(page)
+    await openTool(page, 'Подихати хвилину')
+    const head = breathe.locator('[data-el="breathe-close"]')
+    const headAt = await at(breathe, head, 'right')
+    await breathe.getByRole('button', { name: 'Почати' }).click()
+    await expect(head).toHaveText('Стоп')
+    expect(await at(breathe, head, 'right')).toEqual(headAt)
+    await page.keyboard.press('Escape')
+  })
+
+  test('#87 «Як ви зараз?» before the first message in a scenario without starters of its own; «А зараз?» waits while the theses are being saved', async ({ page, api }) => {
+    // A scenario a newer server adds: no starters here, the check-in still offered.
+    api.on('GET /scenarios', {
+      json: [...SCENARIOS, { id: 'synthetic_walk', title: 'Синтетична прогулянка', description: 'Синтетичний опис.', opening_message: 'Синтетичне перше питання?', needs_summaries: false }],
+    })
+    await openChat(page)
+    await scenarioList(page).getByRole('radio', { name: 'Синтетична прогулянка' }).check()
+    const box = page.locator('[data-el="starters"]')
+    await expect(box).toBeVisible()
+    await expect(box.locator('button.starter')).toHaveCount(0)
+    await box.getByRole('button', { name: 'Як ви зараз?' }).click()
+    await moodDialog(page).getByRole('button', { name: 'Мало сил, приємно' }).click()
+    await moodDialog(page).getByRole('button', { name: 'спокій', exact: true }).click()
+    await moodDialog(page).getByRole('button', { name: 'Готово' }).click()
+    await expect(moodDialog(page)).toBeHidden()
+    // The theses, saved slowly: «А зараз?» is aria-disabled and opens nothing until «Збережено».
+    const held = gate()
+    api.on('POST /summaries', async (call) => {
+      await held.wait
+      return { status: 201, json: storedFrom(call.body) }
+    })
+    await exchange(page, USER)
+    await toReview(page)
+    const now = page.locator('section[data-screen="review"]').getByRole('button', { name: 'А зараз?' })
+    await expect(now).not.toHaveAttribute('aria-disabled', 'true')
+    await page.getByRole('button', { name: 'Зберегти в щоденник' }).click()
+    await expect(now).toHaveAttribute('aria-disabled', 'true')
+    // Pressed anyway (aria-disabled keeps it focusable and clickable): nothing opens.
+    await now.click({ force: true })
+    await page.waitForTimeout(300)
+    await expect(moodDialog(page)).toBeHidden()
+    held.open()
+    await onScreen(page, 'saved')
+    const after = page.locator('section[data-screen="saved"]').getByRole('button', { name: 'А зараз?' })
+    await expect(after).not.toHaveAttribute('aria-disabled', 'true')
+    await after.click()
+    await expect(page.getByRole('dialog', { name: 'А зараз?' })).toBeVisible()
   })
 })
 

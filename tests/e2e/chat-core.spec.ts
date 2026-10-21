@@ -2840,6 +2840,10 @@ test.describe('state: the self-help tools', () => {
     expect(picked.model.ctx.mood).toEqual({ before: 'неспокій', after: 'спокій' })
     const ended: Model = { ...picked.model, state: { s: 'ended' }, overlay: [] }
     expect(run(ended, { type: 'overlay/open', overlay: 'mood', when: 'after' }).model.overlay).toEqual([{ o: 'mood', when: 'after' }])
+    // Not while the theses are being saved: «Збережено» would close it half chosen (I6).
+    const saving = run(review, { type: 'review/save' }).model
+    expect(saving.state.s === 'review' && saving.state.saving).toBe('saving')
+    expect(run(saving, { type: 'overlay/open', overlay: 'mood', when: 'after' }).model).toBe(saving)
     // Never a tag, never in a body: the save and the theses send what they always sent (I1, I9).
     const save = run(picked.model, { type: 'review/save' })
     const all = [...first.effects, ...after.effects, ...picked.effects, ...save.effects]
