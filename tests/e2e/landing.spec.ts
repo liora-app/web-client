@@ -61,6 +61,13 @@ test.describe('content and structure', () => {
     expect(text).toMatch(/не терапі|не замін|не психолог|не медичн/)
   })
 
+  test('the privacy chapter says «only» of the conversation, not of everything stored', async ({ page }) => {
+    await page.goto('/')
+    // Email, sub, consents and sessions are stored too (ADR-005; the FAQ «Що саме ви зберігаєте?» lists them).
+    const first = page.locator('#privacy .principles > li').first()
+    await expect(first).toContainText('Із розмови в базу даних потрапляє лише підсумок, який ви переглянули й зберегли.')
+  })
+
   test('copy stays inside the product frame (stop-list)', async ({ page }) => {
     await page.goto('/')
     // innerText skips closed <details> (their content is display-locked): open every FAQ answer.
@@ -103,6 +110,9 @@ test.describe('content and structure', () => {
   test('the footer says which cookies exist once the chat signs in', async ({ page }) => {
     await page.goto('/')
     const note = page.locator('.site-footer__note')
+    // The disclosure itself stays whole: not "not a substitute for professional help", which would make Liora a kind of help.
+    await expect(note).toContainText('Liora — застосунок для саморефлексії з AI, а не психологічна, медична чи екстрена допомога.')
+    await expect(note).not.toContainText('не заміна')
     await expect(note).toContainText('Лендінг не ставить cookie і не має аналітики.')
     await expect(note).toContainText('Після входу чат тримає cookie сесії, недоступний скриптам')
     await expect(note).toContainText('тимчасовий cookie входу')
