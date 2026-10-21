@@ -3,7 +3,7 @@
 // the server's English `error.message` never reaches the page (spec §4.1).
 
 import type { UiError } from '../core/errors'
-import { maskPausedLine } from '../core/helplines'
+import { maskPausedLine, maskPausedLineInline } from '../core/helplines'
 import type { AuthCode, AuthNotice } from '../core/state'
 import type { BreathPhase } from '../core/selfhelp'
 import type { ScenarioId, ScenarioOut } from '../core/types'
@@ -470,7 +470,7 @@ export function weekCount(n: number): string {
 }
 
 export function weekThemes(names: readonly string[]): string {
-  return names.length === 0 ? '' : `Теми: ${names.map(maskPausedLine).join(', ')}`
+  return names.length === 0 ? '' : `Теми: ${names.map(maskPausedLineInline).join(', ')}`
 }
 
 const DAY_MONTH_UTC = new Intl.DateTimeFormat('uk', { day: 'numeric', month: 'long', timeZone: 'UTC' })

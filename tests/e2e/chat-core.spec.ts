@@ -28,7 +28,9 @@ import {
   PAUSED_LINE_NOTE,
   PAUSED_LINE_NOTE_SHORT,
   maskPausedLine,
+  maskPausedLineInline,
   noPausedLine,
+  oneLine,
   sanitizeHelplines,
 } from '../../src/chat/core/helplines'
 import {
@@ -1853,6 +1855,28 @@ test.describe('state: theses', () => {
     expect(JSON.stringify(body)).not.toContain(PAUSED)
   })
 
+  test('a number the AI broke over two lines is masked too: every screen draws a thesis on one line', () => {
+    const { model, effects } = summarizing()
+    const { id } = summarizeFx(effects)
+    const split = `${PAUSED.slice(0, 2)}\n${PAUSED.slice(2)}`
+    const review = run(model, {
+      type: 'summarize/ok',
+      id,
+      draft: { title: `Лінія ${split}`, bullets: [`Номер ${split} мовчить.`, 'Перше.\nДруге.'], tags: [split, 'день'] },
+    }).model
+    const draft = (review.state as Extract<State, { s: 'review' }>).draft
+    expect(draft.title).toBe(`Лінія ${PAUSED_LINE_NOTE_SHORT}`)
+    // A field with nothing to mask stays as the AI wrote it.
+    expect(draft.bullets.map((b) => b.text)).toEqual([`Номер ${PAUSED_LINE_NOTE_SHORT} мовчить.`, 'Перше.\nДруге.'])
+    expect(draft.tags.map((t) => t.name)).toEqual(['день'])
+    const body = (run(review, { type: 'review/save' }).effects.find((e) => e.type === 'save') as Extract<Effect, { type: 'save' }>).body
+    for (const text of [body.title, ...body.bullets]) expect(noPausedLine(oneLine(text)), text).toBe(true)
+    // The copy of the theses: one line per field.
+    const copied = thesesText({ title: `Лінія ${split}`, bullets: [{ id: 'b0', text: `Теза ${split}`, removed: false }], tags: [] })
+    expect(copied).not.toContain(split)
+    expect(copied).toContain(`01 — Теза ${PAUSED_LINE_NOTE}`)
+  })
+
   test('masked theses still fit: a long title or thesis with the number saves without a length error the person did not make', () => {
     const { model, effects } = summarizing()
     const { id } = summarizeFx(effects)
@@ -2260,6 +2284,23 @@ test.describe('state: «→ У тези», the reminder to pause, the soft end',
     // The candidate on the theses screen is that text.
     const m = run(talk(1, { reply: () => `Номер ${spaced} не відповідає.` }), { type: 'chat/mark', index: 2 }).model
     expect(markCandidates(reviewOf(toReview(m)))[0]!.text).toBe(`Номер ${PAUSED_LINE_NOTE_SHORT} не відповідає.`)
+    // A number the reply broke over lines is one number on the thesis's one line: the reply is
+    // put on one line first, masked after.
+    for (const split of [
+      `${PAUSED.slice(0, 2)}\n${PAUSED.slice(2)}`,
+      `${PAUSED.slice(0, 1)}\r\n${PAUSED.slice(1)}`,
+      `${PAUSED.slice(0, 2)}\u2028${PAUSED.slice(2)}`,
+      `${PAUSED.slice(0, 2)}\n\n${PAUSED.slice(2)}`,
+      [...PAUSED].join('\n'),
+    ]) {
+      const text = markText(`Лінія: ${split}`)
+      expect(text, JSON.stringify(split)).toBe(`Лінія: ${PAUSED_LINE_NOTE_SHORT}`)
+      expect(noPausedLine(text)).toBe(true)
+    }
+    const broken = run(talk(1, { reply: () => `Подзвоніть на ${PAUSED.slice(0, 2)}\n${PAUSED.slice(2)}.` }), { type: 'chat/mark', index: 2 }).model
+    expect(markCandidates(reviewOf(toReview(broken)))[0]!.text).toBe(`Подзвоніть на ${PAUSED_LINE_NOTE_SHORT}.`)
+    // The bidi controls the mask takes out leave no two spaces side by side.
+    expect(markText(`а \u200E б ${PAUSED}`)).toBe(`а б ${PAUSED_LINE_NOTE_SHORT}`)
   })
 
   test('«Збережено» keeps one thought to take along: the first saved thesis that came from a mark — none without one', () => {
@@ -2487,6 +2528,31 @@ test.describe('journal helpers', () => {
     expect(form.title).toBe(`Лінія ${PAUSED_LINE_NOTE_SHORT}`)
     expect(form.tags).toBe('день')
     expect(entryMarkdown(numbered)).not.toContain(PAUSED)
+  })
+
+  test('a record with the number broken over two lines: the form, the page and the copy read it on one line', () => {
+    const split = `${PAUSED.slice(0, 2)}\n${PAUSED.slice(2)}`
+    const stored: SummaryOut = {
+      ...SUMMARY,
+      title: `Лінія ${split}`,
+      bullets: [`Дзвонити на ${split}, цілодобово`, 'Перше.\nДруге.'],
+      tags: [{ id: 'x', name: split, source: 'ai' }, { id: 'y', name: 'день', source: 'ai' }],
+    }
+    const form = formOf(stored)
+    expect(form.title).toBe(`Лінія ${PAUSED_LINE_NOTE_SHORT}`)
+    expect(form.bullets).toEqual([`Дзвонити на ${PAUSED_LINE_NOTE_SHORT}, цілодобово`, 'Перше.\nДруге.'])
+    expect(form.tags).toBe('день')
+    const md = entryMarkdown(stored)
+    expect(md).not.toContain(split)
+    expect(md).toContain(`## Лінія ${PAUSED_LINE_NOTE}`)
+    expect(md).toContain(`- Дзвонити на ${PAUSED_LINE_NOTE}, цілодобово`)
+    // What the diary and «Збережено» draw (no pre-wrap there): the number masked, a text with
+    // nothing to mask as it was.
+    expect(maskPausedLineInline(`Лінія ${split}`)).toBe(`Лінія ${PAUSED_LINE_NOTE}`)
+    expect(maskPausedLineInline(`7\r\n${PAUSED.slice(1)}`)).toBe(PAUSED_LINE_NOTE)
+    expect(maskPausedLineInline('Перше.\nДруге.')).toBe('Перше.\nДруге.')
+    // The transcript is drawn pre-wrap: there a line break still ends a number (as on the screen).
+    expect(maskPausedLine(`Лінія ${split}`)).toBe(`Лінія ${split}`)
   })
 
   test('one record as Markdown: a heading, the day, the theses as a list, the themes', () => {

@@ -4,7 +4,7 @@
 // Pure, like the rest of the core: no clock (the server names this week in its first answer), no
 // time zone database (the page passes its Intl zone in), no DOM.
 
-import { PAUSED_LINE_NOTE_SHORT, maskPausedLineShort } from './helplines'
+import { PAUSED_LINE_NOTE_SHORT, maskPausedLineShort, oneLine } from './helplines'
 import {
   MAX_BULLET,
   MAX_QUERY,
@@ -53,20 +53,27 @@ export type EntryForm = Readonly<{
   tags: string
 }>
 
+/** A title or a thesis the AI drafted, as the theses draft and the diary's edit form hold it: the
+ *  paused number masked with the short note, the field cut at a word when the note would not fit
+ *  (never inside the note) — the person must not meet a length error in a text they did not write.
+ *  It is read on one line, as every screen draws it (oneLine): a number broken over two lines is
+ *  one number there. A field with nothing to mask stays exactly as it came. */
+export function maskedField(text: string, max: number): string {
+  const flat = oneLine(text)
+  const masked = maskPausedLineShort(flat)
+  return masked === flat ? text : clampWords(oneLine(masked).trim(), max, PAUSED_LINE_NOTE_SHORT)
+}
+
 /** The form's first values: the record as the page shows it. The AI drafted it, so the paused
- *  number is masked here too — with the short note, cut at a word when the note would not fit, the
- *  rule of the theses draft (state.ts maskedDraft). A tag that spells it is left out. */
+ *  number is masked here too — the rule of the theses draft (maskedField). A tag that spells it is
+ *  left out. */
 export function formOf(summary: SummaryOut): EntryForm {
-  const fit = (text: string, max: number): string => {
-    const masked = maskPausedLineShort(text)
-    return masked === text ? text : clampWords(masked, max, PAUSED_LINE_NOTE_SHORT)
-  }
   return {
     id: summary.id,
-    title: fit(summary.title, MAX_TITLE),
-    bullets: summary.bullets.map((bullet) => fit(bullet, MAX_BULLET)),
+    title: maskedField(summary.title, MAX_TITLE),
+    bullets: summary.bullets.map((bullet) => maskedField(bullet, MAX_BULLET)),
     tags: summary.tags
-      .filter((tag) => maskPausedLineShort(tag.name) === tag.name)
+      .filter((tag) => maskPausedLineShort(oneLine(tag.name)) === oneLine(tag.name))
       .map((tag) => tag.name)
       .join(', '),
   }

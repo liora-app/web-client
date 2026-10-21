@@ -17,7 +17,7 @@
 // crisis above all — and armed again on the way back. 60 replies need no timer: the core looks at
 // each answer.
 
-import { maskPausedLine } from '../../core/helplines'
+import { maskPausedLineInline } from '../../core/helplines'
 import type { Action, ChatState, Model } from '../../core/state'
 import { canSendNow, hasReply, hasUserMessage, pauseAt, scenariosOf } from '../../core/state'
 import { LONG_CONVERSATION_MESSAGES, SERVER_TRIM_CODE_POINTS, canSend, totalCodePoints } from '../../core/limits'
@@ -297,7 +297,7 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
           ? s.revisitIds.map((id) => diary.value.items.find((item) => item.id === id)?.title).filter((t): t is string => t !== undefined)
           : []
       show(el('revisit-chosen'), revisit && s.revisitIds.length > 0)
-      setText(el('revisit-names'), chosenNames.map(maskPausedLine).join(', '))
+      setText(el('revisit-names'), chosenNames.map(maskPausedLineInline).join(', '))
       show(el('revisit-actions'), revisit)
       show(el('revisit-open'), revisit && diary.status === 'ok' && diary.value.items.length > 0)
       setText(el('revisit-open'), s.revisitIds.length > 0 ? 'Змінити' : 'Обрати записи')

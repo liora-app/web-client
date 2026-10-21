@@ -14,8 +14,8 @@
 
 import { GOOGLE_START, grantBody, summarizeBody, turnBody } from './api'
 import { DEFAULT_BUSY_RETRY_MS, outcomeUnknown, toUiError, uiError, type ApiError, type UiError } from './errors'
-import { FALLBACK, PAUSED_LINE_NOTE_SHORT, maskPausedLineShort, type SafeHelplines } from './helplines'
-import { FALLBACK_TZ, formOf, patchOf, searchQuery, shiftDay, type EntryForm, type PatchSent } from './journal'
+import { FALLBACK, PAUSED_LINE_NOTE_SHORT, maskPausedLineShort, oneLine, type SafeHelplines } from './helplines'
+import { FALLBACK_TZ, formOf, maskedField, patchOf, searchQuery, shiftDay, type EntryForm, type PatchSent } from './journal'
 import { NO_MOOD, isMoodWord, isToolKind, type MoodLog, type ToolKind } from './selfhelp'
 import {
   MAX_BULLET,
@@ -681,11 +681,13 @@ export function pauseAt(session: Session): number | null {
   return start === null ? null : start + PAUSE_AFTER_MS
 }
 
-/** A marked reply as a thesis: the paused number masked with the short note, as in the AI's
- *  theses (the draft is what gets saved), one line, cut at a word to fit 500 code points — never
- *  inside the note. */
+/** A marked reply as a thesis: one line, the paused number masked with the short note, as in the
+ *  AI's theses (the draft is what gets saved), cut at a word to fit 500 code points — never inside
+ *  the note. One line first, the mask after: a number the reply broke over two lines is one number
+ *  on the thesis's one line. Then one line again: the mask takes out bidi controls, which leave
+ *  their spaces side by side. */
 export function markText(content: string): string {
-  const flat = maskPausedLineShort(content).replace(/\s+/g, ' ').trim()
+  const flat = oneLine(maskPausedLineShort(oneLine(content))).trim()
   return clampWords(flat, MAX_BULLET, PAUSED_LINE_NOTE_SHORT)
 }
 
@@ -1216,16 +1218,14 @@ function saved(model: Model, summary: SummaryOut, keep: string | null = null): S
  *  copies and saves — to the diary and its export file, so with the short note. A field the mask
  *  made longer than its limit is cut at a word, never inside the note: the person must not meet a
  *  length error in a text they did not write. A tag that spells the number goes — a tag names a
- *  topic, and the note would not fit the 40 code points of one. */
+ *  topic, and the note would not fit the 40 code points of one. The fields are read on one line,
+ *  as every screen draws them (oneLine): a number broken over two lines is masked too, and that
+ *  field stays on one line. */
 function maskedDraft(out: SummaryDraftOut): SummaryDraftOut {
-  const fit = (text: string, max: number): string => {
-    const masked = maskPausedLineShort(text)
-    return masked === text ? text : clampWords(masked, max, PAUSED_LINE_NOTE_SHORT)
-  }
   return {
-    title: fit(out.title, MAX_TITLE),
-    bullets: out.bullets.map((bullet) => fit(bullet, MAX_BULLET)),
-    tags: out.tags.filter((tag) => maskPausedLineShort(tag) === tag),
+    title: maskedField(out.title, MAX_TITLE),
+    bullets: out.bullets.map((bullet) => maskedField(bullet, MAX_BULLET)),
+    tags: out.tags.filter((tag) => maskPausedLineShort(oneLine(tag)) === oneLine(tag)),
   }
 }
 

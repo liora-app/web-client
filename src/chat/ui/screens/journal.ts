@@ -7,7 +7,7 @@
 // formOf). The list holds no text in data-* — only the record's id. Leaving the screen takes the
 // records, the search and the week out of the hidden section.
 
-import { maskPausedLine } from '../../core/helplines'
+import { maskPausedLineInline } from '../../core/helplines'
 import { shiftDay, type EntryForm } from '../../core/journal'
 import { MAX_BULLETS } from '../../core/limits'
 import { journalBusy, revisitOffered, type Action, type JournalState, type Model } from '../../core/state'
@@ -136,7 +136,7 @@ export function journalScreen(dispatch: (action: Action) => void): JournalScreen
         const pill = fromTemplate<HTMLLabelElement>('theme')
         const input = pill.querySelector<HTMLInputElement>('input')!
         input.value = tag.id
-        setText(pill.querySelector('.pill__text')!, tag.id === '' ? 'Усі теми' : `#${maskPausedLine(tag.name)}`)
+        setText(pill.querySelector('.pill__text')!, tag.id === '' ? 'Усі теми' : `#${maskPausedLineInline(tag.name)}`)
         themes.append(pill)
       }
     }
@@ -149,7 +149,7 @@ export function journalScreen(dispatch: (action: Action) => void): JournalScreen
 
   function fillView(li: HTMLLIElement, item: SummaryOut): void {
     setText(li.querySelector('.entry__meta')!, entryMeta(item.created_at, item.edited_at !== null))
-    setText(li.querySelector('.entry__title')!, maskPausedLine(item.title))
+    setText(li.querySelector('.entry__title')!, maskPausedLineInline(item.title))
     const bullets = li.querySelector<HTMLElement>('.entry__bullets')!
     bullets.replaceChildren()
     item.bullets.forEach((bullet, i) => {
@@ -159,12 +159,12 @@ export function journalScreen(dispatch: (action: Action) => void): JournalScreen
       index.setAttribute('aria-hidden', 'true')
       index.textContent = String(i + 1).padStart(2, '0')
       const text = document.createElement('p')
-      text.textContent = maskPausedLine(bullet)
+      text.textContent = maskPausedLineInline(bullet)
       row.append(index, text)
       bullets.append(row)
     })
     const tags = li.querySelector<HTMLElement>('.entry__themes')!
-    setText(tags, item.tags.map((t) => `#${maskPausedLine(t.name)}`).join(' '))
+    setText(tags, item.tags.map((t) => `#${maskPausedLineInline(t.name)}`).join(' '))
     show(tags, item.tags.length > 0)
   }
 
