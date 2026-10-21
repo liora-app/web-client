@@ -1,3 +1,4 @@
+import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 import { NO_WEBGL2, centre, cutOffAtEdges, watchConsole } from './helpers'
 
@@ -66,6 +67,21 @@ async function pinAt(page: Page, fraction: number): Promise<void> {
 }
 
 const opacity = (page: Page, selector: string): Promise<number> => page.locator(selector).evaluate((element) => Number(getComputedStyle(element).opacity))
+const color = (page: Page, selector: string): Promise<string> => page.locator(selector).evaluate((element) => getComputedStyle(element).color)
+
+/** A token's colour as the browser computes it here (a probe element, set through CSSOM). */
+const ink = (page: Page, token: string): Promise<string> =>
+  page.evaluate((name) => {
+    const probe = document.createElement('span')
+    probe.style.setProperty('color', `var(${name})`)
+    document.body.append(probe)
+    const value = getComputedStyle(probe).color
+    probe.remove()
+    return value
+  }, token)
+
+/** #mind's copy: the texts its scroll timeline moves. */
+const MIND_TEXT = ['.mind__copy .tag', '#mind-title', '#mind-title span', '.mind__note'] as const
 
 /** «Пауза» in the header, then the pointer leaves it (its own hover colours are not motion). */
 async function pause(page: Page): Promise<void> {
@@ -113,9 +129,10 @@ test.describe('without motion everything is there at once', () => {
     // Paused half-way through #mind's pin: its height and the scroll position stay as they are.
     await pinAt(page, 0.15)
     const before = await page.evaluate(() => ({ mind: document.querySelector<HTMLElement>('.mind')!.offsetHeight, y: Math.round(window.scrollY) }))
-    expect(await opacity(page, '.mind__note'), 'the note is still to come at this point').toBeLessThan(1)
+    expect(await color(page, '.mind__note'), 'the note is still to come at this point: the dim ink').toBe(await ink(page, '--color-text-dim'))
     await pause(page)
     expect(await page.evaluate(() => ({ mind: document.querySelector<HTMLElement>('.mind')!.offsetHeight, y: Math.round(window.scrollY) }))).toEqual(before)
+    expect(await color(page, '.mind__note'), 'on pause, its own ink').toBe(await ink(page, '--color-text-soft'))
     expect(await notAtRest(page)).toEqual([])
     expect(await running(page)).toEqual([])
 
@@ -266,18 +283,32 @@ test.describe('motion', () => {
     expect(heights.now).toBe(heights.dcl)
     expect(heights.now / heights.screen).toBeGreaterThan(1.8)
 
-    // The pin starts: «Ближче» is there, «до себе.» and the note are still to come.
+    const dim = await ink(page, '--color-text-dim')
+    const own = {
+      tag: await ink(page, '--color-text-muted'),
+      title: await ink(page, '--color-text'),
+      soft: await ink(page, '--landing-title-soft'),
+      note: await ink(page, '--color-text-soft'),
+    }
+    // The scroll can stop anywhere: the copy is never faded, only dimmer and lower before its turn.
+    for (const at of [-0.3, -0.1, 0, 0.15, 0.36, 0.6, 1, 1.3]) {
+      await pinAt(page, at)
+      for (const text of MIND_TEXT) expect(await opacity(page, text), `${text} at ${at}`).toBe(1)
+    }
+
+    // The pin starts: «Ближче» is there in its own ink, «до себе.» and the note still dim.
     await pinAt(page, 0)
-    expect(await opacity(page, '#mind-title')).toBeGreaterThan(0.95)
-    expect(await opacity(page, '#mind-title span')).toBeLessThan(0.1)
-    expect(await opacity(page, '.mind__note')).toBeLessThan(0.1)
+    expect(await color(page, '#mind-title')).toBe(own.title)
+    expect(await color(page, '#mind-title span')).toBe(dim)
+    expect(await color(page, '.mind__note')).toBe(dim)
     const turnAtStart = await page.locator('.mind__still').evaluate((element) => getComputedStyle(element).rotate)
 
     // A third in: «до себе.»; past the middle: the note; the copy has not drifted yet.
     await pinAt(page, 0.34)
-    expect(await opacity(page, '#mind-title span')).toBe(1)
+    expect(await color(page, '#mind-title span')).toBe(own.soft)
     await pinAt(page, 0.6)
-    expect(await notAtRest(page, ['.mind__copy', '.mind__copy .tag', '#mind-title', '#mind-title span', '.mind__note'])).toEqual([])
+    expect(await notAtRest(page, ['.mind__copy', ...MIND_TEXT])).toEqual([])
+    expect(await Promise.all(['.mind__copy .tag', '#mind-title', '#mind-title span', '.mind__note'].map((text) => color(page, text)))).toEqual([own.tag, own.title, own.soft, own.note])
     const turnInside = await page.locator('.mind__still').evaluate((element) => getComputedStyle(element).rotate)
     expect(turnInside).not.toBe(turnAtStart)
     await expect(page.locator('.mind__still')).toBeVisible()
@@ -287,6 +318,41 @@ test.describe('motion', () => {
     const drift = await page.locator('.mind__copy').evaluate((element) => new DOMMatrix(getComputedStyle(element).transform).m42)
     expect(drift).toBeLessThan(-10)
   })
+
+  // Where a search lands (the match scrolled to the middle of the screen) and wherever the scroll
+  // stops half-way through the timeline, the copy reads at ≥ 4.5:1 — in both themes.
+  for (const scheme of ['dark', 'light'] as const) {
+    test(`#mind half-way through its timeline passes axe, and a found line is readable (${scheme})`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: scheme })
+      await page.goto('/')
+      test.skip(!(await page.evaluate(() => CSS.supports('animation-timeline', 'view()'))), 'scroll-driven animations only')
+      await settled(page)
+      const axe = async (label: string): Promise<void> => {
+        await frames(page)
+        const results = await new AxeBuilder({ page }).include('#mind').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze()
+        const summary = results.violations.map((v) => `${v.id} (${v.impact}): ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
+        expect(summary, label).toEqual([])
+      }
+      // The section's top at 70 % of the screen: the tag and «Ближче» on their way.
+      await page.evaluate(() => {
+        const mind = document.querySelector<HTMLElement>('.mind')!
+        window.scrollTo({ top: mind.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.7, behavior: 'instant' })
+      })
+      await axe('entry')
+      for (const at of [0.15, 0.4]) {
+        await pinAt(page, at)
+        await axe(`pin ${at}`)
+      }
+      // From the top of the page, as a find-in-page jump would land.
+      for (const text of ['.mind__note', '#mind-title span']) {
+        await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+        await page.locator(text).evaluate((element) => element.scrollIntoView({ block: 'center', behavior: 'instant' }))
+        await frames(page)
+        expect(await opacity(page, text), text).toBe(1)
+        await axe(`found ${text}`)
+      }
+    })
+  }
 
   test('an engine without scroll-driven animations brings #mind’s copy in with the reveal', async ({ page }) => {
     // Chromium has them, so this only shows the module's branch: the steps join the reveal.

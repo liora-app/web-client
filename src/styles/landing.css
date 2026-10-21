@@ -575,9 +575,11 @@ html:not([data-motion='on']) .qa summary::after {
 
 /* #mind: the copy unfolds with the scroll instead of standing still for the 90svh of the pin — the
    tag and «Ближче» as the section comes up, «до себе.» and the note while it is pinned, then the copy
-   drifts up as the portrait turns away. Without WebGL the still portrait turns on the same timeline
-   (CSS only: no canvas), and the section keeps its pinned height, so data-gl going loading → off
-   moves nothing on the page and «Пауза» does not change the scroll position. */
+   drifts up as the portrait turns away. The scroll can stop anywhere on this timeline, so the text is
+   never faded: it rises and brightens from the dim ink (--color-text-dim, ≥ 4.5:1) to its own,
+   readable and findable at every position. Without WebGL the still portrait turns on the same
+   timeline (CSS only: no canvas), and the section keeps its pinned height, so data-gl going
+   loading → off moves nothing on the page and «Пауза» does not change the scroll position. */
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
     html[data-gl='off']:not([data-gl-reason='reduced-motion'], [data-gl-reason='forced-colors']) .mind { height: 190svh; }
@@ -588,27 +590,28 @@ html:not([data-motion='on']) .qa summary::after {
 
     html[data-motion='on'] .mind__copy .tag {
       --rise: 1rem;
-      animation: landing-rise linear both;
+      animation: landing-ink linear both;
       animation-timeline: --mind;
       animation-range: entry 45% entry 85%;
     }
 
     html[data-motion='on'] .mind__copy h2 {
       --rise: 2.5rem;
-      animation: landing-rise linear both;
+      animation: landing-ink linear both;
       animation-timeline: --mind;
       animation-range: entry 55% entry 100%;
     }
 
     html[data-motion='on'] .mind__copy h2 span {
-      animation: landing-fade linear both;
+      --rise: 0px;
+      animation: landing-ink linear both;
       animation-timeline: --mind;
       animation-range: contain 0% contain 30%;
     }
 
     html[data-motion='on'] .mind__note {
       --rise: 1rem;
-      animation: landing-rise linear both;
+      animation: landing-ink linear both;
       animation-timeline: --mind;
       animation-range: contain 25% contain 55%;
     }
@@ -633,6 +636,11 @@ html:not([data-motion='on']) .qa summary::after {
   @media (prefers-reduced-motion: no-preference) {
     html[data-motion='on'][data-gl='off'] .mind__still { animation: landing-breathe var(--dur-breath) var(--ease-breath) infinite alternate; }
   }
+}
+
+/* #mind's copy on its scroll timeline: dim ink and a little lower, to its own colour and place. */
+@keyframes landing-ink {
+  from { color: var(--color-text-dim); transform: translate3d(0, var(--rise, 0px), 0); }
 }
 
 @keyframes landing-drift {
