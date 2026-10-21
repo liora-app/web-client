@@ -3442,6 +3442,8 @@ test.describe('diary', () => {
     await onScreen(page, 'consent')
     await expect(page.locator('[data-el="consent-resume-patch"]')).toBeVisible()
     await expect(page.locator('[data-el="consent-resume-talk"]')).toBeHidden()
+    // Not «Перед розмовою»: the person is editing a record, not starting a conversation.
+    await expect(page.locator('[data-el="consent-tag"]')).toBeHidden()
     await expect.poll(() => api.count('GET /consents')).toBe(2)
     for (const kind of KINDS) await page.locator(`input[data-kind="${kind}"]`).check()
     await page.getByRole('button', { name: 'Погоджуюся — продовжити' }).click()

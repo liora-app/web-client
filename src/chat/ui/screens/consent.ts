@@ -93,6 +93,8 @@ export function consentScreen(): Screen & { checked(): ConsentKind[]; toggleLate
       const patch = state.resume?.kind === 'patch'
       show(byEl('consent-resume-talk', root), !patch)
       show(byEl('consent-resume-patch', root), patch)
+      // «Перед розмовою» is not where a diary edit stands: the tag goes, the banner says what waits.
+      show(byEl('consent-tag', root), !patch)
       fillProvider(model, root)
 
       // A provider without a country is named in the text, but not one to agree to (§3.5).
