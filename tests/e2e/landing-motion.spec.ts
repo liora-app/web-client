@@ -190,6 +190,56 @@ test.describe('without motion everything is there at once', () => {
   }
 })
 
+/** [data-reveal] blocks with any part on screen that are not at rest (hidden, or still coming in). */
+function blankOnScreen(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll('[data-reveal]'))
+      .filter((element) => {
+        const box = element.getBoundingClientRect()
+        return box.width > 0 && box.bottom > 0 && box.top < window.innerHeight
+      })
+      .filter((element) => getComputedStyle(element).opacity !== '1')
+      .map((element) => `${element.id || element.className} @${Math.round(element.getBoundingClientRect().top)}/${window.innerHeight}`),
+  )
+}
+
+// The observer's root ends 12 % above the bottom edge: a block whose top stops in that band is on
+// screen but never "intersecting". Wherever the scroll comes to rest, what is on screen is shown
+// (src/ui/reveal.ts), and only that.
+test.describe('where the scroll comes to rest, what is on screen is shown', () => {
+  for (const hash of ['#how', '#privacy', '#faq']) {
+    test(`a deep link to ${hash} leaves no blank block on screen`, async ({ page }) => {
+      await page.goto(`/${hash}`)
+      await settled(page)
+      await expect(page.locator('html')).toHaveClass(/\bjs-reveal\b/)
+      // The fragment's scroll is smooth (base.css): wait for it to land, then for the blocks to settle.
+      await expect.poll(() => page.locator(hash).evaluate((element) => Math.round(element.getBoundingClientRect().top)), { timeout: 5_000 }).toBeLessThan(120)
+      await expect.poll(() => blankOnScreen(page), { timeout: 3_000 }).toEqual([])
+    })
+  }
+
+  test('a stop with a row at the bottom edge shows it, and nothing below the fold', async ({ page }) => {
+    await page.goto('/')
+    await settled(page)
+    await page.waitForTimeout(700)
+    await expect(page.locator('html')).toHaveClass(/\bjs-reveal\b/)
+    const rows = page.locator('.principles > [data-reveal="item"]')
+    // The third row's top at 94 % of the screen: inside the band the observer never counts.
+    await rows.nth(2).evaluate((element) => {
+      const top = element.getBoundingClientRect().top + window.scrollY
+      window.scrollTo({ top: top - window.innerHeight * 0.94, behavior: 'instant' })
+    })
+    await expect(rows.nth(2)).toHaveClass(/is-visible/)
+    await expect(rows.nth(2)).toHaveCSS('opacity', '1')
+    // The chapter title's own entrance (1.2 s) may still be under way: wait for it, not for a timer.
+    await expect.poll(() => blankOnScreen(page), { timeout: 3_000 }).toEqual([])
+    // Below the fold it still waits for the scroll.
+    const below = await rows.evaluateAll((all) => all.filter((element) => element.getBoundingClientRect().top >= window.innerHeight).map((element) => element.classList.contains('is-visible')))
+    expect(below.length).toBeGreaterThan(0)
+    expect(below.every((visible) => !visible)).toBe(true)
+  })
+})
+
 test.describe('motion', () => {
   test('the hero comes in once: within 600 ms, the headline by opacity alone, the rest rising 8 px', async ({ page }) => {
     // What the cascade is at the moment src/ui/intro.ts switches it on (before any frame of it).
