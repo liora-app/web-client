@@ -1318,7 +1318,8 @@
 
     <template data-confirm="logout">
       <h2 class="confirm__title" id="confirm-title">Вийти з акаунта?</h2>
-      <p>Поточна розмова закриється, і її текст зникне зі сторінки: Liora його не зберігає.</p>
+      <p data-if="talk">Поточна розмова закриється, і її текст зникне зі сторінки: Liora його не зберігає.</p>
+      <p data-if="edit">Незбережені зміни в записі зникнуть.</p>
       <p class="field-error" data-op-error role="alert"></p>
       <div class="confirm__actions">
         <button class="button button--danger" type="button" data-act="accept">Вийти</button>
@@ -1341,6 +1342,15 @@
       <div class="confirm__actions">
         <button class="button button--danger" type="button" data-act="accept">Видалити</button>
         <button class="button button--secondary" type="button" data-act="close" data-focus>Залишити</button>
+      </div>
+    </template>
+
+    <template data-confirm="discard-edit">
+      <h2 class="confirm__title" id="confirm-title">Скасувати зміни?</h2>
+      <p>Зміни в записі ще не збережено.</p>
+      <div class="confirm__actions">
+        <button class="button button--danger" type="button" data-act="accept">Скасувати зміни</button>
+        <button class="button button--secondary" type="button" data-act="close" data-focus>Редагувати далі</button>
       </div>
     </template>
 
@@ -1392,6 +1402,7 @@
       <h2 class="confirm__title" id="confirm-title">Відкликати згоду на передачу тексту <span data-provider="named"><span data-el="provider"></span></span><span data-provider="unnamed" data-text="постачальнику AI" hidden></span>?</h2>
       <p>Без неї AI не зможе відповідати: розмови стануть недоступні, доки ви знову не погодитеся. Щоденник залишиться.</p>
       <p data-if="talk">Поточна розмова закриється.</p>
+      <p data-if="edit">Незбережені зміни в записі зникнуть.</p>
       <p class="field-error" data-op-error role="alert"></p>
       <div class="confirm__actions">
         <button class="button button--danger" type="button" data-act="accept">Відкликати</button>
@@ -1403,6 +1414,7 @@
       <h2 class="confirm__title" id="confirm-title">Відкликати підтвердження віку?</h2>
       <p>Без нього розмови й збереження тез недоступні. Щоденник залишиться.</p>
       <p data-if="talk">Поточна розмова закриється.</p>
+      <p data-if="edit">Незбережені зміни в записі зникнуть.</p>
       <p class="field-error" data-op-error role="alert"></p>
       <div class="confirm__actions">
         <button class="button button--danger" type="button" data-act="accept">Відкликати</button>

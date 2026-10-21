@@ -15,7 +15,7 @@
 // unheard (§3.11, §5.7, WCAG 4.1.3). With no dialog open it is back in its place.
 
 import type { Action, Model, Overlay, PickOverlay } from '../core/state'
-import { canOpenJournal, hasReply, hasUserMessage, leaveGuard, pendingOf, sessionOf } from '../core/state'
+import { canOpenJournal, editUnsaved, hasReply, hasUserMessage, leaveGuard, pendingOf, sessionOf } from '../core/state'
 import { maskPausedLineInline, type SafeLine } from '../core/helplines'
 import { accountOpError, dayMonth, requestIdLine, shortDate } from './copy'
 import { byEl, fromTemplate, headingOf, setAttr, setText, show } from './dom'
@@ -141,6 +141,8 @@ export function createDialogs(dispatch: (action: Action) => void, tools: Tools):
       nosave: session?.noSave === true,
       // «Поточна розмова теж зникне» / «…закриється»: there is something to lose (I7).
       talk: leaveGuard(state),
+      // «Незбережені зміни в записі зникнуть»: a diary record is being edited and not saved.
+      edit: editUnsaved(state),
       // «Хочете залишити тези — спершу підсумуйте» only where «Підсумувати» is offered beside it;
       // on the theses the way to keep them is the save (§3.12). Neither in «не зберігати».
       'can-summarize': state.s === 'chat' && hasReply(state.session) && !state.session.noSave,

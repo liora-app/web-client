@@ -18,7 +18,7 @@ import { initSound } from '../../ui/sound'
 import { initThemePicker } from '../../ui/theme-picker'
 import { createApi } from '../core/api'
 import { maskPausedLine } from '../core/helplines'
-import { MAX_MARKS, draftOf, leaveGuard, pendingOf, sessionOf, type Action, type Model } from '../core/state'
+import { MAX_MARKS, draftOf, editUnsaved, leaveGuard, pendingOf, sessionOf, type Action, type Model } from '../core/state'
 import type { ConsentKind } from '../core/types'
 import { createAnnouncer } from './announcer'
 import { conversationText, copyText, entryMarkdown, thesesText } from './clipboard'
@@ -156,8 +156,12 @@ function act(name: string, target: HTMLElement, event: Event): void {
   if (view.tools.act(name, target)) return
   switch (name) {
     case 'leave-home':
-      // Something would be lost: ask first (spec §3.12); otherwise the link just works.
-      if (leaveGuard(state)) {
+      // Something would be lost: ask first (spec §3.12, §7.7); otherwise the link just works. A
+      // record's unsaved edit first: the conversation's own question may follow.
+      if (editUnsaved(state)) {
+        event.preventDefault()
+        dispatch({ type: 'confirm/open', kind: 'discard-edit', leaveTo: 'home' })
+      } else if (leaveGuard(state)) {
         event.preventDefault()
         dispatch({ type: 'confirm/open', kind: 'leave', leaveTo: 'home' })
       }

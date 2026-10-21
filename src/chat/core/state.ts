@@ -357,6 +357,7 @@ export type ConfirmKind =
   | 'revoke'
   | 'delete-summary'
   | 'revisit-restart'
+  | 'discard-edit'
 
 export type PickOverlay = Readonly<{
   o: 'revisit-pick'
@@ -391,10 +392,12 @@ export type Overlay =
       o: 'confirm'
       kind: ConfirmKind
       revoke: ConsentKind | null
+      /** leave: where the page goes. discard-edit: 'home' when the wordmark was pressed. */
       leaveTo: 'home' | 'reload' | null
       /** end-no-theses opened from end: «Назад» goes back to end. */
       back: boolean
-      /** delete-summary, revisit-restart: the diary record it is about (absent otherwise). */
+      /** delete-summary, revisit-restart: the diary record it is about; discard-edit: the record
+       *  «Повернутися до цього» was pressed on (absent otherwise: «До розмови» / «Нова розмова»). */
       summary?: string
     }>
 
@@ -614,12 +617,24 @@ export function leaveGuard(state: State): boolean {
     case 'not-invited':
       return hasUserMessage(state.stale, state.pending) || state.draft !== null
     case 'journal':
-      // The conversation it was opened from waits under it. An edit of a record does not count:
-      // «Піти з розмови?» speaks of the conversation, and the record is on the server.
+      // The conversation it was opened from waits under it. An edit of a record does not count here:
+      // «Піти з розмови?» speaks of the conversation. An unsaved edit has its own question,
+      // «Скасувати зміни?» (editUnsaved), asked before this one.
       return state.back !== null && hasUserMessage(state.back.session, state.back.pending)
     default:
       return false
   }
+}
+
+/** An edit of a diary record whose fields are not the record any more (or fail its check): a way
+ *  off the page would drop what the person typed, so it asks first («Скасувати зміни?»), and so
+ *  does closing the tab. Unchanged, the form just closes with the page — as «Скасувати» would. */
+export function editUnsaved(state: State): boolean {
+  if (state.s !== 'journal' || state.edit === null) return false
+  const item = journalItem(state, state.edit.form.id)
+  if (item === undefined) return false
+  const check = patchOf(state.edit.form, item)
+  return !(check.ok && check.sent === null)
 }
 
 /** The diary opens from a conversation with nothing in flight (a 429 countdown is no request),
@@ -1262,6 +1277,8 @@ function confirmAllowed(model: Model, kind: ConfirmKind, revoke: ConsentKind | u
       return state.s === 'journal' && state.deleting === null && summary !== undefined && journalItem(state, summary) !== undefined
     case 'revisit-restart':
       return state.s === 'journal' && !journalBusy(state) && summary !== undefined && journalItem(state, summary) !== undefined && revisitOffered(model.ctx)
+    case 'discard-edit':
+      return state.s === 'journal' && !journalBusy(state) && editUnsaved(state)
   }
 }
 
@@ -1327,6 +1344,17 @@ function onConfirmAccept(model: Model, choice: 'summarize' | undefined): Step {
       // The screen stays: the dialog closes here, not by a change of screen.
       if (popped.state.s !== 'journal' || top.summary === undefined || popped.state.deleting !== null) return [popped, NONE]
       return [{ ...popped, state: { ...popped.state, deleting: top.summary, notice: null } }, [{ type: 'delete-summary', id: top.summary }]]
+    case 'discard-edit': {
+      // «Скасувати зміни»: the edit goes as «Скасувати» would take it, then the page goes the way
+      // the person took — which may ask about the conversation under it next (a different question).
+      if (popped.state.s !== 'journal' || journalBusy(popped.state)) return [popped, NONE]
+      const dropped: Model = { ...popped, state: { ...popped.state, edit: null } }
+      if (top.leaveTo === 'home') {
+        if (leaveGuard(dropped.state)) return step(dropped, { type: 'confirm/open', kind: 'leave', leaveTo: 'home' })
+        return [dropped, [{ type: 'navigate', href: '/' }]]
+      }
+      return step(dropped, top.summary !== undefined ? { type: 'journal/revisit', id: top.summary } : { type: 'journal/back' })
+    }
     case 'revisit-restart': {
       if (popped.state.s !== 'journal' || top.summary === undefined || journalBusy(popped.state)) return [popped, NONE]
       const item = journalItem(popped.state, top.summary)
@@ -1588,6 +1616,8 @@ function journalStep(model: Model, state: JournalState, action: Action): Step | 
     case 'journal/back':
       // A PATCH or a DELETE on its way: its answer is this page's to show (saved, failed, consent).
       if (journalBusy(state)) return [model, NONE]
+      // Typed into a record and not saved: ask before it goes.
+      if (editUnsaved(state)) return step(model, { type: 'confirm/open', kind: 'discard-edit' })
       if (state.back === null) return startChat(model)
       {
         const { session, pending, revertTo, gone } = state.back
@@ -1716,6 +1746,8 @@ function journalStep(model: Model, state: JournalState, action: Action): Step | 
     case 'journal/revisit': {
       const item = journalItem(state, action.id)
       if (item === undefined || !revisitOffered(ctx) || journalBusy(state)) return [model, NONE]
+      // Typed into a record and not saved: that first.
+      if (editUnsaved(state)) return step(model, { type: 'confirm/open', kind: 'discard-edit', summary: item.id })
       // A conversation under way would be replaced: ask first.
       if (state.back !== null && hasUserMessage(state.back.session, state.back.pending)) {
         return step(model, { type: 'confirm/open', kind: 'revisit-restart', summary: item.id })
@@ -2185,10 +2217,12 @@ function step(model: Model, action: Action): Step {
         o: 'confirm',
         kind: action.kind,
         revoke: action.revoke ?? null,
-        leaveTo: action.kind === 'leave' ? (action.leaveTo ?? 'home') : null,
+        leaveTo: action.kind === 'leave' ? (action.leaveTo ?? 'home') : action.kind === 'discard-edit' && action.leaveTo === 'home' ? 'home' : null,
         back: false,
         // Only where it means something: the other confirms keep their shape.
-        ...(action.summary !== undefined && (action.kind === 'delete-summary' || action.kind === 'revisit-restart') ? { summary: action.summary } : {}),
+        ...(action.summary !== undefined && (action.kind === 'delete-summary' || action.kind === 'revisit-restart' || action.kind === 'discard-edit')
+          ? { summary: action.summary }
+          : {}),
       }
       const top = topOverlay(model)
       // account → confirm(logout | delete-account | revoke) is the only second level (§2.5).
@@ -2218,7 +2252,8 @@ function step(model: Model, action: Action): Step {
     }
     case 'account/logout':
       if (!accountReachable(model) || ctx.op?.busy === true) return [model, NONE]
-      if (leaveGuard(state)) return step(model, { type: 'confirm/open', kind: 'logout' })
+      // A conversation, or a record's unsaved edit, would go with the session: ask first.
+      if (leaveGuard(state) || editUnsaved(state)) return step(model, { type: 'confirm/open', kind: 'logout' })
       return beginLogout(model)
     case 'logout/ok':
       return signedOut(model, 'logged-out', { kind: 'logged-out' })

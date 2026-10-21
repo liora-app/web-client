@@ -69,6 +69,7 @@ import {
   PAUSE_AFTER_REPLIES,
   authErrorFrom,
   canOpenJournal,
+  editUnsaved,
   journalBusy,
   leaveGuard,
   llmInFlight,
@@ -2752,6 +2753,54 @@ test.describe('state: the diary', () => {
     // Without the revisit scenario (GET /scenarios failed) there is nothing to go back with.
     const onlyFree = opened(run(INITIAL_MODEL, { type: 'boot', search: '' }, { type: 'me/ok', purpose: 'boot', me: ME }, { type: 'consents/ok', purpose: 'boot', consents: CONSENTS_OK }, { type: 'scenarios/fail', error: apiError(502, 'upstream_unavailable') }).model).model
     expect(run(onlyFree, { type: 'journal/revisit', id: 's-1' }).model).toBe(onlyFree)
+  })
+
+  test('an edit typed and not saved: every way off the page asks «Скасувати зміни?» first; unchanged, the page just goes', () => {
+    const { model } = opened()
+    const editing = run(model, { type: 'journal/edit', id: 's-1' }).model
+    const form = journalOf(editing).edit!.form
+    // Opened, nothing typed: nothing to lose, no question.
+    expect(editUnsaved(editing.state)).toBe(false)
+    expect(run(editing, { type: 'confirm/open', kind: 'discard-edit' }).model.overlay).toEqual([])
+    expect(run(editing, { type: 'journal/back' }).model.state.s).toBe('chat')
+    const typed = run(editing, { type: 'journal/edit-update', form: { ...form, title: 'Синтетична нова назва' } }).model
+    expect(editUnsaved(typed.state)).toBe(true)
+    // A field emptied (it fails the check) is a change too.
+    expect(editUnsaved(run(editing, { type: 'journal/edit-update', form: { ...form, title: ' ' } }).model.state)).toBe(true)
+
+    // «До розмови» / «Нова розмова».
+    const ask = run(typed, { type: 'journal/back' })
+    expect(ask.model.overlay).toEqual([{ o: 'confirm', kind: 'discard-edit', revoke: null, leaveTo: null, back: false }])
+    expect(ask.effects).toEqual([])
+    // «Редагувати далі»: the form and what was typed stay.
+    expect(journalOf(run(ask.model, { type: 'overlay/close' }).model).edit?.form.title).toBe('Синтетична нова назва')
+    // «Скасувати зміни»: the edit goes, then the way off the page — no PATCH.
+    const gone = run(ask.model, { type: 'confirm/accept' })
+    expect(gone.model.state.s).toBe('chat')
+    expect(gone.model.overlay).toEqual([])
+    expect(types(gone.effects)).not.toContain('patch-summary')
+
+    // «Повернутися до цього» carries its record through the question.
+    const revisit = run(typed, { type: 'journal/revisit', id: 's-2' })
+    expect(revisit.model.overlay).toEqual([{ o: 'confirm', kind: 'discard-edit', revoke: null, leaveTo: null, back: false, summary: 's-2' }])
+    expect(chatOf(run(revisit.model, { type: 'confirm/accept' }).model).session).toMatchObject({ scenario: 'revisit', revisitIds: ['s-2'] })
+
+    // The wordmark: home after the answer.
+    const home = run(typed, { type: 'confirm/open', kind: 'discard-edit', leaveTo: 'home' })
+    expect(home.model.overlay).toEqual([{ o: 'confirm', kind: 'discard-edit', revoke: null, leaveTo: 'home', back: false }])
+    expect(run(home.model, { type: 'confirm/accept' }).effects).toEqual([{ type: 'navigate', href: '/' }])
+    // With a conversation under the diary, its own question follows instead.
+    const under = opened(answered(booted())).model
+    const underEditing = run(under, { type: 'journal/edit', id: 's-1' }).model
+    const underTyped = run(underEditing, { type: 'journal/edit-update', form: { ...form, title: 'Синтетична нова назва' } }).model
+    const homeUnder = run(underTyped, { type: 'confirm/open', kind: 'discard-edit', leaveTo: 'home' }, { type: 'confirm/accept' })
+    expect(homeUnder.model.overlay).toEqual([{ o: 'confirm', kind: 'leave', revoke: null, leaveTo: 'home', back: false }])
+    expect(homeUnder.effects).toEqual([])
+
+    // «Вийти» asks too, though no conversation is under the diary.
+    expect(leaveGuard(typed.state)).toBe(false)
+    expect(run(typed, { type: 'account/logout' }).model.overlay.at(-1)).toMatchObject({ o: 'confirm', kind: 'logout' })
+    expect(types(run(editing, { type: 'account/logout' }).effects)).toContain('logout')
   })
 
   test('a 401 on the diary ends the session with the conversation kept; answers after leaving change nothing', () => {

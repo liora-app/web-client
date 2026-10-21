@@ -3728,6 +3728,49 @@ test.describe('diary', () => {
     await expect(entries(page)).toHaveCount(3)
     await expect(journalStatus(page)).toHaveText('')
   })
+
+  test('#113 an edit typed and not saved: «До розмови» and «Вийти» ask first, closing the tab too; «Редагувати далі» keeps the text, «Скасувати зміни» leaves without a PATCH', async ({ page, api }) => {
+    const target = ENTRIES[0]!
+    await openChat(page)
+    await openDiary(page)
+    const row = entryTitled(page, target.title)
+    await row.getByRole('button', { name: 'Редагувати' }).click()
+    const title = row.getByRole('textbox', { name: 'Назва' })
+    // Opened, nothing typed: nothing would be lost.
+    expect(await beforeUnload(page)).toBe(0)
+    await title.fill('Синтетична назва, ще не збережена')
+    expect(await beforeUnload(page)).toBe(1)
+
+    const back = page.locator('[data-act="journal-back"]')
+    const confirm = confirmDialog(page)
+    await back.click()
+    await expect(confirm).toContainText('Скасувати зміни?')
+    await expect(confirm).toContainText('Зміни в записі ще не збережено.')
+    await expect(confirm.getByRole('button', { name: 'Редагувати далі' })).toBeFocused()
+    await axe(page, 'confirm discard-edit')
+    await confirm.getByRole('button', { name: 'Редагувати далі' }).click()
+    await expect(confirm).toBeHidden()
+    await expect(page.locator('section[data-screen="journal"]')).toBeVisible()
+    await expect(title).toHaveValue('Синтетична назва, ще не збережена')
+
+    // «Вийти» asks as well, and names what goes: the edit (no conversation is under the diary).
+    await accountToggle(page).click()
+    await accountSheet(page).getByRole('button', { name: 'Вийти' }).click()
+    await expect(confirm).toContainText('Вийти з акаунта?')
+    await expect(confirm.getByText('Незбережені зміни в записі зникнуть.')).toBeVisible()
+    await expect(confirm.getByText('Поточна розмова закриється', { exact: false })).toBeHidden()
+    await confirm.getByRole('button', { name: 'Скасувати', exact: true }).click()
+    await expect(confirm).toBeHidden()
+    await page.keyboard.press('Escape')
+    await expect(accountSheet(page)).toBeHidden()
+    await expect(title).toHaveValue('Синтетична назва, ще не збережена')
+
+    await back.click()
+    await confirm.getByRole('button', { name: 'Скасувати зміни' }).click()
+    await onScreen(page, 'chat')
+    expect(api.count(`PATCH /summaries/${target.id}`)).toBe(0)
+    expect(await beforeUnload(page)).toBe(0)
+  })
 })
 
 // ── The self-help tools (spec §3.13): breathing, grounding, the check-in, the shelter ─────────

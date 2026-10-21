@@ -1,7 +1,7 @@
 // dispatch → reduce → render → effects (spec §9.1 store.ts). Actions dispatched while one is being
 // handled (an effect that answers at once) wait their turn, so render always sees a settled model.
 
-import { INITIAL_MODEL, leaveGuard, reduce, type Action, type Effect, type Model } from '../core/state'
+import { INITIAL_MODEL, editUnsaved, leaveGuard, reduce, type Action, type Effect, type Model } from '../core/state'
 
 export type StoreDeps = Readonly<{
   render(model: Model, prev: Model | null): void
@@ -32,7 +32,9 @@ export function createStore(deps: () => StoreDeps): Store {
         model = after
         const d = deps()
         if (after !== prev) d.render(after, prev)
-        d.guard(leaveGuard(after.state))
+        // The browser's own «Покинути сайт?» (its text is the browser's): a conversation, or a
+        // record's edit not saved yet.
+        d.guard(leaveGuard(after.state) || editUnsaved(after.state))
         for (const effect of effects) d.run(effect)
       }
     } finally {
