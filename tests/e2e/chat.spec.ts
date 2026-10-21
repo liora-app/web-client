@@ -664,6 +664,39 @@ test.describe('crisis', () => {
     expect((await markup(page)).includes(PAUSED)).toBe(false)
   })
 
+  test('#13c a crisis after an llm_busy countdown on the theses: no interval of the wait outlives it', async ({ page, api }, testInfo) => {
+    // Every interval the page starts and has not cleared, from its first script on.
+    await page.addInitScript(() => {
+      const live = new Set<number>()
+      const set = window.setInterval.bind(window)
+      const clear = window.clearInterval.bind(window)
+      Object.defineProperty(window, '__intervals', { value: live })
+      window.setInterval = ((handler: TimerHandler, ms?: number, ...args: unknown[]) => {
+        const id = set(handler, ms, ...args)
+        live.add(id)
+        return id
+      }) as typeof window.setInterval
+      window.clearInterval = ((id?: number) => {
+        if (id !== undefined) live.delete(id)
+        clear(id)
+      }) as typeof window.clearInterval
+    })
+    const intervals = () => page.evaluate(() => (window as unknown as { __intervals: Set<number> }).__intervals.size)
+    // The automatic retry after the countdown meets the crisis.
+    api.on('POST /chat/summarize', fail(503, 'llm_busy', undefined, { 'retry-after': '2' }), fail(409, 'crisis_stop', { helplines: RAW_HELPLINES }))
+    await openChat(page)
+    await exchange(page, USER)
+    await page.locator('[data-el="session-end"]').click()
+    await confirmDialog(page).getByRole('button', { name: 'Підсумувати' }).click()
+    await onScreen(page, 'summarizing')
+    await expect(page.locator('[data-el="sum-countdown"]')).toContainText('Пробуємо ще раз через')
+    expect(await intervals()).toBeGreaterThan(0)
+    await expectCrisis(page, USER, testInfo)
+    expect(api.count('POST /chat/summarize')).toBe(2)
+    // The crisis screen has no timers (§6.7): the countdown stopped as the screen changed.
+    expect(await intervals()).toBe(0)
+  })
+
   test('#13b text typed before the theses does not come back after a 409 crisis_stop and «Почати нову»', async ({ page, api }) => {
     api.on('POST /chat/summarize', fail(409, 'crisis_stop', { helplines: RAW_HELPLINES }))
     await openChat(page)

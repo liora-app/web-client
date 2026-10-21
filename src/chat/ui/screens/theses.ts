@@ -80,6 +80,16 @@ export function summarizingScreen(): Screen {
       }
       paint()
     },
+    // Any way off the wait — the crisis above all (no timer outlives it, §6.7), the draft, «Скасувати»,
+    // a 401 — stops the countdown and the long-wait line in the same render: the next model is
+    // another screen's, and nothing here may tick over a stale one.
+    leave() {
+      window.clearInterval(ticker)
+      ticker = 0
+      window.clearTimeout(longTimer)
+      longTimer = 0
+      last = null
+    },
   }
 }
 
