@@ -2780,6 +2780,11 @@ parameter properties.
      ловить `MutationObserver`).
      `playwright.config.ts`: `E2E_NO_WEBGL=1` вимикає WebGL у Chromium-проєктах (`--disable-webgl
      --disable-webgl2 --disable-3d-apis`), без змінної нічого не змінюється.
+   - **Поява глав (`ui/reveal.ts`) — прогресивне покращення.** Прихований стан `html.js-reveal` ставиться
+     лише з першою відповіддю `IntersectionObserver`; те, що вже на екрані в цю мить, позначається видимим
+     до класу. Спостерігач, що не відповідає ніколи (завислий фон, зламаний рушій), не ховає нічого
+     (landing.spec «an IntersectionObserver that never answers hides nothing»); без JS, без руху й на паузі
+     текст видно, як і було. Поява — лише `opacity` і `transform`, тож зсуву макета (CLS) від неї немає.
 
 ### 9.5 Vite: збірка з двох сторінок
 

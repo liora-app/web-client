@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import { FORBIDDEN, clinicalOffenders } from './chat-fixtures'
-import { SECTION_IDS, centre, cutOffAtEdges, watchConsole } from './helpers'
+import { NO_WEBGL2, SECTION_IDS, centre, cutOffAtEdges, watchConsole } from './helpers'
 
 test.describe('content and structure', () => {
   test('renders the Ukrainian page without console problems', async ({ page }) => {
@@ -261,6 +261,43 @@ test.describe('navigation and keyboard', () => {
     // preventScroll: the block stays out of view, so only the focus can reveal it.
     await page.locator('.final__meta .arrow-link').evaluate((element) => (element as HTMLElement).focus({ preventScroll: true }))
     await expect(page.locator('.final__meta')).toHaveCSS('opacity', '1', { timeout: 300 })
+  })
+
+  // Progressive enhancement: the hidden start state comes with the observer's first answer, so an
+  // observer that never answers (a frozen tab, a print layout, a broken engine) hides nothing.
+  test('an IntersectionObserver that never answers hides nothing', async ({ page }) => {
+    await page.addInitScript(NO_WEBGL2)
+    await page.addInitScript(() => {
+      window.IntersectionObserver = class {
+        observe(): void {}
+        unobserve(): void {}
+        disconnect(): void {}
+        takeRecords(): IntersectionObserverEntry[] {
+          return []
+        }
+      } as unknown as typeof IntersectionObserver
+    })
+    await page.goto('/')
+    await expect(page.locator('html')).toHaveAttribute('data-motion', 'on')
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    await expect(page.locator('html')).not.toHaveClass(/\bjs-reveal\b/)
+    const waiting = await page.locator('[data-reveal]').evaluateAll((all) =>
+      all.filter((element) => getComputedStyle(element).opacity !== '1' || getComputedStyle(element).transform !== 'none').map((element) => element.id || element.className),
+    )
+    expect(waiting).toEqual([])
+  })
+
+  test('once the observer answers, what is below the fold waits for the scroll and then comes in', async ({ page }) => {
+    await page.addInitScript(NO_WEBGL2)
+    await page.goto('/')
+    await expect(page.locator('html')).toHaveAttribute('data-motion', 'on')
+    await expect(page.locator('html')).toHaveClass(/\bjs-reveal\b/)
+    const title = page.locator('#faq-title')
+    await expect(title).not.toHaveClass(/is-visible/)
+    await expect(title).toHaveCSS('opacity', '0')
+    await title.scrollIntoViewIfNeeded()
+    await expect(title).toHaveClass(/is-visible/)
+    await expect(title).toHaveCSS('opacity', '1')
   })
 
   test('faq answers open and close', async ({ page }) => {
