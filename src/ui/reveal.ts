@@ -4,6 +4,11 @@
 // moment stays as it is — only what is still below the fold waits for the scroll.
 
 export function initReveal(): void {
+  // #mind's copy unfolds with the scroll where scroll-driven animations exist (landing.css); elsewhere
+  // its steps come in here, one after another. Never both on one element.
+  if (!CSS.supports?.('animation-timeline', 'view()')) {
+    for (const step of Array.from(document.querySelectorAll<HTMLElement>('[data-mind-step]'))) step.dataset.reveal = 'mind'
+  }
   const items = Array.from(document.querySelectorAll<HTMLElement>('[data-reveal]'))
   if (items.length === 0 || !('IntersectionObserver' in window)) return
 

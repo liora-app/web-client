@@ -103,9 +103,11 @@ test.describe('content and structure', () => {
   test('the footer says which cookies exist once the chat signs in', async ({ page }) => {
     await page.goto('/')
     const note = page.locator('.site-footer__note')
-    await expect(note).toContainText('Лендінг сам не ставить файли cookie і не має аналітики.')
-    await expect(note).toContainText('браузер тримає файл cookie сесії, недоступний скриптам сторінки')
-    await expect(note).toContainText('тимчасовий файл cookie входу')
+    await expect(note).toContainText('Лендінг не ставить cookie і не має аналітики.')
+    await expect(note).toContainText('Після входу чат тримає cookie сесії, недоступний скриптам')
+    await expect(note).toContainText('тимчасовий cookie входу')
+    // The three choices this page keeps (liora:motion, liora:theme; liora:sky comes from the chat).
+    await expect(note).toContainText('Пауза, тема й фон запамʼятовуються лише в цьому браузері.')
     await expect(note).not.toContainText('не використовує файли cookie')
   })
 

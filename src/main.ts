@@ -10,6 +10,7 @@ import './styles/landing.css'
 import { bootGL } from './gl/core/boot'
 import { initDecode } from './ui/decode'
 import { initHeroLight } from './ui/hero-light'
+import { initIntro } from './ui/intro'
 import { initMenu } from './ui/menu'
 import { initMotionToggle } from './ui/motion'
 import { initNav } from './ui/nav'
@@ -33,6 +34,8 @@ if (authError !== null) {
   initThemePicker({ root: document.querySelector<HTMLElement>('[data-theme-pick]'), radios: null })
   initHeroLight()
   initMotionToggle(document.querySelector<HTMLButtonElement>('[data-motion-toggle]'))
+  // Right after the motion choice is on <html>: the hero's cascade starts in the same frame, or not at all.
+  initIntro()
   initNav()
   initMenu()
   initSound()

@@ -277,7 +277,16 @@ test.describe('the light theme without WebGL', () => {
     await run('the page')
     await toggle(page).click()
     await expect(menu(page)).toBeVisible()
-    await page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined))))
+    // Finite animations on the document's clock only: a scroll-driven one (#mind) finishes with the
+    // scroll, not with time, and would hold this wait for ever.
+    await page.evaluate(() =>
+      Promise.all(
+        document
+          .getAnimations()
+          .filter((animation) => animation.timeline instanceof DocumentTimeline && animation.effect?.getComputedTiming().iterations !== Infinity)
+          .map((animation) => animation.finished.catch(() => undefined)),
+      ),
+    )
     await run('the menu open')
   })
 })

@@ -1,5 +1,6 @@
 // Header behaviour: marks the chapter in the middle of the viewport (aria-current on its link),
-// drives the decorative chapter HUD and passes the scroll progress to the CSS sky (--progress).
+// drives the decorative chapter HUD and passes the scroll progress to the CSS sky (--progress, the
+// drifting lights of landing.css; data-quiet on the stage beside the crisis contacts).
 
 import { decodeTo } from './decode'
 
@@ -19,6 +20,8 @@ export function initNav(): void {
       else link.removeAttribute('aria-current')
     }
     if (hudIndex) hudIndex.textContent = chapter.dataset.chapter ?? ''
+    // The sky's drifting lights (landing.css) go out while the crisis contacts are read (ADR-011).
+    stage?.toggleAttribute('data-quiet', chapter.hasAttribute('data-gl-quiet'))
     const name = chapter.dataset.chapterName ?? ''
     if (hudName) {
       // The crisis chapter is read in silence (data-gl-quiet, see gl/scroll.ts): no decode in the HUD either.

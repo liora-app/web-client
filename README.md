@@ -41,12 +41,12 @@ npm run dev          # http://localhost:5173
 | `npm run test:e2e` | Збирає, піднімає preview і проганяє весь Playwright (desktop, mobile, iPhone/WebKit). **Лише з дозволу власника:** кожен воркер — браузер з WebGL, і ПК власника від цього зависав. Локально 1 воркер, у CI — 2 |
 | `E2E_BASE_URL=<url> npx playwright test` | Той самий набір проти вже запущеного сайту (контейнер, прод), без збірки й preview |
 
-Специфікації лендінгу (`landing`, `header`, `landing-theme`) локально — лише з WebGL, вимкненим у самому
+Специфікації лендінгу (`landing`, `header`, `landing-theme`, `landing-motion`) локально — лише з WebGL, вимкненим у самому
 браузері: `E2E_NO_WEBGL=1` додає Chromium-проєктам `--disable-webgl --disable-webgl2 --disable-3d-apis`
 (сторінка бере статичний фон, `data-gl-reason="no-webgl2"`; без змінної нічого не змінюється, CI так само):
 
 ```bash
-E2E_NO_WEBGL=1 npx playwright test tests/e2e/landing.spec.ts tests/e2e/header.spec.ts tests/e2e/landing-theme.spec.ts --project=desktop --workers=1 --grep-invert @gpu
+E2E_NO_WEBGL=1 npx playwright test tests/e2e/landing.spec.ts tests/e2e/header.spec.ts tests/e2e/landing-theme.spec.ts tests/e2e/landing-motion.spec.ts --project=desktop --workers=1 --grep-invert @gpu
 ```
 
 Тести ядра чату (`tests/e2e/chat-core.spec.ts`) — чистий TypeScript без браузера і без сервера. Адреса
@@ -84,6 +84,7 @@ src/ui/               motion.ts (пауза / reduced motion), nav.ts (aria-curr
                       menu.ts (меню глав < 64em, нативний <dialog>), sound.ts + sound-engine.ts
                       («Звук»: генеративний пад, вимкнений за замовчуванням, лінивий чанк),
                       reveal.ts, steps.ts (приклад сесії йде за кроком), decode.ts,
+                      intro.ts (каскад hero при завантаженні, лише поки сторінку не намальовано),
                       hero-light.ts (де стоїть світло hero — спільне для CSS і сцени),
                       sky.ts (пресети неба /chat/, ключ liora:sky),
                       theme.ts (світла / темна / як у системі, ключ liora:theme, обидві сторінки;
@@ -117,7 +118,9 @@ tests/e2e/            Playwright: контент, стоп-лист, шари, �
                       chat-fixtures.ts — обвʼязка: моки, аудит CSP/консолі/сховищ, спільний стоп-лист;
                       chat.stack.spec.ts — @stack проти локального compose-стеку;
                       landing-theme.spec.ts — теми лендінгу без WebGL (меню з клавіатури, ключ, ранній
-                      скрипт, CSS-мистецтво замість темних PNG, axe у світлій)
+                      скрипт, CSS-мистецтво замість темних PNG, axe у світлій);
+                      landing-motion.spec.ts — рух лендінгу без WebGL (reduced motion, «Пауза», без
+                      IntersectionObserver, каскад hero, поява, #mind, небо, FAQ, 320 px)
 scripts/ci-e2e.sh     e2e у CI: Chromium, без тестів з тегами @gpu і @stack
 Dockerfile, deploy/   образ для хоста: збірка на node:24-alpine → статика на caddy:2, порт 8080;
                       deploy/Caddyfile ставить CSP і Permissions-Policy на все, no-store на /chat/
