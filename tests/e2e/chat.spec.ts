@@ -4583,7 +4583,7 @@ test.describe('highlights, the reminder to pause, the soft end', () => {
   test('#91 the reminder’s timer goes with the screen and the conversation: back from the diary it comes once; «Зібрати тези» opens «Завершити розмову?»; none in or after the crisis', async ({ page, api }) => {
     api.on('GET /tags', { json: [] })
     api.on('GET /reviews/weekly', { json: weekly('2026-10-19') })
-    api.on('POST /chat/turn', { sse: reply() }, { sse: meta() + crisis('keyword') })
+    api.on('POST /chat/turn', { sse: reply() }, { sse: meta() + crisis('keyword') }, { sse: reply() })
     await page.clock.install()
     await openChat(page)
     await exchange(page, USER)
@@ -4612,6 +4612,13 @@ test.describe('highlights, the reminder to pause, the soft end', () => {
     await onScreen(page, 'chat')
     await page.clock.fastForward('01:00:00')
     await expect(pauseText(page)).toHaveText('')
+    // The new conversation counts its own 40 minutes, from its own first message: nothing at 39:30,
+    // the line at 40:00 — the crisis took nothing of the reminder with it.
+    await exchange(page, USER)
+    await page.clock.fastForward('39:30')
+    await expect(pauseText(page)).toHaveText('')
+    await page.clock.fastForward('00:30')
+    await expect(pauseText(page)).toHaveText('Ви тут уже 40 хвилин. Можна зробити паузу або зібрати тези.')
   })
 
   test('#92 a soft end: no praise and nothing that holds on; one line about people on «Збережено» and «Розмову завершено»; no thought to take along without a mark', async ({ page }) => {
@@ -4662,6 +4669,16 @@ test.describe('highlights and the reminder in the light theme', () => {
     await onScreen(page, 'saved')
     await expect(page.locator('[data-el="saved-keep"]')).toBeVisible()
     await axe(page, 'light: «Збережено» with a thought to take along')
+    // «Розмову завершено» with its line about people, in the light theme too.
+    await page.locator('section[data-screen="saved"]').getByRole('button', { name: 'Почати нову розмову' }).click()
+    await onScreen(page, 'chat')
+    await exchange(page, USER)
+    await page.locator('[data-el="session-end"]').click()
+    await confirmDialog(page).getByRole('button', { name: 'Завершити без тез' }).click()
+    await confirmDialog(page).getByRole('button', { name: 'Завершити', exact: true }).click()
+    await onScreen(page, 'ended')
+    await expect(page.locator('section[data-screen="ended"] .closing__share')).toHaveText(SHARE)
+    await axe(page, 'light: ended, the soft end')
   })
 })
 
@@ -4868,9 +4885,12 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     await expect(accountSheet(page)).toBeVisible()
     expect(await names()).toEqual(['Ніч', 'Сутінки', 'Світанок'])
     await expect(accountSheet(page).getByRole('radio', { name: 'Сутінки' })).toHaveValue('dusk')
-    // The gutter of a classic scrollbar under the scrim: the root takes the scrim over the page.
+    // The gutter of a classic scrollbar under the scrim: the root takes the scrim over the page —
+    // only where there is such a gutter (html[data-gutter]); overlay scrollbars keep the page's
+    // colour, and so does a phone's bar under a full-screen sheet.
     const rootBg = (): Promise<string> => page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)
-    await expect.poll(rootBg).toBe('rgb(11, 16, 17)')
+    const gutter = await page.evaluate(() => document.documentElement.hasAttribute('data-gutter'))
+    await expect.poll(rootBg).toBe(gutter ? 'rgb(11, 16, 17)' : LAMP)
     await page.keyboard.press('Escape')
     await expect(accountSheet(page)).toBeHidden()
     await expect.poll(rootBg).toBe(LAMP)
@@ -4882,7 +4902,7 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     await expect(accountSheet(page).getByRole('radio', { name: 'Вечір' })).toHaveValue('dusk')
     await expect(accountSheet(page).getByRole('radio', { name: 'Ранок' })).toHaveValue('dawn')
     await expect(accountSheet(page).getByRole('radio', { name: 'Сутінки' })).toHaveCount(0)
-    await expect.poll(rootBg).toBe('rgb(209, 202, 194)')
+    await expect.poll(rootBg).toBe(gutter ? 'rgb(209, 202, 194)' : PAPER)
     // The scrollbar's thumb is its only shape: the fields' border colour, ≥ 3:1.
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollbarColor)).toMatch(/^rgb\(120, 130, 127\) /)
   })
@@ -4910,6 +4930,119 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
       expect(await borderOnlyControls(page), `${scheme}: «Якщо важко»`).toEqual([])
       await page.keyboard.press('Escape')
     }
+  })
+})
+
+// ── What the review of phase C3 found: the bar after a dialog, the line over the end, double presses ──
+
+const themeColor = (page: Page): Promise<string> => page.evaluate(() => document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!.content)
+const pageEnd = (page: Page): Promise<{ end: number; field: number; y: number; pill: boolean }> =>
+  page.evaluate(() => {
+    const last = document.querySelector('[data-el="talk"]')!.lastElementChild!.querySelector('.said__body')!.getBoundingClientRect()
+    return {
+      end: last.bottom,
+      field: document.querySelector('[data-el="composer"]')!.getBoundingClientRect().top,
+      y: scrollY,
+      pill: !document.querySelector<HTMLElement>('[data-el="jump"]')!.hidden,
+    }
+  })
+/** A reply longer than a small phone's screen: at the end of the page it rests right above the field. */
+const LONG_REPLY = ['Можна почати з одного речення. ', 'Яке слово тут найважливіше для вас? '.repeat(14), 'Яким воно було б?']
+
+test.describe('what the review of phase C3 found', () => {
+  test('#99 the browser’s bar comes back to the page’s colour when a dialog closes: a theme picked in «Акаунт», the shelter over «Якщо важко»', async ({ page }) => {
+    await openChat(page)
+    expect(await themeColor(page)).toBe(LAMP)
+    await accountToggle(page).click()
+    await expect(accountSheet(page)).toBeVisible()
+    await accountSheet(page).getByRole('radio', { name: 'Світла' }).check()
+    await expect(html(page)).toHaveAttribute('data-theme', 'light')
+    await page.keyboard.press('Escape')
+    await expect(accountSheet(page)).toBeHidden()
+    // It used to keep the scrim's grey (rgb(209, 202, 194)) read under the open sheet.
+    await expect.poll(() => themeColor(page)).toBe(PAPER)
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)).toBe(PAPER)
+    // The shelter over «Якщо важко»: dark while it is open; the help under it, then nothing.
+    await page.locator('.help-link').click()
+    await expect(page.locator('#help-dialog')).toBeVisible()
+    await page.locator('#help-dialog').getByRole('button', { name: 'В укритті' }).click()
+    await expect(shelterDialog(page)).toBeVisible()
+    await expect.poll(() => themeColor(page)).toBe(LAMP)
+    await page.keyboard.press('Escape')
+    await expect(shelterDialog(page)).toBeHidden()
+    await expect(page.locator('#help-dialog')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('#help-dialog')).toBeHidden()
+    await expect.poll(() => themeColor(page)).toBe(PAPER)
+    await page.evaluate(() => localStorage.removeItem('liora:theme'))
+  })
+
+  test('#100 the reminder to pause does not cover the end it lands on (320 × 640): the page moves up by the line, the focus stays', async ({ page, api }) => {
+    api.on('POST /chat/turn', { sse: reply(LONG_REPLY) })
+    await page.setViewportSize({ width: 320, height: 640 })
+    await page.clock.install()
+    await openChat(page)
+    await exchange(page, USER)
+    await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }))
+    // The «↓» pill looks again a frame after the scroll.
+    await expect.poll(async () => (await pageEnd(page)).pill).toBe(false)
+    const before = await pageEnd(page)
+    expect(before.end).toBeLessThanOrEqual(before.field + 4)
+    const focused = await page.evaluate(() => document.activeElement?.id ?? '')
+    await page.clock.fastForward('40:00')
+    await expect(pauseText(page)).not.toHaveText('')
+    const after = await pageEnd(page)
+    // The field grew by the line; the end is still above it, the gap it had kept, no «↓» pill.
+    expect(after.field).toBeLessThan(before.field - 20)
+    expect(after.end).toBeLessThanOrEqual(after.field + 4)
+    expect(Math.abs(after.field - after.end - (before.field - before.end))).toBeLessThanOrEqual(1)
+    expect(after.pill).toBe(false)
+    expect(await page.evaluate(() => document.activeElement?.id ?? '')).toBe(focused)
+  })
+
+  test('#100b scrolled up, the reminder to pause moves nothing', async ({ page, api }) => {
+    api.on('POST /chat/turn', { sse: reply(LONG_REPLY) })
+    await page.setViewportSize({ width: 320, height: 640 })
+    await page.clock.install()
+    await openChat(page)
+    await exchange(page, USER)
+    await exchange(page, 'Друге синтетичне повідомлення.')
+    await page.evaluate(() => window.scrollTo({ top: 120, behavior: 'instant' }))
+    const before = await pageEnd(page)
+    await page.clock.fastForward('40:00')
+    await expect(pauseText(page)).not.toHaveText('')
+    expect((await pageEnd(page)).y).toBe(before.y)
+  })
+
+  test('#101 the second press of a double click is no press of what took the first one’s place: «Зібрати тези», «Прибрати», «Додати до тез»', async ({ page, api }) => {
+    await page.clock.install()
+    await openChat(page)
+    for (const text of [USER, 'Друге синтетичне повідомлення.', 'Третє синтетичне повідомлення.']) await exchange(page, text)
+    for (let i = 1; i <= 3; i++) await keepOf(aiMessages(page).nth(i)).click()
+    await page.clock.fastForward('40:00')
+    await expect(pauseActions(page)).toBeVisible()
+    // On a phone the confirm's buttons stand where «Зібрати тези» was: the second press used to
+    // switch it to «Завершити без тез?».
+    await page.getByRole('button', { name: 'Зібрати тези' }).dblclick()
+    await expect(confirmDialog(page)).toBeVisible()
+    await expect(confirmDialog(page).getByRole('heading', { name: 'Завершити розмову?' })).toBeVisible()
+    await confirmDialog(page).getByRole('button', { name: 'Підсумувати' }).click()
+    await onScreen(page, 'review')
+    const rows = candidates(page).locator('.candidate')
+    await expect(rows).toHaveCount(3)
+    // «Прибрати»: the next row's «Прибрати» slides under the pointer — one mark goes, not two.
+    await rows.first().getByRole('button', { name: /^Прибрати/ }).dblclick()
+    await expect(rows).toHaveCount(2)
+    await expect(page.locator('[data-el="candidates-list"] [data-act="candidate-drop"]').first()).toBeFocused()
+    // «Додати до тез»: one thesis comes in and keeps the focus.
+    const theses = page.locator('.thesis:not(.thesis--removed)')
+    const count = await theses.count()
+    await rows.first().getByRole('button', { name: /^Додати до тез/ }).dblclick()
+    await expect(theses).toHaveCount(count + 1)
+    await expect(rows).toHaveCount(1)
+    await expect(page.locator('textarea[id^="thesis-m"]')).toBeFocused()
+    // Not a press of anything else either: nothing was sent.
+    expect(api.count('POST /summaries')).toBe(0)
   })
 })
 

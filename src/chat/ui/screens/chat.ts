@@ -361,8 +361,16 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       // while an answer comes (the confirm opens between answers only).
       armPause(pauseAt(s))
       const pause = s.pause === 'time' || s.pause === 'count' ? s.pause : null
-      setText(el('pause-text'), pause !== null && composerShown ? PAUSE_LINE[pause] : '')
-      show(el('pause-actions'), pause !== null && composerShown)
+      const pauseText = el('pause-text')
+      const pauseLine = pause !== null && composerShown ? PAUSE_LINE[pause] : ''
+      const putPause = (): void => {
+        setText(pauseText, pauseLine)
+        show(el('pause-actions'), pauseLine !== '')
+      }
+      // It grows the sticky composer upward: coming, it must not cover the end of the reply it
+      // came with (a phone at 320 × 640 had the reply's last line and «↓ До кінця» under it).
+      if (pauseLine !== '' && pauseText.textContent === '') anchor.hold(putPause)
+      else putPause()
       const answering = state.turn.p === 'waiting' || state.turn.p === 'streaming' || state.turn.p === 'busy-wait'
       setAttr(el('pause-collect'), 'aria-disabled', answering ? 'true' : null)
 

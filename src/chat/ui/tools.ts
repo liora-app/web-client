@@ -219,8 +219,9 @@ export function createTools(dispatch: (action: Action) => void, composer: () => 
 
   // ── open, close, sync ──
 
-  /** «В укритті» (or a tool over it) is open: the root is dark, and so is the browser's bar. */
-  let darkRoot = false
+  /** What colours the root, and so the browser's bar: «В укритті» (or a tool over it) — dark;
+   *  another dialog — the scrim's colour where a classic scrollbar has a gutter; else the page. */
+  let rootLook: 'shelter' | 'dialog' | 'page' = 'page'
 
   const tools: Tools = {
     open(overlay, model, overShelter) {
@@ -279,10 +280,12 @@ export function createTools(dispatch: (action: Action) => void, composer: () => 
       show(byEl('help-tools'), state.s !== 'crisis')
       if (mood.open) moodRender()
       // After dialogs.ts has opened or closed the dialogs of this render — the crisis closes the
-      // shelter in this same step, and the bar turns back with it.
-      const dark = model.overlay.some((o) => o.o === 'shelter')
-      if (dark !== darkRoot) {
-        darkRoot = dark
+      // shelter in this same step, and the bar turns back with it. Any dialog counts, not only the
+      // shelter: under one a classic scrollbar's gutter takes the scrim's colour (chat.css), and a
+      // theme picked in «Акаунт» was read from it — the bar kept that grey once the sheet closed.
+      const look = model.overlay.some((o) => o.o === 'shelter') ? 'shelter' : document.querySelector('dialog[open]') !== null ? 'dialog' : 'page'
+      if (look !== rootLook) {
+        rootLook = look
         refreshThemeColor()
       }
     },

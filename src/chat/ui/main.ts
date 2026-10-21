@@ -315,11 +315,38 @@ function act(name: string, target: HTMLElement, event: Event): void {
   }
 }
 
+// A press that takes its own control away — the row it stood in, the line it closed — or opens a
+// dialog: the second press of the same double click lands on whatever took that place (the next
+// candidate's «Прибрати»; on a phone, the confirm's buttons where «Зібрати тези» was) and is no
+// press of it, nor does it move the focus the first press placed. No timer: the browser's own click
+// count (`detail`) says it is the same double click; the keyboard's presses have none.
+let swallow = false
+const swallowed = (event: MouseEvent): boolean => swallow && event.detail > 1
+document.addEventListener(
+  'mousedown',
+  (event) => {
+    if (swallowed(event)) event.preventDefault()
+  },
+  true,
+)
+document.addEventListener(
+  'click',
+  (event) => {
+    if (!swallowed(event)) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  },
+  true,
+)
+
 document.addEventListener('click', (event) => {
+  swallow = false
   const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-act]') : null
   if (target === null || target instanceof HTMLInputElement) return
+  const open = document.querySelectorAll('dialog[open]').length
   view.dialogs.noteOpener(target)
   act(target.dataset.act ?? '', target, event)
+  swallow = target.getClientRects().length === 0 || document.querySelectorAll('dialog[open]').length > open
 })
 
 document.addEventListener('change', (event) => {

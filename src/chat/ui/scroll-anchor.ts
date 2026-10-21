@@ -10,6 +10,8 @@
 // - The answer is not followed. Once its end is under the composer, the «↓» pill appears over the
 //   field: «Далі відповідь» while it streams, «До кінця» after; it goes as soon as the end is in
 //   view. If the person scrolled up, nothing moves.
+// - A line over the field that the person did not ask for (the reminder to pause) does not cover
+//   the end it lands on: with the end in view, the page moves up by the line's height (hold()).
 
 import { motionAllowed } from '../../ui/motion'
 import { setText, show } from './dom'
@@ -30,6 +32,10 @@ export type ScrollAnchor = Readonly<{
   update(): void
   /** «↓ До кінця»: the end of the last message just above the composer. */
   jumpToEnd(): void
+  /** `change` makes the composer taller with something the person did not ask for (the reminder to
+   *  pause): if the end of the conversation was in view, the page moves up by as much, so the line
+   *  does not cover it. Scrolled up, nothing moves; the focus never does. */
+  hold(change: () => void): void
   /** A new conversation or another screen: no room kept, no pill. */
   reset(): void
 }>
@@ -177,6 +183,25 @@ export function createScrollAnchor(parts: AnchorParts): ScrollAnchor {
         body?.scrollIntoView(false)
       }
       check()
+    },
+    hold(change) {
+      // Two layout reads, and only when such a line comes (once a conversation), never per token.
+      const before = ctx.shown && shownHeight(composer) > 0 ? lastBottom() : null
+      const top = composer.getBoundingClientRect().top
+      change()
+      if (before === null || before - 4 > top) return
+      const grown = top - composer.getBoundingClientRect().top
+      if (grown <= 0 || before - 4 <= top - grown) return
+      // The composer is sticky: it grew upward over the end. The room under the answer and the
+      // scroll padding follow the new height first, then the page moves by exactly that — at once,
+      // as the line comes, not a smooth scroll that shows the end covered first.
+      measure()
+      try {
+        window.scrollBy({ top: grown, behavior: 'instant' })
+      } catch {
+        window.scrollBy(0, grown)
+      }
+      update()
     },
     reset() {
       room = null

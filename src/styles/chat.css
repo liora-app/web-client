@@ -108,9 +108,15 @@ html[data-gutter] .chat-page .stage::after {
 /* An open modal keeps the page inert; it should not scroll under the dialog either. The gutter of a
    classic scrollbar is painted by the root's background alone, which no ::backdrop covers: under a
    dialog's scrim it takes the scrim's colour over the page's, not a light strip (the shelter keeps
-   its own dark one, below). */
+   its own dark one, below). Only where there is such a gutter (html[data-gutter]): a phone's bar
+   follows the root's colour (src/ui/theme.ts), and under a full-screen sheet it stays the page's.
+   An image layer would not do — the gutter shows the root's colour alone (probed in Chromium).
+   The bar is read again whenever a dialog opens or closes (src/chat/ui/tools.ts). */
 html:has(dialog[open]) {
   overflow: hidden;
+}
+
+html[data-gutter]:has(dialog[open]) {
   background-color: var(--color-bg-under-scrim);
 }
 
