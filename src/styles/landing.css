@@ -30,6 +30,8 @@
   --color-line-strong: light-dark(rgb(28 38 38 / 0.26), rgb(238 242 238 / 0.26));
   --color-on-accent: light-dark(#ffffff, #040708);
   --color-accent-line: light-dark(#c2714f, rgb(255 197 143 / 0.45));
+  --color-accent-tint: light-dark(rgb(181 83 42 / 0.08), rgb(255 197 143 / 0.12));
+  --color-accent-tint-strong: light-dark(rgb(181 83 42 / 0.12), rgb(255 197 143 / 0.14));
   --color-hover: light-dark(rgb(28 38 38 / 0.06), rgb(238 242 238 / 0.08));
   --color-pressed: light-dark(rgb(28 38 38 / 0.1), rgb(238 242 238 / 0.14));
   --color-field-border: light-dark(#78827f, #84918d);
@@ -78,6 +80,8 @@
     --color-line-strong: rgb(238 242 238 / 0.26);
     --color-on-accent: #040708;
     --color-accent-line: rgb(255 197 143 / 0.45);
+    --color-accent-tint: rgb(255 197 143 / 0.12);
+    --color-accent-tint-strong: rgb(255 197 143 / 0.14);
     --color-hover: rgb(238 242 238 / 0.08);
     --color-pressed: rgb(238 242 238 / 0.14);
     --color-field-border: #84918d;

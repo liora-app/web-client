@@ -176,8 +176,10 @@
   --color-accent-strong: light-dark(#9a4318, #ffe1bf);
   --color-on-accent: light-dark(#ffffff, #121a1b);
   --color-accent-line: light-dark(#c2714f, rgb(255 197 143 / 0.55));
-  --color-accent-tint: light-dark(rgb(181 83 42 / 0.08), rgb(255 197 143 / 0.12));
-  --color-accent-tint-strong: light-dark(rgb(181 83 42 / 0.12), rgb(255 197 143 / 0.14));
+  /* Dark: amber, not the accent's light peach — at 12-14 % over the teal-dark lamp that came out an
+     olive grey (rgb 46 47 41); amber lands warm (rgb 46 38 31). */
+  --color-accent-tint: light-dark(rgb(181 83 42 / 0.08), rgb(255 128 60 / 0.12));
+  --color-accent-tint-strong: light-dark(rgb(181 83 42 / 0.12), rgb(255 128 60 / 0.14));
   --color-focus: light-dark(#b5532a, #ffc58f);
   --color-selection: light-dark(rgb(181 83 42 / 0.22), rgb(255 197 143 / 0.3));
   --color-hover: light-dark(rgb(28 38 38 / 0.06), rgb(236 241 237 / 0.08));
@@ -278,8 +280,8 @@ html[data-theme-switching] *::after {
     --color-accent-strong: #ffe1bf;
     --color-on-accent: #121a1b;
     --color-accent-line: rgb(255 197 143 / 0.55);
-    --color-accent-tint: rgb(255 197 143 / 0.12);
-    --color-accent-tint-strong: rgb(255 197 143 / 0.14);
+    --color-accent-tint: rgb(255 128 60 / 0.12);
+    --color-accent-tint-strong: rgb(255 128 60 / 0.14);
     --color-focus: #ffc58f;
     --color-selection: rgb(255 197 143 / 0.3);
     --color-hover: rgb(236 241 237 / 0.08);
@@ -344,8 +346,8 @@ html[data-theme-switching] *::after {
   --color-accent-strong: #ffe1bf;
   --color-on-accent: #121a1b;
   --color-accent-line: rgb(255 197 143 / 0.55);
-  --color-accent-tint: rgb(255 197 143 / 0.12);
-  --color-accent-tint-strong: rgb(255 197 143 / 0.14);
+  --color-accent-tint: rgb(255 128 60 / 0.12);
+  --color-accent-tint-strong: rgb(255 128 60 / 0.14);
   --color-focus: #ffc58f;
   --color-selection: rgb(255 197 143 / 0.3);
   --color-hover: rgb(236 241 237 / 0.08);
