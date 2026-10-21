@@ -522,6 +522,16 @@ html[data-screen='crisis'] .vignette {
   }
 }
 
+/* A small phone (320 × 640, an SE's 375 × 667 — any phone under 45em tall): the light smaller
+   still (a 54 px orb in a 96 px slot), so the first question, the scenarios and their line start
+   higher and less of a new conversation waits under the field. Only the size changes: the slot and
+   the presence API stay. */
+@media (max-width: 63.99em) and (max-height: 45em), (max-width: 22.5em) {
+  html[data-screen='chat'] .chat__scene {
+    --slot: 6rem;
+  }
+}
+
 @media (min-width: 64em) {
   .chat__frame {
     grid-template-columns: minmax(0, 42rem) minmax(0, 1fr);
@@ -2373,6 +2383,29 @@ html[data-motion='on'] .composer__send svg {
   font-variant-numeric: tabular-nums;
 }
 
+/* At 320 px the line breaks at a «·» anyway: ⓘ stays beside it, not alone on a third line. The
+   empty field keeps one line too: its placeholder a size smaller and 4 px more room each side (the
+   buttons' circles leave air around their icons), or «Пишіть, як думаєте…» wraps beside a classic
+   scrollbar and the empty field opens two lines tall. What is typed keeps its 17 px. */
+@media (max-width: 22.5em) {
+  .composer__meta {
+    flex-wrap: nowrap;
+  }
+
+  .composer__ai {
+    min-width: 0;
+  }
+
+  /* (0,2,0): over the phone's padding further down. */
+  .composer__field .composer__input {
+    padding-inline: 52px;
+  }
+
+  .composer__input::placeholder {
+    font-size: 1rem;
+  }
+}
+
 /* The disclosure breaks only at «·»: «не терапія» never splits into «не» and a lone «терапія». */
 .composer__ai,
 .chat-ai {
@@ -3652,6 +3685,18 @@ html[data-motion='on'] :is(.confirm, .sheet--side, .sheet--pick)[open]::backdrop
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+/* At 320 px «Як у системі · Світла · Темна» fit one row with a little less air: not two and a lone
+   «Темна» under them. Still 40 px tall. */
+@media (max-width: 22.5em) {
+  .sky-pick__list {
+    gap: 0.375rem;
+  }
+
+  .sky-pick .pill {
+    padding-inline: 0.75rem;
+  }
 }
 
 /* The presets' names follow the theme: «Ніч · Сутінки · Світанок» on the evening lamp, «День ·
