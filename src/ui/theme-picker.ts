@@ -1,6 +1,6 @@
-// The controls of the theme (src/ui/theme.ts): a button in the header that opens a small menu of
-// three menuitemradio items, and a radio group in the chat's «Акаунт» sheet. Both show the same
-// choice and change it through setTheme only.
+// The controls of the theme (src/ui/theme.ts): a button in the header of both pages that opens a
+// small menu of three menuitemradio items (plain buttons: the landing has no inputs), and a radio
+// group in the chat's «Акаунт» sheet. Both show the same choice and change it through setTheme only.
 //
 // The menu button follows the WAI-ARIA APG menu button: Enter, Space or ↓ open it on the chosen
 // item (↑ on the last), ↑ ↓ Home End move, Enter or Space choose and close, Esc closes and gives the

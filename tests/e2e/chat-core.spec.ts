@@ -4017,15 +4017,63 @@ test.describe('source rules', () => {
     expect(code).toContain(`'${rgb(bg[1]!)}' : '${rgb(bg[2]!)}'`)
     expect(code).toMatch(/meta\.content = /)
     expect(code).toMatch(/prefers-color-scheme: light/)
-    // The chat follows the system before any CSS; the landing keeps its night until it gets its own
-    // light theme (ADR-012).
+    // Both pages follow the system before any CSS (ADR-012); no page is pinned to one theme.
     const chat = readFileSync(join(repo, 'chat', 'index.html'), 'utf8')
-    expect(chat).toContain('<meta name="color-scheme" content="light dark" />')
-    expect(chat).not.toMatch(/data-theme-lock/)
-    expect(readFileSync(join(repo, 'index.html'), 'utf8')).toMatch(/<html lang="uk" data-theme-lock="dark">/)
-    // Two controls, one choice: the header's menu (three menuitemradio) and the sheet's radios.
-    expect([...chat.matchAll(/role="menuitemradio"[^>]*data-theme-choice="([a-z]+)"/g)].map((m) => m[1])).toEqual(['system', 'light', 'dark'])
+    const landing = readFileSync(join(repo, 'index.html'), 'utf8')
+    for (const [page, html] of [
+      ['chat', chat],
+      ['landing', landing],
+    ] as const) {
+      expect(html, page).toContain('<meta name="color-scheme" content="light dark" />')
+      expect(html, page).not.toMatch(/data-theme-lock/)
+      // The header's menu: three menuitemradio, plain buttons (the landing has no inputs at all).
+      expect([...html.matchAll(/<button[^>]*role="menuitemradio"[^>]*data-theme-choice="([a-z]+)"/g)].map((m) => m[1]), page).toEqual(['system', 'light', 'dark'])
+    }
+    // The chat also has the sheet's radios: two controls, one choice.
     expect([...chat.matchAll(/<input[^>]*name="theme"[^>]*value="([a-z]+)"/g)].map((m) => m[1])).toEqual(['system', 'light', 'dark'])
+  })
+
+  // ADR-012 on the landing: light is the chat's «ранковий папір», dark the landing's own night. The
+  // landing restates (landing.css) every token of tokens.css whose dark side differs from the night
+  // of :root, as light-dark(<the same light>, <the night>), and the night once more for engines
+  // without light-dark(). Nothing is left on the lamp, nothing drifts from tokens.css.
+  test('landing: its tokens are the chat’s light and the night of :root, with a fallback for engines without light-dark()', () => {
+    const styles = resolve(test.info().project.testDir, '..', '..', 'src', 'styles')
+    const tokens = readFileSync(join(styles, 'tokens.css'), 'utf8')
+    const landing = readFileSync(join(styles, 'landing.css'), 'utf8')
+    const block = (text: string, selector: string, from = 0): string => {
+      const start = text.indexOf(`${selector} {`, from)
+      expect(start, selector).toBeGreaterThanOrEqual(0)
+      return text.slice(start, text.indexOf('}', start))
+    }
+    const props = (text: string): Map<string, string> => new Map([...text.matchAll(/--([a-z0-9-]+):\s*([^;]+);/g)].map((m) => [m[1]!, m[2]!.trim()]))
+    const pair = /^light-dark\((#[0-9a-f]{6}|rgb\([^)]*\)),\s*(#[0-9a-f]{6}|rgb\([^)]*\))\)$/i
+    const night = props(block(tokens, ':root'))
+    const theme = props(block(tokens, ':root:not([data-theme-lock])'))
+    const own = props(block(landing, ':root:not([data-theme-lock])'))
+    const fallbackAt = landing.indexOf('@supports not (color: light-dark(#000, #fff))')
+    expect(fallbackAt).toBeGreaterThan(landing.indexOf(':root:not([data-theme-lock]) {'))
+    const fallback = props(block(landing, ':root[data-theme]:not([data-theme-lock])', fallbackAt))
+    expect(landing.slice(fallbackAt, landing.indexOf(':root[data-theme]:not([data-theme-lock])', fallbackAt))).toContain(':root:not([data-theme-lock]),')
+
+    // Every token whose dark side is not the night is restated…
+    const differs = [...theme].filter(([name, value]) => night.has(name) && pair.exec(value)?.[2] !== night.get(name)).map(([name]) => name)
+    expect(differs.length).toBeGreaterThan(10)
+    for (const name of differs) expect(own.has(name), `--${name} restated`).toBe(true)
+    for (const [name, value] of own) {
+      const m = pair.exec(value)
+      expect(m, `--${name}: light-dark(<light>, <dark>)`).not.toBeNull()
+      // …with the chat's light and the night of :root (the landing's own tokens have no counterpart).
+      if (theme.has(name)) {
+        expect(m![1], `--${name} light`).toBe(pair.exec(theme.get(name)!)![1])
+        expect(m![2], `--${name} dark`).toBe(night.get(name))
+      } else {
+        expect(name, 'a token only the landing has').toMatch(/^landing-/)
+      }
+      // The fallback holds the night of every one of them.
+      expect(fallback.get(name), `--${name} fallback`).toBe(m![2])
+    }
+    expect([...fallback.keys()].sort()).toEqual([...own.keys()].sort())
   })
 
   test('page life lives in the leave guard: pagehide and pageshow are listened to in one place', () => {

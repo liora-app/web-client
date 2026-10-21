@@ -5,8 +5,8 @@
 //   liora:theme: 'light' | 'dark' after an explicit choice, the key removed for «Як у системі».
 //   Nothing is written on a visit that does not choose.
 // - Without data-theme the CSS follows prefers-color-scheme (tokens.css, stage.css).
-// - html[data-theme-lock] pins a page to one theme (the landing, dark, until it has its own light
-//   theme): no choice is read or written there.
+// - html[data-theme-lock] pins a page to one theme: no choice is read or written there. No page uses
+//   it now — the landing follows the theme like the chat (its dark side is its own night, landing.css).
 // - A switch cross-fades for 240 ms through a View Transition when motion is allowed, otherwise it is
 //   instant; CSS transitions are off for the switch itself, so no property eases on its own clock.
 // - Every change of the resolved theme is published as window event 'liora:theme' (detail: 'light' |

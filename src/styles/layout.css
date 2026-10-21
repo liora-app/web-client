@@ -748,7 +748,7 @@ html:has(.site-menu[open]) {
   z-index: var(--z-text);
   padding: 3.5rem 0 calc(3rem + env(safe-area-inset-bottom));
   border-top: 1px solid var(--color-line);
-  background: linear-gradient(180deg, rgb(3 5 5 / 0.4), rgb(3 5 5 / 0.85));
+  /* Its background is the page's own (landing.css --landing-footer: the night, or deeper paper). */
   font-size: var(--step--1);
   color: var(--color-text-muted);
 }

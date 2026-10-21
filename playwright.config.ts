@@ -8,6 +8,12 @@ const PORT = 4173
 // E2E_BASE_URL points the suite at a running site instead (the container, or production after a
 // deploy); then nothing is built or served here.
 const TARGET = process.env.E2E_BASE_URL
+// E2E_NO_WEBGL=1 starts the Chromium projects with WebGL off at the browser level: every page
+// takes its static backdrop (html[data-gl="off"], data-gl-reason="no-webgl2"), so landing and
+// header specs can run on a machine that must not render WebGL (tests that need the scene are
+// @gpu). Unset — CI, the default — changes nothing.
+const NO_WEBGL = process.env.E2E_NO_WEBGL === '1'
+const chromiumLaunch = NO_WEBGL ? { launchOptions: { args: ['--disable-webgl', '--disable-webgl2', '--disable-3d-apis'] } } : {}
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -40,11 +46,11 @@ export default defineConfig({
   projects: [
     {
       name: 'desktop',
-      use: { ...devices['Desktop Chrome'], channel: 'chromium', viewport: { width: 1440, height: 900 } },
+      use: { ...devices['Desktop Chrome'], channel: 'chromium', viewport: { width: 1440, height: 900 }, ...chromiumLaunch },
     },
     {
       name: 'mobile',
-      use: { ...devices['Pixel 7'], channel: 'chromium' },
+      use: { ...devices['Pixel 7'], channel: 'chromium', ...chromiumLaunch },
     },
     {
       name: 'iphone-webkit',

@@ -41,6 +41,14 @@ npm run dev          # http://localhost:5173
 | `npm run test:e2e` | Збирає, піднімає preview і проганяє весь Playwright (desktop, mobile, iPhone/WebKit). **Лише з дозволу власника:** кожен воркер — браузер з WebGL, і ПК власника від цього зависав. Локально 1 воркер, у CI — 2 |
 | `E2E_BASE_URL=<url> npx playwright test` | Той самий набір проти вже запущеного сайту (контейнер, прод), без збірки й preview |
 
+Специфікації лендінгу (`landing`, `header`, `landing-theme`) локально — лише з WebGL, вимкненим у самому
+браузері: `E2E_NO_WEBGL=1` додає Chromium-проєктам `--disable-webgl --disable-webgl2 --disable-3d-apis`
+(сторінка бере статичний фон, `data-gl-reason="no-webgl2"`; без змінної нічого не змінюється, CI так само):
+
+```bash
+E2E_NO_WEBGL=1 npx playwright test tests/e2e/landing.spec.ts tests/e2e/header.spec.ts tests/e2e/landing-theme.spec.ts --project=desktop --workers=1 --grep-invert @gpu
+```
+
 Тести ядра чату (`tests/e2e/chat-core.spec.ts`) — чистий TypeScript без браузера і без сервера. Адреса
 `127.0.0.1:9` лише вимикає `webServer` у `playwright.config.ts`, жодна сторінка не відкривається:
 
@@ -78,9 +86,9 @@ src/ui/               motion.ts (пауза / reduced motion), nav.ts (aria-curr
                       reveal.ts, steps.ts (приклад сесії йде за кроком), decode.ts,
                       hero-light.ts (де стоїть світло hero — спільне для CSS і сцени),
                       sky.ts (пресети неба /chat/, ключ liora:sky),
-                      theme.ts (світла / темна / як у системі, ключ liora:theme; лендінг поки
-                      закріплений темним: html[data-theme-lock]), theme-picker.ts (кнопка «Вигляд» у
-                      шапці /chat/ і радіо в «Акаунті»)
+                      theme.ts (світла / темна / як у системі, ключ liora:theme, обидві сторінки;
+                      подія liora:theme для WebGL), theme-picker.ts (кнопка «Вигляд» у шапці / і
+                      /chat/ — меню з трьох <button>; у чаті ще радіо в «Акаунті»)
 src/gl/               WebGL-шар — окремий лінивий чанк з three.js
   core/               спільне для кожної сцени (лендінг, згодом чат):
     boot.ts           чи запускати сцену; стан у <html data-gl="loading|on|off" data-gl-reason>;
@@ -91,20 +99,25 @@ src/gl/               WebGL-шар — окремий лінивий чанк з
     renderer.ts       createRenderer(canvas, { msaa }): єдине місце, де створюється WebGLRenderer
     quality.ts        тири (частинки, боке, DPR, msaa / charLod / envSize; pickTier({ force }) → ?tier=low|medium|high
                       → пристрій) і губернатор кадрів
-    palette.ts        кольори WebGL (дзеркало tokens.css)
-  scene.ts            сцена лендінгу: прозорий канвас, мережа нейронів (частинки + 3D-соми), скляна сфера,
-                      ореол, боке; 8 станів; цикл, пауза, втрата контексту
+    palette.ts        кольори WebGL на тему (дзеркало tokens.css): GL_PALETTES.dark / .light — куля чату
+                      і сцена лендінгу (ScenePalette: вночі світло додається, вдень — чорнило на папері)
+  scene.ts            сцена лендінгу: прозорий канвас; світлові нитки, пил і ореол (luminous-field.ts),
+                      контурний портрет (contour-portrait.ts), малюнок розмови (conversation-flow.ts);
+                      тема — uniforms і blending за подією liora:theme, без перебудови; цикл, пауза,
+                      втрата контексту
   scroll.ts           скрол → стан сцени; «тихі» зони (data-gl-quiet)
   neural.ts           мережі нейронів: соми, аксони, дендрити, хвиля сигналу
   shapes.ts           місце кожної частинки в кожному стані (ядро, ланцюг, тези, граф щоденника)
   shaders/            GLSL
 src/styles/           токени, база, небо й шари (stage.css; кольори неба — --sky-* на :root), шапка,
-                      компоненти, глави
+                      компоненти, глави; landing.css — артнапрям лендінгу і його токени (ніч у темній)
 tests/e2e/            Playwright: контент, стоп-лист, шари, клавіатура, axe, сцена, фолбеки;
                       chat-core.spec.ts — ядро чату без браузера; chat.spec.ts — /chat/ проти моків
                       API (page.route, синтетичний SSE, fetch-shim для стріму по чанках, page.clock);
                       chat-fixtures.ts — обвʼязка: моки, аудит CSP/консолі/сховищ, спільний стоп-лист;
-                      chat.stack.spec.ts — @stack проти локального compose-стеку
+                      chat.stack.spec.ts — @stack проти локального compose-стеку;
+                      landing-theme.spec.ts — теми лендінгу без WebGL (меню з клавіатури, ключ, ранній
+                      скрипт, CSS-мистецтво замість темних PNG, axe у світлій)
 scripts/ci-e2e.sh     e2e у CI: Chromium, без тестів з тегами @gpu і @stack
 Dockerfile, deploy/   образ для хоста: збірка на node:24-alpine → статика на caddy:2, порт 8080;
                       deploy/Caddyfile ставить CSP і Permissions-Policy на все, no-store на /chat/
@@ -129,6 +142,10 @@ public/og.jpg         картинка для прев'ю посилань (1200
   4 граф щоденника · 5 скло (приватність) · 6 тихий пил без сигналу (кризові контакти, запитання) ·
   7 схід (фінал). Крок 4 «Рішення за вами» (`data-gl-decide`) гасить дві з пʼяти тез. Граф
   щоденника має ті самі вузли, що й статичне SVG `.diary__sky`. Розкладка (колонка чи широка) — від `64em`.
+- **Теми (ADR-012):** «Як у системі» / «Світла» / «Темна» на обох сторінках. Світла — «ранковий папір»
+  (ті самі токени, що в чаті), темна на лендінгу — його ніч (`landing.css` перевизначає темний бік токенів
+  `tokens.css`; тест у `chat-core.spec.ts` тримає обидва боки рівними джерелу). Без WebGL світла тема
+  малює мистецтво CSS-градієнтами (кільця чорнилом і теракотою); темні `public/*-still.png` — лише вночі.
 - **Шрифти:** Martian Mono (заголовки й мітки) і Onest (текст), обидва з `@fontsource-variable`.
 - **Жодних сторонніх запитів:** шрифти локальні (`@fontsource-variable`), аналітики немає. Лендінг сам
   cookies не ставить і в API не ходить; сесійний cookie зʼявляється лише після входу в чат. Це перевіряють тести.

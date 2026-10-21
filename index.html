@@ -1,10 +1,11 @@
 <!doctype html>
-<html lang="uk" data-theme-lock="dark">
+<html lang="uk">
   <head>
     <meta charset="UTF-8" />
-    <!-- One theme-color, before public/theme-init.js (which leaves a locked page's alone). -->
+    <!-- One theme-color, before public/theme-init.js (it sets it for the theme before the first frame;
+         src/ui/theme.ts keeps it on the page's background from then on: the night in dark, paper in light). -->
     <meta name="theme-color" content="#040708" />
-    <!-- First, before any stylesheet. The landing is locked to its night for now (data-theme-lock). -->
+    <!-- First, before any stylesheet: the chosen theme on <html> before the first frame (ADR-012). -->
     <script src="/theme-init.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Liora — щоденник саморефлексії з AI</title>
@@ -12,7 +13,7 @@
       name="description"
       content="Liora — простір для саморефлексії з AI. Розкладіть думки по місцях, отримайте 3–5 коротких тез і вирішіть, що зберегти. Почніть розмову у браузері."
     />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light dark" />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="uk_UA" />
     <meta property="og:site_name" content="Liora" />
@@ -67,6 +68,20 @@
           <button class="media__button sound-toggle" type="button" data-sound-toggle aria-pressed="false" aria-label="Звук" hidden>
             <span class="sound-toggle__wave" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
           </button>
+        </div>
+        <!-- «Вигляд» (src/ui/theme-picker.ts), the chat's control: a menu button outside .media (that group is
+             motion and sound), three plain buttons in the menu — no inputs on this page. Hidden without JS. -->
+        <div class="theme-pick" data-theme-pick hidden>
+          <button class="theme-toggle" type="button" data-theme-toggle data-choice="system" aria-haspopup="menu" aria-expanded="false" aria-controls="theme-menu" aria-label="Вигляд: як у системі">
+            <svg class="theme-toggle__icon theme-toggle__auto" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="5.25" /><path class="theme-toggle__half" d="M8 2.75a5.25 5.25 0 0 1 0 10.5z" /></svg>
+            <svg class="theme-toggle__icon theme-toggle__sun" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="2.75" /><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.06 1.06M11.54 11.54l1.06 1.06M3.4 12.6l1.06-1.06M11.54 4.46l1.06-1.06" /></svg>
+            <svg class="theme-toggle__icon theme-toggle__moon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M13.25 9.6A5.5 5.5 0 0 1 6.4 2.75a5.5 5.5 0 1 0 6.85 6.85z" /></svg>
+          </button>
+          <div class="theme-menu" id="theme-menu" role="menu" aria-label="Вигляд" data-theme-menu hidden>
+            <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="true" tabindex="-1" data-theme-choice="system">Як у системі</button>
+            <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-theme-choice="light">Світла</button>
+            <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-theme-choice="dark">Темна</button>
+          </div>
         </div>
         <!-- The way into the chat (ADR-007). From 64em only; below that it heads the menu. -->
         <a class="cta site-header__cta" href="/chat/">Розмова з AI <span aria-hidden="true">→</span></a>
@@ -280,7 +295,7 @@
             <p class="tag" data-decode><span class="tag__index">03</span> Щоденник</p>
             <h2 class="display-2" id="diary-title" data-reveal>Окремі думки.<br />Цілісніша картина.</h2>
             <p class="lead" data-reveal>
-              Збережені тези стають записами. Ми готуємо щоденник і&nbsp;тижневий огляд, щоб ви могли помічати теми, які повертаються.
+              Збережені тези стають записами в&nbsp;щоденнику, а&nbsp;тижневий огляд допомагає помічати теми, які повертаються.
             </p>
           </header>
 
@@ -294,7 +309,7 @@
 
           <div class="diary__layout">
             <figure class="log" data-reveal>
-              <figcaption class="caption">Майбутній щоденник · вигаданий приклад</figcaption>
+              <figcaption class="caption">Щоденник · вигаданий приклад</figcaption>
               <ol class="log__list" role="list">
                 <li class="log__entry">
                   <span class="log__day">Нд</span>
@@ -346,7 +361,7 @@
 
           <ul class="facts" role="list" data-reveal>
             <li>Усі записи — в одному списку, з пошуком і тегами</li>
-            <li>Записи можна буде видаляти по одному</li>
+            <li>Записи можна видаляти по одному</li>
             <li>Огляд рахує лише те, що є в щоденнику</li>
           </ul>
         </div>
@@ -527,8 +542,8 @@
               <summary>Чи можна видалити свої записи й акаунт?</summary>
               <p>
                 Так. Акаунт можна видалити разом з усіма записами щоденника — кнопкою в меню «Акаунт» на сторінці розмови, без
-                листів і запитів до нас. Перед цим щоденник можна завантажити у файл. Видаляти записи по одному можна буде на
-                сторінці щоденника — вона ще в роботі.
+                листів і запитів до нас. Перед цим щоденник можна завантажити у файл. Окремий запис можна видалити в щоденнику,
+                який відкривається на сторінці розмови.
               </p>
             </details>
             <details class="qa">
@@ -545,7 +560,7 @@
             <details class="qa">
               <summary>На яких пристроях працюватиме Liora?</summary>
               <p>
-                Розмова з AI вже працює у браузері на компʼютері й телефоні; щоденник у вебі й застосунки для iOS і Android
+                Розмова з AI і щоденник уже працюють у браузері на компʼютері й телефоні; застосунки для iOS і Android
                 ми ще готуємо. Акаунт буде один, а щоденник синхронізуватиметься між пристроями. На телефоні — ті самі сценарії, щоденник і огляди, що й на компʼютері.
               </p>
             </details>
@@ -577,8 +592,8 @@
           <p>Liora — застосунок для саморефлексії з AI, а не психологічна, медична чи екстрена допомога. Екстрені служби — 112.</p>
           <p>
             Лендінг сам не ставить файли cookie і не має аналітики. Після входу в розмову з AI браузер тримає файл cookie сесії,
-            недоступний скриптам сторінки, а на час входу — ще й тимчасовий файл cookie входу. Вибір паузи анімації й фону
-            зберігається лише в цьому браузері.
+            недоступний скриптам сторінки, а на час входу — ще й тимчасовий файл cookie входу. Вибір паузи анімації, теми
+            й фону зберігається лише в цьому браузері.
           </p>
         </div>
         <nav class="site-footer__links" aria-label="Посилання внизу сторінки">

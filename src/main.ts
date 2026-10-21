@@ -16,6 +16,7 @@ import { initNav } from './ui/nav'
 import { initReveal } from './ui/reveal'
 import { initSound } from './ui/sound'
 import { initSteps } from './ui/steps'
+import { initThemePicker } from './ui/theme-picker'
 
 // A sign-in error that came back to "/" belongs to the chat (ADR-007): without the flow cookie the
 // server does not know `next` yet and sends the person here. Only known codes travel on (the same
@@ -27,6 +28,9 @@ const authError = new URLSearchParams(location.search).get('auth_error')
 if (authError !== null) {
   location.replace(`/chat/?auth_error=${AUTH_ERRORS.has(authError) ? authError : 'unknown'}`)
 } else {
+  // The theme is on <html> before the first frame (public/theme-init.js); this wires «Вигляд» in the
+  // header (the chat's control, src/ui/theme.ts the one writer) and keeps the page in step with it.
+  initThemePicker({ root: document.querySelector<HTMLElement>('[data-theme-pick]'), radios: null })
   initHeroLight()
   initMotionToggle(document.querySelector<HTMLButtonElement>('[data-motion-toggle]'))
   initNav()
@@ -34,7 +38,7 @@ if (authError !== null) {
   initSound()
   initReveal()
   initSteps()
-    initDecode()
+  initDecode()
 
   const canvas = document.querySelector<HTMLCanvasElement>('[data-gl-canvas]')
   // The scene is its own lazy chunk (with three.js), requested only after the page has painted.

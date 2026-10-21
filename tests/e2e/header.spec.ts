@@ -46,11 +46,11 @@ test.describe('header', () => {
     await page.evaluate(() => document.fonts.ready)
     await expect(page.locator('.site-header__cta')).toBeVisible()
     expect(await cutOffAtEdges(page)).toEqual([])
-    // Left to right without overlaps: wordmark, sections, «Якщо важко», motion and sound, the chat.
+    // Left to right without overlaps: wordmark, sections, «Якщо важко», motion and sound, «Вигляд», the chat.
     const boxes = await page
-      .locator('.site-header .brand, .site-nav, .site-header .help-link, .site-header .media, .site-header__cta')
+      .locator('.site-header .brand, .site-nav, .site-header .help-link, .site-header .media, .site-header .theme-toggle, .site-header__cta')
       .evaluateAll((items) => items.map((item) => item.getBoundingClientRect()).map(({ left, right }) => ({ left, right })))
-    expect(boxes).toHaveLength(5)
+    expect(boxes).toHaveLength(6)
     for (let i = 1; i < boxes.length; i++) expect(boxes[i]!.left, `item ${i}`).toBeGreaterThanOrEqual(boxes[i - 1]!.right)
   })
 
@@ -127,12 +127,13 @@ test.describe('header', () => {
     expect(summary).toEqual([])
   })
 
-  test('the header fits at 320 px with the menu', async ({ page }, testInfo) => {
+  test('the header fits at 320 px with the menu and «Вигляд»', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile', 'one engine is enough for the fit')
     await page.setViewportSize({ width: 320, height: 640 })
     await page.goto('/')
     await page.evaluate(() => document.fonts.ready)
-    for (const selector of ['.brand', '.help-link', '.motion-toggle', '.sound-toggle', '[data-menu-open]']) {
+    await expect(page.locator('.theme-toggle')).toBeVisible()
+    for (const selector of ['.brand', '.help-link', '.motion-toggle', '.sound-toggle', '.theme-toggle', '[data-menu-open]']) {
       const box = await page.locator(selector).first().boundingBox()
       expect(box, selector).not.toBeNull()
       expect((box?.x ?? 0) + (box?.width ?? 0), selector).toBeLessThanOrEqual(320)

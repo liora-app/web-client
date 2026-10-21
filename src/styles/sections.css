@@ -11,26 +11,8 @@
   margin-bottom: clamp(3rem, 9vh, 6rem);
 }
 
-/* Text sits on moving light: a dark halo keeps it readable over bright particles. Set on the chapter
-   and inherited, so every line gets it (captions, links, numbers). While the scene runs, a dense
-   ring of 1–3 px darkens the light right at the strokes, where contrast is decided; over the dark
-   sky it is invisible. */
-.chapter {
-  text-shadow:
-    0 0 1.2rem rgb(3 5 5 / 0.85),
-    0 0 0.35rem rgb(3 5 5 / 0.6);
-}
-
-html[data-gl='on'] .chapter {
-  text-shadow:
-    0 0 1px #030505,
-    0 0 1px #030505,
-    0 0 2px #030505,
-    0 0 2px #030505,
-    0 0 4px rgb(3 5 5 / 0.9),
-    0 0 0.35rem rgb(3 5 5 / 0.7),
-    0 0 1.2rem rgb(3 5 5 / 0.85);
-}
+/* No dark halo behind the text (ADR-009): the scene keeps its light beside the text, and a halo
+   would be a smudge on the light theme's paper. */
 
 /* Small mono captions are the faintest text: over the scene they take the brighter ink. */
 html[data-gl='on'] .chapter .caption {
@@ -76,7 +58,6 @@ html[data-gl='on'] .chapter .caption {
 .hero__title {
   position: relative;
   z-index: var(--z-behind);
-  text-shadow: 0 0 2.5rem rgb(3 5 5 / 0.5);
 }
 
 .hero__tag::before {
@@ -107,7 +88,6 @@ html[data-motion='on'] .hero__tag::before {
 .hero__lead {
   font-size: var(--step-0);
   color: var(--color-text-soft);
-  text-shadow: 0 0 1.2rem rgb(3 5 5 / 0.85);
 }
 
 .hero__links {
@@ -116,7 +96,7 @@ html[data-motion='on'] .hero__tag::before {
   gap: 0 1.75rem;
 }
 
-/* The disclaimer is content, not a label: the size of the links below it (≥ 14 px), with the halo. */
+/* The disclaimer is content, not a label: the size of the links below it (≥ 14 px). */
 .hero__note {
   font-family: var(--font-mono);
   font-size: max(0.875rem, var(--step--1));
@@ -124,7 +104,6 @@ html[data-motion='on'] .hero__tag::before {
   text-transform: uppercase;
   text-wrap: balance;
   color: var(--color-teal);
-  text-shadow: 0 0 1.2rem rgb(3 5 5 / 0.85);
 }
 
 .scroll-cue {
@@ -144,7 +123,7 @@ html[data-motion='on'] .hero__tag::before {
   content: '';
   width: 1px;
   height: 2.75rem;
-  background: linear-gradient(var(--color-light), rgb(255 197 143 / 0));
+  background: linear-gradient(var(--color-light), transparent);
   transform-origin: top;
 }
 
@@ -196,26 +175,16 @@ html[data-motion='on'] .scroll-cue::after {
   border-radius: 50%;
   translate: -50% -50%;
   pointer-events: none;
-  background:
-    radial-gradient(circle at 50% 54%, rgb(255 244 226 / 0.95) 0 5%, rgb(255 197 143 / 0.6) 14%, rgb(255 170 100 / 0.16) 34%, rgb(255 170 100 / 0) 56%),
-    radial-gradient(circle at 34% 28%, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0) 26%),
-    radial-gradient(circle, rgb(10 22 24 / 0) 60%, rgb(143 227 212 / 0.1) 69%, rgb(143 227 212 / 0) 71%);
-  box-shadow:
-    inset 0 0 0 1px rgb(200 240 236 / 0.16),
-    inset -14px -20px 46px rgb(140 120 255 / 0.12),
-    inset 12px 16px 46px rgb(80 220 200 / 0.1),
-    0 0 140px rgb(255 180 110 / 0.14);
   transition: opacity 1.2s var(--ease-out);
 }
 
-/* A cool rim with a faint film, no rainbow. */
+/* The drawing itself (landing.css): the night's still, or the day's rings. */
 .hero__orb::before {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: 50%;
   padding: 1.5px;
-  background: conic-gradient(from 200deg, #8fe3d4, #b9a8ff, #ff9ac2, #ffc58f, #8fe3d4);
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
@@ -474,22 +443,10 @@ html[data-gl='on'] .hero__orb {
 
 /* ======================= 03 Diary ======================= */
 
-/* Static constellation (index.html): the WebGL one takes over when the scene is on. It runs in a
-   track along the whole chapter and sticks in view, like the WebGL layer does. */
+/* The static map (landing.css draws it: the night's still or the day's contours): the WebGL one
+   takes over when the scene is on. */
 .diary__sky {
   display: none;
-}
-
-.diary__sky path {
-  fill: none;
-  stroke: rgb(255 197 143 / 0.5);
-  stroke-width: 2;
-  stroke-dasharray: 0.01 7;
-  stroke-linecap: round;
-}
-
-.diary__sky circle {
-  fill: #fff4e2;
 }
 
 @media (min-width: 64em) {
@@ -503,15 +460,6 @@ html[data-gl='on'] .hero__orb {
     width: min(40vw, 36rem);
     pointer-events: none;
     transition: opacity 1.2s var(--ease-out);
-  }
-
-  .diary__sky svg {
-    position: sticky;
-    top: 22vh;
-    width: 100%;
-    height: auto;
-    overflow: visible;
-    filter: drop-shadow(0 0 6px rgb(255 197 143 / 0.6));
   }
 
   html[data-gl='on'] .diary__sky {
@@ -872,8 +820,8 @@ html[data-gl='on'] .hero__orb {
   text-wrap: balance;
 }
 
-/* Static sunrise for when the scene is off: the top of a warm arc under the closing words, where
-   the WebGL light rises. */
+/* A static arc under the closing words, where the WebGL light rises. The landing draws its final
+   art instead (landing.css .final__art) and hides this one. */
 .final::before {
   content: '';
   position: absolute;
@@ -884,8 +832,6 @@ html[data-gl='on'] .hero__orb {
   height: clamp(7rem, 18svh, 11rem);
   translate: -50% 0;
   border-radius: 50% 50% 0 0 / 100% 100% 0 0;
-  background: radial-gradient(50% 100% at 50% 100%, rgb(255 197 143 / 0.26), rgb(255 170 100 / 0.07) 60%, rgb(255 170 100 / 0) 100%);
-  box-shadow: inset 0 1px 0 rgb(200 240 236 / 0.22);
   pointer-events: none;
   transition: opacity 1.2s var(--ease-out);
 }

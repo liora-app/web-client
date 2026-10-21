@@ -1,15 +1,16 @@
 /* Design tokens. WebGL colours mirror these in src/gl/core/palette.ts.
 
    Two layers:
-   1. :root — the landing's night, unchanged (html[data-theme-lock="dark"] on index.html; it gets its
-      own light theme later). Near-black with a teal haze; colour comes only from light. On the
-      landing the newer semantic tokens (surface, accent, scrim…) hold the very values its rules
-      used as literals, so nothing there moves.
-   2. :root:not([data-theme-lock]) — the chat's two themes (ADR-012): light «ранковий папір» and dark
-      «вечірня лампа» (#121a1b, no near-black night). light-dark() picks one by the used colour
-      scheme: `light dark` follows the system, html[data-theme] (public/theme-init.js before the
-      first frame, src/ui/theme.ts after a choice) pins one. Values light-dark() cannot hold (RGB
-      triples of the sky, alphas) live in explicit blocks in stage.css.
+   1. :root — the night: near-black with a teal haze, colour comes only from light. It is the
+      landing's dark side: landing.css restates, as light-dark(<the light below>, <this night>), every
+      token of layer 2 whose dark side differs from it (tests/e2e/chat-core.spec.ts keeps both sides
+      equal to these blocks). A page pinned by html[data-theme-lock] would show it as it is; no page
+      is pinned now.
+   2. :root:not([data-theme-lock]) — the two themes of both pages (ADR-012): light «ранковий папір»
+      and dark «вечірня лампа» (#121a1b, no near-black night; the chat's). light-dark() picks one by
+      the used colour scheme: `light dark` follows the system, html[data-theme] (public/theme-init.js
+      before the first frame, src/ui/theme.ts after a choice) pins one. Values light-dark() cannot
+      hold (RGB triples of the sky, alphas) live in explicit blocks in stage.css.
 
    Contrast (WCAG 2.2, checked in tests/e2e/chat-core.spec.ts): every text token ≥ 4.5:1 on the
    background, the surface and the bubble of its theme, and on the sky under the text (light: no
@@ -148,7 +149,7 @@
   --z-chrome: 20;
 }
 
-/* ---------- The chat's themes: light-dark(<light>, <dark>) ---------- */
+/* ---------- The themes: light-dark(<light>, <dark>) (the landing's dark: landing.css) ---------- */
 
 :root:not([data-theme-lock]) {
   color-scheme: light dark;

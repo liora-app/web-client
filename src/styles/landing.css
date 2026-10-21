@@ -6,16 +6,176 @@
   --chapter-space: clamp(5rem, 12vw, 10rem);
   --leading-display: 1.06;
   --display-2: clamp(2.4rem, 4.5vw, 4.5rem);
-  --sky-top: 7 13 14;
-  --sky-glow-teal: 10 22 23;
-  --sky-glow-violet: 12 14 18;
+}
+
+/* ---------- The landing's two themes (ADR-012) ----------
+   Light is the chat's «ранковий папір»: the same tokens with the same values. Dark is the night the
+   landing was drawn in, not the chat's «вечірня лампа»: every token of tokens.css whose dark side
+   differs from the night of its :root is restated here as light-dark(<the chat's light>, <the
+   night>), with the same selector — this file loads after tokens.css, on this page only.
+   tests/e2e/chat-core.spec.ts derives both sides from tokens.css and checks every one, and the list.
+   The --landing-* tokens are this page's own: its sky, its pale button, the soft title line, the
+   example's card and the footer. */
+:root:not([data-theme-lock]) {
+  --color-bg: light-dark(#f6f1ea, #040708);
+  --color-sky: light-dark(#f6f1ea, #0b1a1e);
+  --color-surface: light-dark(#fffcf7, rgb(4 8 9 / 0.82));
+  --color-bubble-you: light-dark(#dce9e4, #0b1416);
+  --color-panel: light-dark(rgb(255 252 247 / 0.62), rgb(4 8 9 / 0.62));
+  --color-text: light-dark(#1c2626, #eef2ee);
+  --color-text-soft: light-dark(#36423f, #c2ccc8);
+  --color-text-muted: light-dark(#4f5b58, #8e9b97);
+  --color-text-dim: light-dark(#58635f, #84918d);
+  --color-line: light-dark(rgb(28 38 38 / 0.13), rgb(238 242 238 / 0.13));
+  --color-line-strong: light-dark(rgb(28 38 38 / 0.26), rgb(238 242 238 / 0.26));
+  --color-on-accent: light-dark(#ffffff, #040708);
+  --color-accent-line: light-dark(#c2714f, rgb(255 197 143 / 0.45));
+  --color-hover: light-dark(rgb(28 38 38 / 0.06), rgb(238 242 238 / 0.08));
+  --color-pressed: light-dark(rgb(28 38 38 / 0.1), rgb(238 242 238 / 0.14));
+  --color-field-border: light-dark(#78827f, #84918d);
+  --color-scrim: light-dark(rgb(60 48 36 / 0.2), rgb(4 7 8 / 0.6));
+  --color-band-top: light-dark(rgb(246 241 234 / 0.97), rgb(4 7 8 / 0.97));
+  --color-band-mid: light-dark(rgb(246 241 234 / 0.9), rgb(4 7 8 / 0.9));
+  --color-band-tail: light-dark(rgb(246 241 234 / 0.45), rgb(4 7 8 / 0.45));
+  --color-fade-0: light-dark(rgb(246 241 234 / 0), rgb(4 7 8 / 0));
+  --color-field-shadow: light-dark(rgb(60 44 28 / 0.07), rgb(0 0 0 / 0));
+  --color-vignette: light-dark(rgb(120 96 70 / 0.04), rgb(3 5 5 / 0.62));
+  --color-vignette-0: light-dark(rgb(120 96 70 / 0), rgb(3 5 5 / 0));
+
+  /* The sky: paper with a cool light top right and a warm one lower down (text ≥ 4.5:1 on each). */
+  --landing-sky: light-dark(#f6f1ea, #050b10);
+  --landing-sky-cool: light-dark(#e4eeea, #101b21);
+  --landing-sky-warm: light-dark(#f5e6d7, #18140f);
+  /* The second line of a big title: a soft teal ink by day (≥ 5.2:1), a pale teal at night. */
+  --landing-title-soft: light-dark(#346661, #a9c4c5);
+  /* The filled button: terracotta with white by day (the chat's accent), pale paper at night. */
+  --landing-cta: light-dark(#b5532a, #e9e6de);
+  --landing-cta-hover: light-dark(#9a4318, #fff9ed);
+  --landing-cta-ink: light-dark(#ffffff, #111817);
+  /* The example session's card. */
+  --landing-card: light-dark(#fffcf7, #101916);
+  --landing-card-line: light-dark(#e2dbd1, #35413b);
+  --landing-card-shadow: light-dark(rgb(60 44 28 / 0.08), rgb(0 0 0 / 0.16));
+  --landing-footer: light-dark(#efe9e0, #060b0a);
+  --landing-mark-glow: light-dark(rgb(217 119 58 / 0.18), rgb(255 190 120 / 0.16));
+}
+
+/* An engine without light-dark() would drop every colour above: it keeps the night (themes need
+   light-dark(), and «Вигляд» stays hidden there). Both selectors of tokens.css's own fallback. */
+@supports not (color: light-dark(#000, #fff)) {
+  :root:not([data-theme-lock]),
+  :root[data-theme]:not([data-theme-lock]) {
+    --color-bg: #040708;
+    --color-sky: #0b1a1e;
+    --color-surface: rgb(4 8 9 / 0.82);
+    --color-bubble-you: #0b1416;
+    --color-panel: rgb(4 8 9 / 0.62);
+    --color-text: #eef2ee;
+    --color-text-soft: #c2ccc8;
+    --color-text-muted: #8e9b97;
+    --color-text-dim: #84918d;
+    --color-line: rgb(238 242 238 / 0.13);
+    --color-line-strong: rgb(238 242 238 / 0.26);
+    --color-on-accent: #040708;
+    --color-accent-line: rgb(255 197 143 / 0.45);
+    --color-hover: rgb(238 242 238 / 0.08);
+    --color-pressed: rgb(238 242 238 / 0.14);
+    --color-field-border: #84918d;
+    --color-scrim: rgb(4 7 8 / 0.6);
+    --color-band-top: rgb(4 7 8 / 0.97);
+    --color-band-mid: rgb(4 7 8 / 0.9);
+    --color-band-tail: rgb(4 7 8 / 0.45);
+    --color-fade-0: rgb(4 7 8 / 0);
+    --color-field-shadow: rgb(0 0 0 / 0);
+    --color-vignette: rgb(3 5 5 / 0.62);
+    --color-vignette-0: rgb(3 5 5 / 0);
+    --landing-sky: #050b10;
+    --landing-sky-cool: #101b21;
+    --landing-sky-warm: #18140f;
+    --landing-title-soft: #a9c4c5;
+    --landing-cta: #e9e6de;
+    --landing-cta-hover: #fff9ed;
+    --landing-cta-ink: #111817;
+    --landing-card: #101916;
+    --landing-card-line: #35413b;
+    --landing-card-shadow: rgb(0 0 0 / 0.16);
+    --landing-footer: #060b0a;
+    --landing-mark-glow: rgb(255 190 120 / 0.16);
+  }
+}
+
+/* ---------- The art without WebGL ----------
+   Night: the rendered stills (public/*-still.png). They are dark, so the light theme never shows
+   them (nor loads them): it draws the same subjects in CSS — rings of the theme's teal ink and
+   terracotta, the contours the scene draws by day. Images cannot go through light-dark(): the
+   light theme swaps the variables, once chosen (html[data-theme]) and once from the system — the
+   same pair of blocks as stage.css, and only where light-dark() exists (else the night stays). */
+:root {
+  --still-field: url('/field-still.png');
+  --still-portrait: url('/portrait-still.png');
+  --still-portrait-mobile: url('/portrait-mobile-still.png');
+  --still-conversation: url('/conversation-still.png');
+  --still-atlas: url('/atlas-still.png');
+
+  --day-ink: color-mix(in srgb, var(--color-ai) 30%, transparent);
+  --day-ink-soft: color-mix(in srgb, var(--color-ai) 16%, transparent);
+  --day-warm: color-mix(in srgb, var(--color-accent) 36%, transparent);
+  --day-warm-soft: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  /* The hero's and the final's light: two woven sets of rings, a warm heart. */
+  --day-field:
+    radial-gradient(circle closest-side at 56% 58%, var(--day-warm-soft), transparent 58%),
+    repeating-radial-gradient(circle closest-side at 47% 46%, transparent 0 6.6%, var(--day-ink) 6.9% 7.3%, transparent 7.6% 8%),
+    repeating-radial-gradient(circle closest-side at 55% 55%, transparent 0 8.1%, var(--day-warm) 8.4% 8.7%, transparent 9% 9.5%);
+  /* The contour study: a head's topography, lit warm along the jaw. */
+  --day-portrait:
+    repeating-radial-gradient(ellipse 30% 40% at 52% 42%, transparent 0 13%, var(--day-ink) 14% 15.5%, transparent 16.5% 18%),
+    repeating-radial-gradient(ellipse 22% 18% at 40% 70%, transparent 0 18%, var(--day-warm) 20% 22%, transparent 24% 26%),
+    radial-gradient(ellipse 46% 50% at 50% 46%, var(--day-ink-soft), transparent 70%);
+  /* Thought → dialogue: two voices, each a few loops, meeting in the middle. */
+  --day-conversation:
+    radial-gradient(ellipse 30% 42% at 40% 50%, transparent 0 74%, var(--day-ink) 75% 77%, transparent 78% 86%, var(--day-ink) 87% 89%, transparent 90%),
+    radial-gradient(ellipse 30% 42% at 60% 50%, transparent 0 74%, var(--day-warm) 75% 77%, transparent 78% 86%, var(--day-warm) 87% 89%, transparent 90%),
+    radial-gradient(ellipse 22% 30% at 50% 50%, var(--day-warm-soft), transparent 80%);
+  /* The diary's map: one large contour map, a warm summit. */
+  --day-atlas:
+    repeating-radial-gradient(ellipse 58% 50% at 48% 52%, transparent 0 7%, var(--day-ink) 7.5% 8.2%, transparent 8.7% 9.5%),
+    radial-gradient(ellipse 22% 18% at 58% 44%, var(--day-warm-soft), transparent 100%),
+    repeating-radial-gradient(ellipse 22% 18% at 58% 44%, transparent 0 20%, var(--day-warm) 22% 26%, transparent 28% 34%);
+  /* The day's drawings fade at their edge (the PNGs carry their own alpha). The final's rings rise
+     under the words and end before the art's box does: no cut edge. */
+  --day-fade: radial-gradient(closest-side, #000 52%, transparent 100%);
+  --day-final-fade: radial-gradient(closest-side, transparent 0 12%, #000 30% 50%, transparent 70%);
+}
+
+@supports (color: light-dark(#000, #fff)) {
+  :root[data-theme='light']:not([data-theme-lock]) {
+    --still-field: var(--day-field);
+    --still-portrait: var(--day-portrait);
+    --still-portrait-mobile: var(--day-portrait);
+    --still-conversation: var(--day-conversation);
+    --still-atlas: var(--day-atlas);
+    --still-fade: var(--day-fade);
+    --still-final-fade: var(--day-final-fade);
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]):not([data-theme-lock]) {
+      --still-field: var(--day-field);
+      --still-portrait: var(--day-portrait);
+      --still-portrait-mobile: var(--day-portrait);
+      --still-conversation: var(--day-conversation);
+      --still-atlas: var(--day-atlas);
+      --still-fade: var(--day-fade);
+      --still-final-fade: var(--day-final-fade);
+    }
+  }
 }
 
 .stage {
   background:
-    radial-gradient(ellipse at 84% 28%, #101b21, transparent 57%),
-    radial-gradient(ellipse at 78% 72%, #18140f, transparent 46%),
-    #050b10;
+    radial-gradient(ellipse at 84% 28%, var(--landing-sky-cool), transparent 57%),
+    radial-gradient(ellipse at 78% 72%, var(--landing-sky-warm), transparent 46%),
+    var(--landing-sky);
 }
 .stage__haze,
 .stage__grain { display: none; }
@@ -56,7 +216,7 @@ html[data-gl='on'] .chapter { text-shadow: none; }
 .site-header { min-height: 5.5rem; gap: clamp(2rem, 5vw, 5rem); }
 .site-header::before { bottom: -1rem; }
 .brand { gap: 0.65rem; font-size: 1.6rem; font-weight: 500; letter-spacing: -0.065em; }
-.brand__mark { width: 0.8rem; height: 0.8rem; box-shadow: 0 0 12px rgb(255 190 120 / 0.16); }
+.brand__mark { width: 0.8rem; height: 0.8rem; box-shadow: 0 0 12px var(--landing-mark-glow); }
 .site-nav { gap: clamp(1rem, 2.4vw, 2.25rem); }
 .site-nav a { font-size: 0.8125rem; }
 .site-header__actions { gap: 0.75rem; }
@@ -64,8 +224,12 @@ html[data-gl='on'] .chapter { text-shadow: none; }
 .site-header .help-link:hover { color: var(--color-light-strong); }
 .site-header .help-link[aria-current] { border-color: var(--color-light); color: var(--color-light); }
 .media { border-color: transparent; background: transparent; }
-.cta { background: #e9e6de; color: #111817; font-weight: 500; text-shadow: none; }
-.cta:hover { background: #fff9ed; }
+/* «Вигляд» (the chat's menu button) as quiet as «Пауза» and «Звук» beside it: no ring, the icon says it. */
+.theme-toggle { width: 2.25rem; height: 2.25rem; border-color: transparent; background: transparent; }
+.theme-toggle:hover,
+.theme-toggle[aria-expanded='true'] { background: var(--color-hover); }
+.cta { background: var(--landing-cta); color: var(--landing-cta-ink); font-weight: 500; text-shadow: none; }
+.cta:hover { background: var(--landing-cta-hover); }
 .site-header__cta { font-size: 0.8125rem; }
 .hud { display: none; }
 
@@ -87,11 +251,11 @@ html[data-gl='on'] .chapter { text-shadow: none; }
   max-width: 100%;
   text-shadow: none;
 }
-.hero__title-soft { color: #a9c4c5; }
+.hero__title-soft { color: var(--landing-title-soft); }
 .hero__orb { border-radius: 0; background: none; box-shadow: none; }
 .hero__orb::after { display: none; }
 .hero__orb::before,
-.final__art::before { content: ''; display: block; position: absolute; inset: -20%; border-radius: 0; padding: 0; opacity: 1; background: url('/field-still.png') center / contain no-repeat; mask: radial-gradient(closest-side, #000 82%, transparent 100%); mask-composite: add; }
+.final__art::before { content: ''; display: block; position: absolute; inset: -20%; border-radius: 0; padding: 0; opacity: 1; background-image: var(--still-field); background-position: center; background-size: contain; background-repeat: no-repeat; mask: radial-gradient(closest-side, #000 82%, transparent 100%); mask-composite: add; }
 .hero__orb-link { clip-path: circle(48%); }
 .hero__aside { gap: 1.15rem; max-width: 28rem; }
 .hero__lead { font-size: clamp(1rem, 1.3vw, 1.1875rem); line-height: 1.7; text-shadow: none; }
@@ -141,10 +305,10 @@ html[data-gl='on'] .chapter { text-shadow: none; }
 .mind__copy { position: relative; padding-top: clamp(10rem, 25vh, 18rem); }
 .mind__copy .tag { color: var(--color-text-muted); }
 .mind__copy h2 { margin-block: 2rem; font-size: clamp(3.4rem, 7.3vw, 7.5rem); line-height: 1.04; letter-spacing: -0.065em; font-weight: 400; }
-.mind__copy h2 span { color: #a9c4c5; }
+.mind__copy h2 span { color: var(--landing-title-soft); }
 .mind__note { font-size: 1rem; line-height: 1.8; color: var(--color-text-soft); }
 .mind__foot { position: absolute; bottom: 3rem; left: 0; right: 0; display: flex; justify-content: space-between; padding-top: 1.5rem; border-top: 1px solid var(--color-line); font-size: 0.6875rem; color: var(--color-text-muted); }
-.mind__still { position: absolute; width: min(45vw, 75vh); aspect-ratio: 1; right: 5%; top: 15%; background: url('/portrait-still.png') center / contain no-repeat; }
+.mind__still { position: absolute; width: min(45vw, 75vh); aspect-ratio: 1; right: 5%; top: 15%; background-image: var(--still-portrait); background-position: center; background-size: contain; background-repeat: no-repeat; mask-image: var(--still-fade, none); }
 html[data-gl='on'] .mind__still { visibility: hidden; }
 html:not([data-motion='on']) .mind,
 html[data-gl='off'] .mind { height: auto; }
@@ -163,7 +327,7 @@ html[data-gl='off'][data-gl-reason='user'] .mind__stage { position: sticky; }
   .mind__foot { bottom: 1.5rem; font-size: 0.625rem; }
   .mind__foot > span:first-child { display: none; }
   .mind__foot { justify-content: flex-end; }
-  .mind__still { width: min(100%, max(164px, calc(92.825svh - 352.5px))); top: calc(39.5svh + 140px); right: auto; left: 50%; transform: translate(-50%, -50%); background-image: url('/portrait-mobile-still.png'); }
+  .mind__still { width: min(100%, max(164px, calc(92.825svh - 352.5px))); top: calc(39.5svh + 140px); right: auto; left: 50%; transform: translate(-50%, -50%); background-image: var(--still-portrait-mobile); }
 }
 
 /* The four moments of a conversation, with a recognisable product preview. */
@@ -182,7 +346,7 @@ html[data-gl='off'][data-gl-reason='user'] .mind__stage { position: sticky; }
 .step p { font-size: 1rem; }
 .how__visual { display: none; }
 .how__drawing { position: sticky; top: 24vh; }
-.how__motion { width: 100%; height: min(46vh, 28rem); background: url('/conversation-still.png') center / contain no-repeat; }
+.how__motion { width: 100%; height: min(46vh, 28rem); background-image: var(--still-conversation); background-position: center; background-size: contain; background-repeat: no-repeat; mask-image: var(--still-fade, none); }
 html[data-gl='on'] .how__motion { background-image: none; }
 .how__phases { display: flex; gap: 0.75rem; align-items: center; margin: 1rem 12% 0; font-family: var(--font-mono); font-size: 0.5625rem; color: var(--color-text-muted); }
 .how__phases i { flex: 1; height: 1px; background: var(--color-line); }
@@ -190,10 +354,10 @@ html[data-gl='on'] .how__motion { background-image: none; }
 .transcript {
   gap: 1.75rem;
   padding: clamp(1.25rem, 2.5vw, 2.5rem);
-  border: 1px solid #35413b;
+  border: 1px solid var(--landing-card-line);
   border-radius: 1.25rem;
-  background: #101916;
-  box-shadow: 0 24px 80px rgb(0 0 0 / 0.16);
+  background: var(--landing-card);
+  box-shadow: 0 24px 80px var(--landing-card-shadow);
   text-shadow: none;
 }
 .transcript__heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--color-line); }
@@ -225,7 +389,7 @@ html[data-gl='on'] .how__motion { background-image: none; }
 .diary .chapter__head { margin-bottom: 3rem; }
 .diary__art { display: block; position: relative; width: min(100%, 28rem); margin: 0 auto 3rem; }
 .diary__sky { display: block; position: relative; inset: auto; width: 100%; aspect-ratio: 1; margin-block: 1rem; }
-.diary__sky::before { content: ''; position: absolute; inset: 0; background: url('/atlas-still.png') center / contain no-repeat; }
+.diary__sky::before { content: ''; position: absolute; inset: 0; background-image: var(--still-atlas); background-position: center; background-size: contain; background-repeat: no-repeat; mask-image: var(--still-fade, none); }
 html[data-gl='on'] .diary__sky { opacity: 0; }
 .diary__art-kicker { font-family: var(--font-mono); font-size: 0.625rem; letter-spacing: 0.08em; color: var(--color-text-muted); text-transform: uppercase; }
 .diary__art-caption { display: flex; justify-content: space-between; gap: 1rem; padding-top: 1.25rem; border-top: 1px solid var(--color-line); font-size: 0.75rem; color: var(--color-text-soft); }
@@ -260,9 +424,9 @@ html[data-gl='on'] .diary__sky { opacity: 0; }
 .final .lead { max-width: 40rem; text-wrap: pretty; }
 .final__meta { gap: 2rem; margin-top: 0.75rem; justify-content: center; }
 .final__art { --final-size: min(94vw, 132svh); position: absolute; left: 50%; top: 93%; transform: translate(-50%, -50%); width: min(100%, var(--final-size)); height: var(--final-size); pointer-events: none; opacity: 0.62; mask-image: linear-gradient(transparent 1%, #000 34%); }
-.final__art::before { inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); width: calc(var(--final-size) * 1.4); height: calc(var(--final-size) * 1.4); mask-image: radial-gradient(ellipse at 50% 20%, transparent, #000 68%); }
+.final__art::before { inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); width: calc(var(--final-size) * 1.4); height: calc(var(--final-size) * 1.4); mask-image: var(--still-final-fade, radial-gradient(ellipse at 50% 20%, transparent, #000 68%)); }
 html[data-gl='on'] .final__art::before { visibility: hidden; }
-.site-footer { padding-top: 2.5rem; background: #060b0a; }
+.site-footer { padding-top: 2.5rem; background: var(--landing-footer); }
 .site-footer__brand { font-family: var(--font-body); font-size: 2rem; text-transform: none; letter-spacing: -0.055em; }
 .site-footer__note { font-size: 0.75rem; line-height: 1.8; gap: 0.8rem; }
 .site-footer__links { flex-direction: column; gap: 0; }
@@ -323,7 +487,8 @@ html[data-gl='on'] .final__art::before { visibility: hidden; }
   .site-header__actions { gap: 0.125rem; }
   .site-header .help-link { padding-inline: 0.35rem; font-size: 0.75rem; }
   .site-header .media { padding: 0; gap: 0; }
-  .media__button { width: 2rem; }
+  .media__button,
+  .theme-toggle { width: 2rem; }
   .menu-toggle { width: 2.25rem; height: 2.5rem; border-color: transparent; background: transparent; }
   .hero { min-height: 52rem; padding-top: 20rem; }
   .hero__title { font-size: clamp(2.55rem, 10.6vw, 3.6rem); }
@@ -347,6 +512,8 @@ html[data-gl='on'] .final__art::before { visibility: hidden; }
 
 @media (max-width: 23em) {
   .brand__mark { display: none; }
+  /* With «Вигляд» the row is full at 320 px: the wordmark's hit area stops where «Якщо важко» starts. */
+  .brand { padding-inline: 0.25rem; margin-inline: -0.25rem; }
   .site-header { gap: 0.25rem; }
   .hero__links { gap: 0.75rem; }
   .hero__links .cta--primary { padding-inline: 1rem; gap: 0.65rem; font-size: 0.8125rem; }
