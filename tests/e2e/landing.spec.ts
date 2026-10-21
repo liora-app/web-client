@@ -64,6 +64,7 @@ test.describe('content and structure', () => {
   test('the privacy chapter says «only» of the conversation, not of everything stored', async ({ page }) => {
     await page.goto('/')
     // Email, sub, consents and sessions are stored too (ADR-005; the FAQ «Що саме ви зберігаєте?» lists them).
+    await expect(page.locator('#privacy .lead')).toHaveText('Із розмови в нашій базі залишаються лише тези, які ви вирішили зберегти.')
     const first = page.locator('#privacy .principles > li').first()
     await expect(first).toContainText('Із розмови в базу даних потрапляє лише підсумок, який ви переглянули й зберегли.')
   })
