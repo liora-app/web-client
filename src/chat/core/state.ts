@@ -274,6 +274,9 @@ export type JournalState = Readonly<{
   cursor: string | null
   req: number
   tags: Loadable<readonly TagCountOut[]>
+  /** The GET /tags asked for last: a PATCH and a DELETE each ask again, and an older answer that
+   *  lands later must not bring back a theme the newer one no longer has. */
+  tagsReq: number
   week: JournalWeek
   /** One record edited at a time, in place. */
   edit: JournalEdit | null
@@ -469,8 +472,8 @@ export type Action =
   | Readonly<{ type: 'journal/retry' }>
   | Readonly<{ type: 'journal/list-ok'; req: number; diary: Diary }>
   | Readonly<{ type: 'journal/list-fail'; req: number; error: ApiError }>
-  | Readonly<{ type: 'journal/tags-ok'; tags: readonly TagCountOut[] }>
-  | Readonly<{ type: 'journal/tags-fail'; error: ApiError }>
+  | Readonly<{ type: 'journal/tags-ok'; req: number; tags: readonly TagCountOut[] }>
+  | Readonly<{ type: 'journal/tags-fail'; req: number; error: ApiError }>
   | Readonly<{ type: 'journal/week'; step: -1 | 1 }>
   | Readonly<{ type: 'journal/week-retry' }>
   | Readonly<{ type: 'journal/week-ok'; req: number; review: WeeklyReviewOut }>
@@ -511,7 +514,7 @@ export type Effect =
   | Readonly<{ type: 'composer/clear' }> // empty the message field without focusing it
   // the diary (§7.7): GET /summaries?limit=20[&cursor][&q][&tag], GET /tags, GET /reviews/weekly
   | Readonly<{ type: 'journal-list'; req: number; q: string; tag: string | null; cursor: string | null }>
-  | Readonly<{ type: 'journal-tags' }>
+  | Readonly<{ type: 'journal-tags'; req: number }>
   | Readonly<{ type: 'journal-week'; req: number; weekStart: string | null; tz: string | null }>
   | Readonly<{ type: 'patch-summary'; req: number; id: string; body: SummaryPatch }>
   | Readonly<{ type: 'delete-summary'; id: string }>
@@ -1126,7 +1129,7 @@ function confirmAllowed(model: Model, kind: ConfirmKind, revoke: ConsentKind | u
     case 'delete-summary':
       return state.s === 'journal' && state.deleting === null && summary !== undefined && journalItem(state, summary) !== undefined
     case 'revisit-restart':
-      return state.s === 'journal' && summary !== undefined && journalItem(state, summary) !== undefined && revisitOffered(model.ctx)
+      return state.s === 'journal' && !journalBusy(state) && summary !== undefined && journalItem(state, summary) !== undefined && revisitOffered(model.ctx)
   }
 }
 
@@ -1193,7 +1196,7 @@ function onConfirmAccept(model: Model, choice: 'summarize' | undefined): Step {
       if (popped.state.s !== 'journal' || top.summary === undefined || popped.state.deleting !== null) return [popped, NONE]
       return [{ ...popped, state: { ...popped.state, deleting: top.summary, notice: null } }, [{ type: 'delete-summary', id: top.summary }]]
     case 'revisit-restart': {
-      if (popped.state.s !== 'journal' || top.summary === undefined) return [popped, NONE]
+      if (popped.state.s !== 'journal' || top.summary === undefined || journalBusy(popped.state)) return [popped, NONE]
       const item = journalItem(popped.state, top.summary)
       // «Текст цієї розмови зникне зі сторінки»: the field's text goes with it.
       return item === undefined ? [popped, NONE] : startRevisit(popped, item, true)
@@ -1226,6 +1229,11 @@ function journalItem(state: JournalState, id: string): SummaryOut | undefined {
   return state.list?.items.find((item) => item.id === id)
 }
 
+/** A PATCH or a DELETE is on its way: the page stays until its answer (the way out waits). */
+export function journalBusy(state: JournalState): boolean {
+  return state.edit?.saving === true || state.deleting !== null
+}
+
 /** One more request id (ctx.seq): an answer with another id is stale. */
 function nextReq(model: Model): [Model, number] {
   const req = model.ctx.seq + 1
@@ -1244,6 +1252,14 @@ function journalWeek(model: Model, state: JournalState, weekStart: string | null
   return [{ ...next, state: journal }, [{ type: 'journal-week', req, weekStart, tz }]]
 }
 
+/** GET /tags, stamped: only the answer to the last one counts. Themes already shown stay up while
+ *  it is on its way (no pills flicker after a change); none yet, they load. */
+function journalTags(model: Model, state: JournalState): Step {
+  const [next, req] = nextReq(model)
+  const journal: JournalState = { ...state, tags: state.tags.status === 'ok' ? state.tags : { status: 'loading' }, tagsReq: req }
+  return [{ ...next, state: journal }, [{ type: 'journal-tags', req }]]
+}
+
 function openJournal(model: Model, tz: string | null): Step {
   const { state } = model
   const back: JournalBack | null =
@@ -1260,6 +1276,7 @@ function openJournal(model: Model, tz: string | null): Step {
     cursor: null,
     req: 0,
     tags: { status: 'loading' },
+    tagsReq: 0,
     week: { start: null, current: null, review: { status: 'loading' }, req: 0 },
     edit: null,
     deleting: null,
@@ -1267,19 +1284,18 @@ function openJournal(model: Model, tz: string | null): Step {
   }
   // Lazily, on the way in (never at the page's start): the week, the themes, the first page.
   const [weekModel, weekFx] = journalWeek(model, journal, null)
-  const [listModel, listFx] = journalList(weekModel, weekModel.state as JournalState, null)
-  return [listModel, [...weekFx, { type: 'journal-tags' }, ...listFx]]
+  const [tagsModel, tagsFx] = journalTags(weekModel, weekModel.state as JournalState)
+  const [listModel, listFx] = journalList(tagsModel, tagsModel.state as JournalState, null)
+  return [listModel, [...weekFx, ...tagsFx, ...listFx]]
 }
 
-/** After a PATCH or a DELETE: the themes (an orphan tag is gone), the week shown and the page's
- *  diary (the record picker and «Ви повертаєтеся до:» read it) are asked for again. */
-function afterChange(model: Model, state: JournalState): Step {
+/** After a PATCH or a DELETE: the themes (an orphan tag is gone) and the week shown are asked for
+ *  again; the page's diary changes in place (diaryAfter). */
+function afterChange(model: Model, state: JournalState, change: Parameters<typeof diaryAfter>[1]): Step {
   const [weekModel, weekFx] = state.week.start !== null || state.week.review.status !== 'loading' ? journalWeek(model, state, state.week.start) : [{ ...model, state }, NONE]
-  const journal = weekModel.state as JournalState
-  return [
-    { ...weekModel, ctx: { ...weekModel.ctx, diary: { status: 'loading' } }, state: { ...journal, tags: journal.tags.status === 'ok' ? journal.tags : { status: 'loading' } } },
-    [...weekFx, { type: 'journal-tags' }, { type: 'diary' }],
-  ]
+  const [tagsModel, tagsFx] = journalTags(weekModel, weekModel.state as JournalState)
+  const [diaryModel, diaryFx] = diaryAfter(tagsModel, change)
+  return [diaryModel, [...weekFx, ...tagsFx, ...diaryFx]]
 }
 
 function beginPatch(model: Model, state: JournalState, sent: PatchSent): Step {
@@ -1290,8 +1306,11 @@ function beginPatch(model: Model, state: JournalState, sent: PatchSent): Step {
 }
 
 /** Back from the consent a PATCH asked for: the diary as it was. What it had on its way then was
- *  answered while the consent was up (and ignored there): it is asked for again. */
-function resumeJournal(model: Model, snapshot: JournalState): Step {
+ *  answered while the consent was up (and ignored there): it is asked for again. A DELETE that was
+ *  on its way is not — its answer is lost, so the record is no longer marked as going (or the page
+ *  would wait for it for good); pressed again, a 404 says it is gone. */
+function resumeJournal(model: Model, saved: JournalState): Step {
+  const snapshot: JournalState = saved.deleting === null ? saved : { ...saved, deleting: null }
   let step: Step = [{ ...model, state: snapshot }, NONE]
   const effects: Effect[] = []
   const then = (next: Step): void => {
@@ -1300,7 +1319,7 @@ function resumeJournal(model: Model, snapshot: JournalState): Step {
   }
   if (snapshot.loading) then(journalList(step[0], step[0].state as JournalState, snapshot.cursor))
   if (snapshot.week.review.status === 'loading') then(journalWeek(step[0], step[0].state as JournalState, snapshot.week.start))
-  if (snapshot.tags.status === 'loading') effects.push({ type: 'journal-tags' })
+  if (snapshot.tags.status === 'loading') then(journalTags(step[0], step[0].state as JournalState))
   const journal = step[0].state as JournalState
   const sent = journal.edit?.sent ?? null
   if (sent === null) return [step[0], effects]
@@ -1311,7 +1330,47 @@ function resumeJournal(model: Model, snapshot: JournalState): Step {
 const without = (list: Diary | null, id: string): Diary | null =>
   list === null ? null : { items: list.items.filter((item) => item.id !== id), nextCursor: list.nextCursor }
 
-/** A record left the diary (deleted, or gone meanwhile): off the list, its edit closed. */
+/** A new first page (a search, a theme, a theme gone) while a record is edited: the record keeps its
+ *  row, first, with its form — or «Зберегти» would find no record and drop what was typed. Closed,
+ *  it is a record like any other again. */
+function keepEdited(page: Diary, state: JournalState): Diary {
+  const id = state.edit?.form.id
+  if (id === undefined || page.items.some((item) => item.id === id)) return page
+  const item = journalItem(state, id)
+  return item === undefined ? page : { items: [item, ...page.items], nextCursor: page.nextCursor }
+}
+
+/** The page's diary (ctx.diary: the record picker and «Ви повертаєтеся до:» read it) after a PATCH
+ *  or a record gone: changed in place, no GET — a GET would leave a moment where a record taken
+ *  back has no name. Emptied while more records stand behind it, it asks for the first page again.
+ *  Not loaded (or still loading), it stays as it is: the answer on its way stands. */
+function diaryAfter(model: Model, change: Readonly<{ patched: SummaryOut }> | Readonly<{ dropped: string }>): Step {
+  const { diary } = model.ctx
+  if (diary.status !== 'ok') return [model, NONE]
+  const { items, nextCursor } = diary.value
+  const next =
+    'patched' in change
+      ? items.map((item) => (item.id === change.patched.id ? change.patched : item))
+      : items.filter((item) => item.id !== change.dropped)
+  if (next.length === 0 && nextCursor !== null) return [{ ...model, ctx: { ...model.ctx, diary: { status: 'loading' } } }, [{ type: 'diary' }]]
+  return [{ ...model, ctx: { ...model.ctx, diary: loaded({ items: next, nextCursor }) } }, NONE]
+}
+
+/** Records chosen for a revisit keep their names in the page's diary when a first page replaces
+ *  it: those of `from` among `ids` that the page does not have, after it. */
+function keepChosen(page: Diary, ids: readonly string[], from: readonly SummaryOut[]): Diary {
+  const extra: SummaryOut[] = []
+  for (const id of ids) {
+    if (page.items.some((item) => item.id === id) || extra.some((item) => item.id === id)) continue
+    const item = from.find((x) => x.id === id)
+    if (item !== undefined) extra.push(item)
+  }
+  return extra.length === 0 ? page : { items: [...page.items, ...extra], nextCursor: page.nextCursor }
+}
+
+/** A record left the diary (deleted, or gone meanwhile): off the list, its edit closed. A page it
+ *  leaves empty while more records stand behind it is asked for again from the top: «Тут
+ *  зʼявляться тези…» over a diary that has them would be untrue. */
 function dropRecord(model: Model, state: JournalState, id: string, notice: JournalNotice): Step {
   const journal: JournalState = {
     ...state,
@@ -1320,7 +1379,11 @@ function dropRecord(model: Model, state: JournalState, id: string, notice: Journ
     deleting: state.deleting === id ? null : state.deleting,
     notice,
   }
-  return afterChange(model, journal)
+  const [changed, effects] = afterChange(model, journal, { dropped: id })
+  const after = changed.state as JournalState
+  if (after.loading || after.list === null || after.list.items.length > 0 || after.list.nextCursor === null) return [changed, effects]
+  const [listed, listFx] = journalList(changed, after, null)
+  return [listed, [...effects, ...listFx]]
 }
 
 /** «Повернутися до цього»: a new conversation in «Повернення до теми» with this record chosen.
@@ -1331,11 +1394,11 @@ function startRevisit(model: Model, item: SummaryOut, wipe: boolean): Step {
   const diary: Loadable<Diary> =
     ctx.diary.status === 'ok'
       ? ctx.diary.value.items.some((x) => x.id === item.id)
-        ? ctx.diary
+        ? loaded({ items: ctx.diary.value.items.map((x) => (x.id === item.id ? item : x)), nextCursor: ctx.diary.value.nextCursor })
         : loaded({ items: [...ctx.diary.value.items, item], nextCursor: ctx.diary.value.nextCursor })
-      : ctx.diary.status === 'loading'
-        ? ctx.diary
-        : loaded({ items: [item], nextCursor: null })
+      : // Not loaded yet (or failed): the record alone. A first page still on its way is dropped — it
+        // would replace the diary without this record; the picker loads its own first page.
+        loaded({ items: [item], nextCursor: null })
   const next: Ctx = { ...ctx, wantChat: false, cooldown: null, maybeSaved: false, diary }
   const session: Session = { ...freshSession(next, 'revisit', false), revisitIds: Object.freeze([item.id]) }
   const effects: readonly Effect[] = wipe ? [{ type: 'composer/clear' }, { type: 'announcer/clear' }] : NONE
@@ -1363,6 +1426,8 @@ function journalStep(model: Model, state: JournalState, action: Action): Step | 
   const { ctx } = model
   switch (action.type) {
     case 'journal/back':
+      // A PATCH or a DELETE on its way: its answer is this page's to show (saved, failed, consent).
+      if (journalBusy(state)) return [model, NONE]
       if (state.back === null) return startChat(model)
       {
         const { session, pending, revertTo, gone } = state.back
@@ -1386,7 +1451,7 @@ function journalStep(model: Model, state: JournalState, action: Action): Step | 
     case 'journal/list-ok': {
       if (action.req !== state.req || !state.loading) return [model, NONE]
       let list: Diary
-      if (state.cursor === null) list = action.diary
+      if (state.cursor === null) list = keepEdited(action.diary, state)
       else if (state.list !== null && state.list.nextCursor === state.cursor) {
         list = { items: [...state.list.items, ...action.diary.items.filter((item) => !state.list!.items.some((x) => x.id === item.id))], nextCursor: action.diary.nextCursor }
       } else return withState(model, { ...state, loading: false })
@@ -1397,13 +1462,19 @@ function journalStep(model: Model, state: JournalState, action: Action): Step | 
       if (action.error.status === 401) return unauthenticated(model, sessionOf(state), pendingOf(state), null)
       return withState(model, { ...state, loading: false, failed: true })
     case 'journal/tags-ok': {
+      // Only the last GET /tags: an older answer landing later would bring back a theme gone since.
+      if (action.req !== state.tagsReq) return [model, NONE]
       const tags = loaded(action.tags)
       // The theme filtered by is gone (its last record changed or went): the whole list again.
       if (state.tag !== null && !action.tags.some((t) => t.id === state.tag)) return journalList(model, { ...state, tags, tag: null }, null)
       return withState(model, { ...state, tags })
     }
     case 'journal/tags-fail':
+      if (action.req !== state.tagsReq) return [model, NONE]
       if (action.error.status === 401) return unauthenticated(model, sessionOf(state), pendingOf(state), null)
+      // Themes already shown stay (a refresh after a change failed): without them a theme filter
+      // could not be taken off.
+      if (state.tags.status === 'ok') return [model, NONE]
       return withState(model, { ...state, tags: { status: 'failed' } })
     case 'journal/week': {
       const { start, current } = state.week
@@ -1431,7 +1502,8 @@ function journalStep(model: Model, state: JournalState, action: Action): Step | 
       return withState(model, { ...state, week: { ...state.week, review: { status: 'failed' } } })
     }
     case 'journal/edit': {
-      if (state.edit !== null) return [model, NONE]
+      // One at a time, and not a record whose DELETE is on its way.
+      if (state.edit !== null || state.deleting === action.id) return [model, NONE]
       const item = journalItem(state, action.id)
       if (item === undefined) return [model, NONE]
       return withState(model, { ...state, notice: null, edit: { form: formOf(item), saving: false, error: null, issues: [], sent: null, req: 0 } })
@@ -1462,7 +1534,7 @@ function journalStep(model: Model, state: JournalState, action: Action): Step | 
       const edit = state.edit
       if (edit === null || !edit.saving || edit.req !== action.req) return [model, NONE]
       const list = state.list === null ? null : { ...state.list, items: state.list.items.map((item) => (item.id === action.summary.id ? action.summary : item)) }
-      return afterChange(model, { ...state, list, edit: null, notice: { kind: 'saved' } })
+      return afterChange(model, { ...state, list, edit: null, notice: { kind: 'saved' } }, { patched: action.summary })
     }
     case 'journal/patch-fail': {
       const edit = state.edit
@@ -1483,7 +1555,7 @@ function journalStep(model: Model, state: JournalState, action: Action): Step | 
     }
     case 'journal/revisit': {
       const item = journalItem(state, action.id)
-      if (item === undefined || !revisitOffered(ctx)) return [model, NONE]
+      if (item === undefined || !revisitOffered(ctx) || journalBusy(state)) return [model, NONE]
       // A conversation under way would be replaced: ask first.
       if (state.back !== null && hasUserMessage(state.back.session, state.back.pending)) {
         return step(model, { type: 'confirm/open', kind: 'revisit-restart', summary: item.id })
@@ -1766,7 +1838,11 @@ function step(model: Model, action: Action): Step {
       const has = top.selected.includes(action.id)
       if (!has && top.selected.length >= MAX_REVISIT_IDS) return [model, NONE]
       const selected = has ? top.selected.filter((id) => id !== action.id) : [...top.selected, action.id]
-      return [replaceTop(model, { ...top, selected }), NONE]
+      // A record chosen from a search or a later page: its name goes into the page's diary now, for
+      // «Ви повертаєтеся до:» — the list it came from may be gone by «Продовжити».
+      const item = has ? undefined : top.list?.items.find((x) => x.id === action.id)
+      const named: Model = item !== undefined && ctx.diary.status === 'ok' ? { ...model, ctx: { ...ctx, diary: loaded(keepChosen(ctx.diary.value, [item.id], [item])) } } : model
+      return [replaceTop(named, { ...top, selected }), NONE]
     }
     case 'revisit/search': {
       const top = topPick(model)
@@ -1783,7 +1859,15 @@ function step(model: Model, action: Action): Step {
     }
     case 'revisit/list-ok': {
       const firstPage = action.q === '' && action.cursor === null
-      const next: Model = firstPage ? { ...model, ctx: { ...ctx, diary: loaded(action.diary) } } : model
+      let next: Model = model
+      if (firstPage) {
+        // The first page is the page's diary now; the records chosen keep their names in it. Not after
+        // a 404: one of them is gone, and the page shows the diary as the server has it.
+        const top = topPick(model)
+        const chosen = action.purpose === 'pick' ? [...(state.s === 'chat' ? state.session.revisitIds : []), ...(top?.selected ?? [])] : []
+        const from = [...(ctx.diary.status === 'ok' ? ctx.diary.value.items : []), ...(top?.list?.items ?? [])]
+        next = { ...model, ctx: { ...ctx, diary: loaded(keepChosen(action.diary, chosen, from)) } }
+      }
       if (action.purpose === 'pick-404') {
         if (state.s !== 'chat') return [next, NONE]
         // 404 and the diary is empty now: no picker, a block instead of the composer (§3.6).

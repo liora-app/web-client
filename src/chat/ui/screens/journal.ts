@@ -10,7 +10,7 @@
 import { maskPausedLine } from '../../core/helplines'
 import { shiftDay, type EntryForm } from '../../core/journal'
 import { MAX_BULLETS } from '../../core/limits'
-import { revisitOffered, type Action, type JournalState, type Model } from '../../core/state'
+import { journalBusy, revisitOffered, type Action, type JournalState, type Model } from '../../core/state'
 import type { SummaryOut } from '../../core/types'
 import {
   DRAFT_TEXT,
@@ -273,6 +273,8 @@ export function journalScreen(dispatch: (action: Action) => void): JournalScreen
       at < 0 ? undefined : (before.slice(at + 1).find((li) => kept.has(li.dataset.id!)) ?? before.slice(0, at).reverse().find((li) => kept.has(li.dataset.id!)) ?? null)
     let previous: HTMLLIElement | null = null
     const offered = last !== null && revisitOffered(last.ctx)
+    // A PATCH or a DELETE on its way: the ways off the page wait for its answer (the core holds them).
+    const busy = journalBusy(state)
     const editId = state.edit?.form.id ?? null
     for (const item of items) {
       let li = rows.get(item.id)
@@ -289,7 +291,8 @@ export function journalScreen(dispatch: (action: Action) => void): JournalScreen
       if (editingThis) renderEdit(li, state)
       else li.querySelector<HTMLElement>('.entry__fields')!.replaceChildren()
       show(li.querySelector<HTMLElement>('[data-slot="revisit"]')!, offered)
-      setAttr(li.querySelector<HTMLElement>('[data-act="entry-edit"]')!, 'aria-disabled', editId !== null ? 'true' : null)
+      setAttr(li.querySelector<HTMLElement>('[data-act="entry-revisit"]')!, 'aria-disabled', busy ? 'true' : null)
+      setAttr(li.querySelector<HTMLElement>('[data-act="entry-edit"]')!, 'aria-disabled', editId !== null || state.deleting === item.id ? 'true' : null)
       const remove = li.querySelector<HTMLElement>('[data-act="entry-delete"]')!
       setAttr(remove, 'aria-disabled', state.deleting !== null && state.deleting !== item.id ? 'true' : null)
       setAttr(remove, 'aria-busy', state.deleting === item.id ? 'true' : null)
@@ -358,6 +361,7 @@ export function journalScreen(dispatch: (action: Action) => void): JournalScreen
         shownIssues = null
       }
       setText(el('journal-back-label'), state.back !== null ? JOURNAL_BACK : JOURNAL_NEW)
+      setAttr(root.querySelector<HTMLElement>('[data-act="journal-back"]')!, 'aria-disabled', journalBusy(state) ? 'true' : null)
       // An empty diary: one line, nothing to search, filter or count.
       const empty = state.list !== null && state.list.items.length === 0 && state.q === '' && state.tag === null && !state.loading && !state.failed
       renderWeek(state, empty)
@@ -369,17 +373,34 @@ export function journalScreen(dispatch: (action: Action) => void): JournalScreen
       const nothing = state.list !== null && state.list.items.length === 0 && !state.loading && !state.failed
       setText(el('journal-empty'), nothing ? (empty ? JOURNAL_EMPTY : journalNothing(state.q)) : '')
       show(el('journal-empty'), nothing)
-      renderList(state)
       const more = el('journal-more')
+      // «Показати ще» pressed for the last page goes away with it: the focus goes on to the first
+      // record it brought, not back up to the heading.
+      const fromMore = more.contains(document.activeElement)
+      const shownBefore = list.querySelectorAll('li.entry').length
+      renderList(state)
       show(more, state.list?.nextCursor != null && !state.failed)
       setAttr(more.querySelector('button')!, 'aria-disabled', state.loading ? 'true' : null)
+      if (fromMore && more.hidden) {
+        // …or, when that page failed, to «Спробувати ще раз» that stands in its place.
+        const next = state.failed
+          ? el('journal-retry').querySelector<HTMLElement>('button')
+          : list.querySelectorAll<HTMLLIElement>('li.entry')[shownBefore]?.querySelector<HTMLElement>('[data-act="entry-edit"]')
+        next?.focus()
+      }
 
       // Focus: into the form when it opens; back to its «Редагувати» when it closes; onto a thesis
       // field just added.
       const editId = state.edit?.form.id ?? null
       if (editId !== editing) {
-        if (editId !== null) entryOf(editId)?.querySelector<HTMLElement>('.entry__title-input')?.focus()
-        else if (editing !== null) entryOf(editing)?.querySelector<HTMLElement>('[data-act="entry-edit"]')?.focus()
+        if (editId !== null) {
+          // The caret at the start: a long title in the one-line field then shows its beginning (on a
+          // phone the end alone, cut at its first letter, read as a broken field).
+          const field = entryOf(editId)?.querySelector<HTMLInputElement>('.entry__title-input')
+          field?.focus()
+          field?.setSelectionRange(0, 0)
+          if (field) field.scrollLeft = 0
+        } else if (editing !== null) entryOf(editing)?.querySelector<HTMLElement>('[data-act="entry-edit"]')?.focus()
         editing = editId
         shownIssues = state.edit?.issues ?? null
       }

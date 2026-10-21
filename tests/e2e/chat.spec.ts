@@ -3338,6 +3338,8 @@ test.describe('diary', () => {
     await expect(entries(page).locator('.entry__title')).toHaveText([ENTRIES[2]!.title, LATER.title])
     expect(listCalls(api).at(-1)!.query.toString()).toBe(`limit=20&cursor=c-2&q=${encodeURIComponent('сон')}&tag=${WORK.id}`)
     await expect(page.locator('[data-el="journal-more"]')).toBeHidden()
+    // The last page took «Показати ще» away: the focus went on to the first record it brought.
+    await expect(entryTitled(page, LATER.title).getByRole('button', { name: 'Редагувати' })).toBeFocused()
 
     // Enter goes at once; nothing found is one line, and the week and the tools stay.
     await search.fill('кава')
@@ -3370,6 +3372,8 @@ test.describe('diary', () => {
     await edit.click()
     await expect(title).toBeFocused()
     await expect(title).toHaveValue(target.title)
+    // The caret at the start: a long title shows its beginning, not its end.
+    expect(await title.evaluate((field: HTMLInputElement) => [field.selectionStart, field.scrollLeft])).toEqual([0, 0])
     await expect(row.getByRole('textbox', { name: 'Теза 1' })).toHaveValue(target.bullets[0]!)
     await expect(tags).toHaveValue('робота, стосунки')
     await expect(entryTitled(page, ENTRIES[1]!.title).getByRole('button', { name: 'Редагувати' })).toHaveAttribute('aria-disabled', 'true')
@@ -3417,10 +3421,11 @@ test.describe('diary', () => {
     await expect(saved.locator('.entry__bullets li')).toHaveCount(3)
     await expect(saved.locator('.entry__themes')).toHaveText('#робота #нова тема')
     await expect(saved.getByRole('button', { name: 'Редагувати' })).toBeFocused()
-    // A theme may have gone, the week may count differently, the picker reads the diary: all again.
+    // A theme may have gone, the week may count differently: both again. The page's diary (the
+    // picker and «Ви повертаєтеся до:» read it) takes the new record in place, without a GET.
     await expect.poll(() => api.count('GET /tags')).toBe(themesBefore + 1)
     await expect.poll(() => api.count('GET /reviews/weekly')).toBe(weeksBefore + 1)
-    await expect.poll(() => api.count('GET /summaries')).toBe(diaryBefore + 1)
+    expect(api.count('GET /summaries')).toBe(diaryBefore)
   })
 
   test('#67 403 consent_required on «Зберегти»: the consent says the changes wait; after it the same PATCH goes by itself and the diary comes back', async ({ page, api }) => {
@@ -3617,6 +3622,58 @@ test.describe('diary', () => {
     await entries(page).first().getByRole('button', { name: 'Редагувати' }).click()
     await expect(entries(page).first().getByRole('textbox', { name: 'Назва' })).toBeFocused()
     expect(await cutOffAtEdges(page), 'the edit form').toEqual([])
+  })
+
+  test('#74 a change on its way holds the page: «До розмови» and «Повернутися до цього» wait for its answer; an edit keeps its row through a search; the record goes back under its new name', async ({ page, api }) => {
+    const target = ENTRIES[0]!
+    const key = `PATCH /summaries/${target.id}`
+    const held = gate()
+    api.on(key, async (call) => {
+      await held.wait
+      return { json: patched(target, call.body) }
+    })
+    await openChat(page)
+    await exchange(page, USER)
+    await openDiary(page)
+    const row = entryTitled(page, target.title)
+    await row.getByRole('button', { name: 'Редагувати' }).click()
+    const title = row.getByRole('textbox', { name: 'Назва' })
+    await title.fill('Синтетична назва після правки')
+    // A search that does not find the record under edit: its row and what was typed stay, first.
+    const search = page.getByRole('searchbox', { name: 'Пошук' })
+    await search.fill('сон')
+    await search.press('Enter')
+    await expect.poll(() => listCalls(api).length).toBe(1)
+    await expect(entries(page)).toHaveCount(3)
+    await expect(entries(page).first().getByRole('textbox', { name: 'Назва' })).toHaveValue('Синтетична назва після правки')
+    await expect(entries(page).nth(1).locator('.entry__title')).toHaveText(ENTRIES[1]!.title)
+
+    const pageDiary = (): number => api.of('GET /summaries').filter((call) => call.query.toString() === 'limit=20').length
+    const before = pageDiary()
+    await row.getByRole('button', { name: 'Зберегти' }).click()
+    await expect.poll(() => api.count(key)).toBe(1)
+    // On its way: the ways off the page say they wait, and pressed, they do nothing.
+    const back = page.locator('[data-act="journal-back"]')
+    const revisit = entryTitled(page, ENTRIES[1]!.title).getByRole('button', { name: 'Повернутися до цього' })
+    await expect(back).toHaveAttribute('aria-disabled', 'true')
+    await expect(revisit).toHaveAttribute('aria-disabled', 'true')
+    for (const button of [back, revisit]) {
+      await button.focus()
+      await page.keyboard.press('Enter')
+    }
+    await expect(confirmDialog(page)).toBeHidden()
+    await expect(page.locator('section[data-screen="journal"]')).toBeVisible()
+    held.open()
+    await expect(journalStatus(page)).toHaveText(JOURNAL_SAVED)
+    await expect(back).not.toHaveAttribute('aria-disabled', 'true')
+    await expect(revisit).not.toHaveAttribute('aria-disabled', 'true')
+    expect(pageDiary()).toBe(before)
+
+    // Taken back at once: the conversation under way goes after a confirm, the new name comes along.
+    await entryTitled(page, 'Синтетична назва після правки').getByRole('button', { name: 'Повернутися до цього' }).click()
+    await confirmDialog(page).getByRole('button', { name: 'Почати нову' }).click()
+    await onScreen(page, 'chat')
+    await expect(page.locator('[data-el="revisit-names"]')).toHaveText('Синтетична назва після правки')
   })
 })
 

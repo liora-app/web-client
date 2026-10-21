@@ -302,8 +302,8 @@ export function createEffects(deps: EffectDeps): Effects {
       case 'journal-tags':
         void call(
           (signal) => api.tags(signal),
-          (tags) => ({ type: 'journal/tags-ok', tags }),
-          (error) => ({ type: 'journal/tags-fail', error }),
+          (tags) => ({ type: 'journal/tags-ok', req: effect.req, tags }),
+          (error) => ({ type: 'journal/tags-fail', req: effect.req, error }),
         )
         return
       case 'journal-week':

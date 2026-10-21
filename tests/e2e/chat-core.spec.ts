@@ -51,6 +51,7 @@ import {
   INITIAL_MODEL,
   authErrorFrom,
   canOpenJournal,
+  journalBusy,
   leaveGuard,
   llmInFlight,
   matchesSaved,
@@ -2277,6 +2278,7 @@ test.describe('state: the diary', () => {
   const listFx = (effects: readonly Effect[]) => effects.find((e): e is Extract<Effect, { type: 'journal-list' }> => e.type === 'journal-list')!
   const weekFx = (effects: readonly Effect[]) => effects.find((e): e is Extract<Effect, { type: 'journal-week' }> => e.type === 'journal-week')!
   const patchFx = (effects: readonly Effect[]) => effects.find((e): e is Extract<Effect, { type: 'patch-summary' }> => e.type === 'patch-summary')!
+  const tagsFx = (effects: readonly Effect[]) => effects.find((e): e is Extract<Effect, { type: 'journal-tags' }> => e.type === 'journal-tags')!
   const journalOf = (model: Model): JournalState => {
     expect(model.state.s).toBe('journal')
     return model.state as JournalState
@@ -2291,7 +2293,7 @@ test.describe('state: the diary', () => {
       open.model,
       { type: 'journal/list-ok', req: list.req, diary: DIARY },
       { type: 'journal/week-ok', req: week.req, review: REVIEW },
-      { type: 'journal/tags-ok', tags: [{ id: 'tg-1', name: 'день', count: 2 }] },
+      { type: 'journal/tags-ok', req: tagsFx(open.effects).req, tags: [{ id: 'tg-1', name: 'день', count: 2 }] },
     )
     return { open, model: loaded.model }
   }
@@ -2358,7 +2360,7 @@ test.describe('state: the diary', () => {
     expect(listFx(more.effects)).toMatchObject({ q: 'день', tag: 'tg-1', cursor: 'c2' })
     const page2 = run(more.model, { type: 'journal/list-ok', req: listFx(more.effects).req, diary: { items: [{ ...SUMMARY, id: 's-3' }], nextCursor: null } })
     expect(journalOf(page2.model).list?.items.map((i) => i.id)).toEqual(['s-1', 's-3'])
-    const gone = run(page2.model, { type: 'journal/tags-ok', tags: [] })
+    const gone = run(page2.model, { type: 'journal/tags-ok', req: journalOf(page2.model).tagsReq, tags: [] })
     expect(listFx(gone.effects)).toMatchObject({ tag: null, cursor: null })
     const failed = run(page2.model, { type: 'journal/search', q: 'інше' })
     const failure = run(failed.model, { type: 'journal/list-fail', req: listFx(failed.effects).req, error: apiError(0, 'network') })
@@ -2383,8 +2385,9 @@ test.describe('state: the diary', () => {
     const ok = run(changed.model, { type: 'journal/patch-ok', req: fx.req, summary: stored })
     expect(journalOf(ok.model)).toMatchObject({ edit: null, notice: { kind: 'saved' } })
     expect(journalOf(ok.model).list?.items[0]).toEqual(stored)
-    expect(types(ok.effects)).toEqual(['journal-week', 'journal-tags', 'diary'])
-    expect(ok.model.ctx.diary).toEqual({ status: 'loading' })
+    // The week and the themes again; the page's diary changes in place (no GET, no window without names).
+    expect(types(ok.effects)).toEqual(['journal-week', 'journal-tags'])
+    expect(ok.model.ctx.diary).toEqual({ status: 'ok', value: { items: [stored, DIARY.items[1]], nextCursor: null } })
   })
 
   test('PATCH errors: a 422 lands on its field; 404 drops the record; 403 consent_required from «Збережено» resumes the same PATCH', () => {
@@ -2423,7 +2426,7 @@ test.describe('state: the diary', () => {
     const done = run(accepted.model, { type: 'journal/delete-ok', id: 's-2' })
     expect(journalOf(done.model)).toMatchObject({ deleting: null, notice: { kind: 'deleted' } })
     expect(journalOf(done.model).list?.items.map((i) => i.id)).toEqual(['s-1'])
-    expect(types(done.effects)).toEqual(['journal-week', 'journal-tags', 'diary'])
+    expect(types(done.effects)).toEqual(['journal-week', 'journal-tags'])
     const missing = run(accepted.model, { type: 'journal/delete-fail', id: 's-2', error: apiError(404, 'not_found') })
     expect(journalOf(missing.model).list?.items.map((i) => i.id)).toEqual(['s-1'])
     const failed = run(accepted.model, { type: 'journal/delete-fail', id: 's-2', error: apiError(0, 'network') })
@@ -2458,6 +2461,179 @@ test.describe('state: the diary', () => {
     expect(expired.model.state).toMatchObject({ s: 'session-expired', stale: { messages: chatOf(talk).session.messages } })
     const back = run(open.model, { type: 'journal/back' })
     expect(run(back.model, { type: 'journal/list-ok', req: listFx(open.effects).req, diary: DIARY }).model).toBe(back.model)
+  })
+
+  test('an edit keeps its record through a search, a theme and a filter reset: the form never loses its row', () => {
+    const { model } = opened()
+    const edit = run(model, { type: 'journal/edit', id: 's-1' })
+    const search = run(edit.model, { type: 'journal/search', q: 'інший' })
+    // The search finds only s-2: the record being edited stays, first, with its form.
+    const found = run(search.model, { type: 'journal/list-ok', req: listFx(search.effects).req, diary: { items: [DIARY.items[1]!], nextCursor: 'c2' } })
+    expect(journalOf(found.model).list?.items.map((i) => i.id)).toEqual(['s-1', 's-2'])
+    expect(journalOf(found.model).edit?.form.id).toBe('s-1')
+    // «Показати ще» does not repeat it.
+    const more = run(found.model, { type: 'journal/more' })
+    const page2 = run(more.model, { type: 'journal/list-ok', req: listFx(more.effects).req, diary: { items: [SUMMARY], nextCursor: null } })
+    expect(journalOf(page2.model).list?.items.map((i) => i.id)).toEqual(['s-1', 's-2'])
+    // A theme, then the theme gone (its last record went): the record under edit stays each time.
+    const themed = run(found.model, { type: 'journal/tag', id: 'tg-1' })
+    const themePage = run(themed.model, { type: 'journal/list-ok', req: listFx(themed.effects).req, diary: { items: [], nextCursor: null } })
+    expect(journalOf(themePage.model).list?.items.map((i) => i.id)).toEqual(['s-1'])
+    const goneTheme = run(themePage.model, { type: 'journal/tags-ok', req: journalOf(themePage.model).tagsReq, tags: [] })
+    expect(journalOf(goneTheme.model).tag).toBeNull()
+    const reset = run(goneTheme.model, { type: 'journal/list-ok', req: listFx(goneTheme.effects).req, diary: { items: [DIARY.items[1]!], nextCursor: null } })
+    expect(journalOf(reset.model).list?.items.map((i) => i.id)).toEqual(['s-1', 's-2'])
+    // «Зберегти» still finds it: what was typed goes out.
+    const typed = run(reset.model, { type: 'journal/edit-update', form: { ...journalOf(reset.model).edit!.form, title: 'Набране під час пошуку' } }, { type: 'journal/edit-save' })
+    expect(patchFx(typed.effects)).toMatchObject({ id: 's-1', body: { title: 'Набране під час пошуку' } })
+    // Closed, it is a record like any other: the next search leaves it out.
+    const closed = run(found.model, { type: 'journal/edit-cancel' }, { type: 'journal/search', q: 'інший запис' })
+    const after = run(closed.model, { type: 'journal/list-ok', req: listFx(closed.effects).req, diary: { items: [DIARY.items[1]!], nextCursor: null } })
+    expect(journalOf(after.model).list?.items.map((i) => i.id)).toEqual(['s-2'])
+  })
+
+  test('theme answers are stamped: an older GET /tags that lands last changes nothing', () => {
+    const { model } = opened()
+    const edit = run(model, { type: 'journal/edit', id: 's-1' })
+    const form = journalOf(edit.model).edit!.form
+    const save = run(edit.model, { type: 'journal/edit-update', form: { ...form, tags: 'сон' } }, { type: 'journal/edit-save' })
+    const patched = run(save.model, { type: 'journal/patch-ok', req: patchFx(save.effects).req, summary: { ...SUMMARY, tags: [{ id: 'tg-2', name: 'сон', source: 'user' }] } })
+    const first = tagsFx(patched.effects)
+    const removed = run(patched.model, { type: 'confirm/open', kind: 'delete-summary', summary: 's-2' }, { type: 'confirm/accept' }, { type: 'journal/delete-ok', id: 's-2' })
+    const second = tagsFx(removed.effects)
+    expect(second.req).not.toBe(first.req)
+    const latest = run(removed.model, { type: 'journal/tags-ok', req: second.req, tags: [{ id: 'tg-2', name: 'сон', count: 1 }] })
+    // The PATCH's answer, older, comes last: «день» does not come back.
+    const stale = run(latest.model, { type: 'journal/tags-ok', req: first.req, tags: [{ id: 'tg-1', name: 'день', count: 1 }, { id: 'tg-2', name: 'сон', count: 1 }] })
+    expect(stale.model).toBe(latest.model)
+    expect(run(latest.model, { type: 'journal/tags-fail', req: first.req, error: apiError(0, 'network') }).model).toBe(latest.model)
+  })
+
+  test('after a PATCH or a DELETE the page’s diary changes in place: no window where it is loading, no extra GET', () => {
+    const { model } = opened()
+    const edit = run(model, { type: 'journal/edit', id: 's-2' })
+    const form = journalOf(edit.model).edit!.form
+    const save = run(edit.model, { type: 'journal/edit-update', form: { ...form, title: 'Нова назва' } }, { type: 'journal/edit-save' })
+    const stored = { ...DIARY.items[1]!, title: 'Нова назва', edited_at: '2026-10-08T10:00:00Z' }
+    const ok = run(save.model, { type: 'journal/patch-ok', req: patchFx(save.effects).req, summary: stored })
+    expect(types(ok.effects)).toEqual(['journal-week', 'journal-tags'])
+    expect(ok.model.ctx.diary).toEqual({ status: 'ok', value: { items: [SUMMARY, stored], nextCursor: null } })
+    const removed = run(ok.model, { type: 'confirm/open', kind: 'delete-summary', summary: 's-1' }, { type: 'confirm/accept' }, { type: 'journal/delete-ok', id: 's-1' })
+    expect(types(removed.effects)).toEqual(['delete-summary', 'journal-week', 'journal-tags'])
+    expect(removed.model.ctx.diary).toEqual({ status: 'ok', value: { items: [stored], nextCursor: null } })
+    // «Повернутися до цього» right after: the name is there at once.
+    const go = run(removed.model, { type: 'journal/revisit', id: 's-2' })
+    expect(go.model.ctx.diary.status === 'ok' && go.model.ctx.diary.value.items.map((i) => i.title)).toEqual(['Нова назва'])
+  })
+
+  test('a record taken back from the diary keeps its name when the picker loads a first page without it', () => {
+    const { model } = opened()
+    const later: SummaryOut = { ...SUMMARY, id: 's-9', title: 'Запис із другої сторінки' }
+    const search = run(model, { type: 'journal/search', q: 'другої' })
+    const found = run(search.model, { type: 'journal/list-ok', req: listFx(search.effects).req, diary: { items: [later], nextCursor: null } })
+    const go = run(found.model, { type: 'journal/revisit', id: 's-9' })
+    expect(chatOf(go.model).session.revisitIds).toEqual(['s-9'])
+    const names = (m: Model) => (m.ctx.diary.status === 'ok' ? m.ctx.diary.value.items.map((i) => i.id) : [])
+    expect(names(go.model)).toContain('s-9')
+    // «Змінити»: the picker's first page replaces the page's diary — the chosen record stays in it.
+    const pickerOpen = run(go.model, { type: 'revisit/open' })
+    const page = run(pickerOpen.model, { type: 'revisit/list-ok', purpose: 'pick', q: '', cursor: null, diary: DIARY })
+    expect(names(page.model)).toEqual(['s-1', 's-2', 's-9'])
+    // Chosen in the picker from a search, a record off the first page is named too.
+    const picked = run(page.model, { type: 'revisit/search', q: 'далеко' })
+    const far: SummaryOut = { ...SUMMARY, id: 's-12', title: 'Далекий запис' }
+    const farPage = run(picked.model, { type: 'revisit/list-ok', purpose: 'pick', q: 'далеко', cursor: null, diary: { items: [far], nextCursor: null } })
+    const chosen = run(farPage.model, { type: 'revisit/toggle', id: 's-12' }, { type: 'revisit/confirm' })
+    expect(chatOf(chosen.model).session.revisitIds).toEqual(['s-9', 's-12'])
+    expect(names(chosen.model)).toEqual(['s-1', 's-2', 's-9', 's-12'])
+  })
+
+  test('a page emptied by deletes with more records behind it asks for the first page again', () => {
+    const open = run(booted(), { type: 'journal/open', tz: TZ })
+    const one = run(open.model, { type: 'journal/list-ok', req: listFx(open.effects).req, diary: { items: [SUMMARY], nextCursor: 'c2' } })
+    const removed = run(one.model, { type: 'confirm/open', kind: 'delete-summary', summary: 's-1' }, { type: 'confirm/accept' }, { type: 'journal/delete-ok', id: 's-1' })
+    expect(listFx(removed.effects)).toMatchObject({ cursor: null, q: '', tag: null })
+    expect(journalOf(removed.model)).toMatchObject({ loading: true, notice: { kind: 'deleted' } })
+  })
+
+  test('«До розмови» waits while a change is on its way: its answer is the page’s to show', () => {
+    const talk = opened(answered(booted())).model
+    const edit = run(talk, { type: 'journal/edit', id: 's-1' })
+    const form = journalOf(edit.model).edit!.form
+    const save = run(edit.model, { type: 'journal/edit-update', form: { ...form, title: 'Інша' } }, { type: 'journal/edit-save' })
+    expect(run(save.model, { type: 'journal/back' }).model).toBe(save.model)
+    const deleting = run(talk, { type: 'confirm/open', kind: 'delete-summary', summary: 's-2' }, { type: 'confirm/accept' })
+    expect(run(deleting.model, { type: 'journal/back' }).model).toBe(deleting.model)
+    expect(chatOf(run(talk, { type: 'journal/back' }).model).session).toEqual(chatOf(answered(booted())).session)
+    // «Повернутися до цього» leaves the page too: it waits the same way, its confirm does not open.
+    expect(journalBusy(journalOf(save.model)) && journalBusy(journalOf(deleting.model)) && !journalBusy(journalOf(talk))).toBe(true)
+    expect(run(save.model, { type: 'journal/revisit', id: 's-2' }).model).toBe(save.model)
+    expect(run(deleting.model, { type: 'journal/revisit', id: 's-1' }).model).toBe(deleting.model)
+    const fromSaved = opened({ ...booted(), state: { s: 'saved', summary: SUMMARY } }).model
+    const busy = run(fromSaved, { type: 'confirm/open', kind: 'delete-summary', summary: 's-2' }, { type: 'confirm/accept' })
+    expect(run(busy.model, { type: 'journal/revisit', id: 's-1' }).model).toBe(busy.model)
+    // The answer lands: the way out is open again.
+    const done = run(deleting.model, { type: 'journal/delete-ok', id: 's-2' })
+    expect(run(done.model, { type: 'journal/back' }).model.state.s).toBe('chat')
+  })
+
+  test('a DELETE on its way when a PATCH asks for consent: back from it, nothing waits for its lost answer; a going record is not edited', () => {
+    const talk = opened(answered(booted())).model
+    const deleting = run(talk, { type: 'confirm/open', kind: 'delete-summary', summary: 's-2' }, { type: 'confirm/accept' })
+    expect(run(deleting.model, { type: 'journal/edit', id: 's-2' }).model).toBe(deleting.model)
+    const edit = run(deleting.model, { type: 'journal/edit', id: 's-1' })
+    const form = journalOf(edit.model).edit!.form
+    const save = run(edit.model, { type: 'journal/edit-update', form: { ...form, title: 'Інша' } }, { type: 'journal/edit-save' })
+    const resume = run(save.model, { type: 'journal/patch-fail', req: patchFx(save.effects).req, error: apiError(403, 'consent_required', { missing: ['data_processing'] }) })
+    const fresh = run(resume.model, { type: 'consents/ok', purpose: 'fresh', consents: { ...CONSENTS_OK, missing: ['data_processing'] } })
+    const granted = run(fresh.model, { type: 'consent/agree', checked: [...KINDS] }, { type: 'grant/ok', consents: CONSENTS_OK })
+    expect(journalOf(granted.model)).toMatchObject({ deleting: null, edit: { saving: true } })
+    const done = run(granted.model, { type: 'journal/patch-ok', req: patchFx(granted.effects).req, summary: { ...SUMMARY, title: 'Інша' } })
+    expect(journalBusy(journalOf(done.model))).toBe(false)
+    expect(chatOf(run(done.model, { type: 'journal/back' }).model).session.messages).toHaveLength(3)
+  })
+
+  test('the page’s diary keeps chosen names through the picker: another search, a 404’s first page; a first page still on its way is dropped', () => {
+    const go = run(opened().model, { type: 'journal/revisit', id: 's-1' })
+    const names = (m: Model) => (m.ctx.diary.status === 'ok' ? m.ctx.diary.value.items.map((i) => i.id) : [])
+    const open = run(go.model, { type: 'revisit/open' }, { type: 'revisit/list-ok', purpose: 'pick', q: '', cursor: null, diary: DIARY })
+    // Chosen from one search, then another search replaces that list: the name is already kept.
+    const far: SummaryOut = { ...SUMMARY, id: 's-12', title: 'Далекий запис' }
+    const one = run(open.model, { type: 'revisit/search', q: 'далеко' })
+    const found = run(one.model, { type: 'revisit/list-ok', purpose: 'pick', q: 'далеко', cursor: null, diary: { items: [far], nextCursor: null } }, { type: 'revisit/toggle', id: 's-12' })
+    const other = run(found.model, { type: 'revisit/search', q: 'інше' })
+    const otherList = run(other.model, { type: 'revisit/list-ok', purpose: 'pick', q: 'інше', cursor: null, diary: { items: [], nextCursor: null } }, { type: 'revisit/confirm' })
+    expect(chatOf(otherList.model).session.revisitIds).toEqual(['s-1', 's-12'])
+    expect(names(otherList.model)).toEqual(['s-1', 's-2', 's-12'])
+    // A 404: one of the chosen is gone — the first page is the diary as the server has it.
+    const gone = run(otherList.model, { type: 'revisit/list-ok', purpose: 'pick-404', q: '', cursor: null, diary: { items: [DIARY.items[1]!], nextCursor: null } })
+    expect(names(gone.model)).toEqual(['s-2'])
+
+    // Taken back while the page's first page is still on its way: the record alone, the late page dropped.
+    const loading: Model = { ...opened().model, ctx: { ...opened().model.ctx, diary: { status: 'loading' } } }
+    const early = run(loading, { type: 'journal/search', q: 'другої' })
+    const later: SummaryOut = { ...SUMMARY, id: 's-9', title: 'Запис із другої сторінки' }
+    const taken = run(early.model, { type: 'journal/list-ok', req: listFx(early.effects).req, diary: { items: [later], nextCursor: null } }, { type: 'journal/revisit', id: 's-9' })
+    expect(names(taken.model)).toEqual(['s-9'])
+    expect(names(run(taken.model, { type: 'diary/ok', diary: DIARY }).model)).toEqual(['s-9'])
+  })
+
+  test('a failed refresh of the themes keeps the pills (a filter can still be taken off); a delete that empties the page’s diary asks it again', () => {
+    const { model } = opened()
+    const filtered = run(model, { type: 'journal/tag', id: 'tg-1' })
+    const page = run(filtered.model, { type: 'journal/list-ok', req: listFx(filtered.effects).req, diary: { items: [SUMMARY], nextCursor: null } })
+    const removed = run(page.model, { type: 'confirm/open', kind: 'delete-summary', summary: 's-2' }, { type: 'confirm/accept' }, { type: 'journal/delete-ok', id: 's-2' })
+    const failed = run(removed.model, { type: 'journal/tags-fail', req: journalOf(removed.model).tagsReq, error: apiError(0, 'network') })
+    expect(journalOf(failed.model)).toMatchObject({ tag: 'tg-1', tags: { status: 'ok' } })
+    // On the way in nothing was shown yet: a failure hides the group.
+    const open = run(booted(), { type: 'journal/open', tz: TZ })
+    expect(journalOf(run(open.model, { type: 'journal/tags-fail', req: journalOf(open.model).tagsReq, error: apiError(0, 'network') }).model).tags).toEqual({ status: 'failed' })
+
+    // The page's diary had one record and more behind it: deleted, it is asked for again.
+    const one: Model = { ...model, ctx: { ...model.ctx, diary: { status: 'ok', value: { items: [SUMMARY], nextCursor: 'c2' } } } }
+    const emptied = run(one, { type: 'confirm/open', kind: 'delete-summary', summary: 's-1' }, { type: 'confirm/accept' }, { type: 'journal/delete-ok', id: 's-1' })
+    expect(types(emptied.effects)).toEqual(['delete-summary', 'journal-week', 'journal-tags', 'diary'])
+    expect(emptied.model.ctx.diary).toEqual({ status: 'loading' })
   })
 })
 
