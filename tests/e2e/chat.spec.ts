@@ -5081,6 +5081,68 @@ test.describe('what the review of phase C3 found', () => {
 
 // ── The light (needs WebGL: local only) ──────────────────────────────────────────────────────
 
+/** WCAG contrast of two computed colours ('rgb(…)' / 'rgba(…)', opaque). */
+function contrast(a: string, b: string): number {
+  const lum = (color: string): number => {
+    const [r, g, b2] = color.match(/[\d.]+/g)!.slice(0, 3).map((v) => {
+      const c = Number(v) / 255
+      return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+    }) as [number, number, number]
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b2
+  }
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x) as [number, number]
+  return (hi + 0.05) / (lo + 0.05)
+}
+
+test.describe('what the final review found', () => {
+  test('#110 «Надіслати», ready: its focus ring stands out from its fill, hovered too, in both themes', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'one engine is enough for computed styles')
+    await openChat(page)
+    for (const scheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme: scheme })
+      await composer(page).fill('Синтетичне повідомлення')
+      await composer(page).focus()
+      await page.keyboard.press('Tab')
+      const send = sendButton(page)
+      await expect(send).toBeFocused()
+      await expect(send).toHaveAttribute('data-mode', 'ready')
+      const ring = () =>
+        send.evaluate((node) => {
+          const style = getComputedStyle(node)
+          return { visible: node.matches(':focus-visible'), style: style.outlineStyle, ring: style.outlineColor, fill: style.backgroundColor }
+        })
+      for (const hovered of [false, true]) {
+        if (hovered) await send.hover()
+        await settled(page)
+        const r = await ring()
+        expect(r.visible).toBe(true)
+        expect(r.style).toBe('solid')
+        // It used to be the accent on the accent: 1.00:1 (1.33 / 1.23 hovered).
+        expect(contrast(r.ring, r.fill), `${scheme}${hovered ? ', hovered' : ''}: ${r.ring} on ${r.fill}`).toBeGreaterThanOrEqual(3)
+      }
+      await page.mouse.move(0, 0)
+    }
+  })
+
+  test('#111 forced colours: the message field in focus has a Highlight ring, not just the caret', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'one engine is enough for computed styles')
+    await openChat(page)
+    await composer(page).focus()
+    const ring = () =>
+      composer(page).evaluate((node) => {
+        const style = getComputedStyle(node)
+        return { style: style.outlineStyle, width: parseFloat(style.outlineWidth) }
+      })
+    // Its own focus is a doubled border and a shadow: no ring.
+    expect((await ring()).style).toBe('none')
+    await page.emulateMedia({ forcedColors: 'active' })
+    const forced = await ring()
+    expect(forced.style).toBe('solid')
+    expect(forced.width).toBeGreaterThanOrEqual(2)
+    await page.emulateMedia({ forcedColors: 'none' })
+  })
+})
+
 test.describe('the light', () => {
   test.use({ webgl: true })
 

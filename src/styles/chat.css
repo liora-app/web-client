@@ -2176,6 +2176,14 @@ html[data-screen='chat'] .chat__text {
   background: var(--color-accent-strong);
 }
 
+/* Ready, the button is filled with the accent — the focus colour itself — and its ring lies inside
+   the fill (offset -2px above): there the ring takes the colour of the arrow on that fill (4.96:1
+   light, 11.46:1 dark; more on the hover fill), or it would vanish into it. Outside, it would run
+   into the pill's border on a phone (4 px away). */
+.composer__send[data-mode='ready']:focus-visible {
+  outline-color: var(--color-on-accent);
+}
+
 /* «Зупинити»: the same place, a square in the accent outline. */
 .composer__send[data-mode='stop'] {
   border-color: var(--color-accent-line);
@@ -4206,6 +4214,15 @@ html:has(dialog[open]:is(.sheet--shelter, .sheet--tool[data-shelter])) {
   .shelter__button,
   .breathe__circle {
     border: 1px solid CanvasText;
+  }
+
+  /* The message field's focus is its doubled border and its shadow, and forced colours take both
+     away (the border turns CanvasText above, a shadow is not drawn): a Highlight ring instead, or
+     only the caret would say where the focus is. */
+  .composer__input:focus-visible,
+  .composer__input:focus {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
   }
 
   /* The chosen cell and word of «Як ви зараз?» (spec §3.13). */
