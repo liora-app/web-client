@@ -94,6 +94,8 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
   const status = el('composer-status')
   const talk = el<HTMLOListElement>('talk')
   const starterBox = el('starters')
+  /** «Як ви зараз?» (§3.13): after the starters, in the same row; it opens the check-in. */
+  const checkin = el('checkin')
   let scenarioKey = ''
   let starterKey = ''
   /** The last render showed a conversation already under way (the head gone). */
@@ -166,6 +168,7 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
         setText(chip, line)
         starterBox.append(chip)
       }
+      starterBox.append(checkin)
     }
     show(starterBox, visible && lines.length > 0)
   }

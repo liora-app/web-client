@@ -3679,6 +3679,603 @@ test.describe('diary', () => {
   })
 })
 
+// ── The self-help tools (spec §3.13): breathing, grounding, the check-in, the shelter ─────────
+
+const toolsButton = (page: Page): Locator => page.getByRole('button', { name: 'Інструменти' })
+const breatheDialog = (page: Page): Locator => page.locator('#breathe-dialog')
+const groundDialog = (page: Page): Locator => page.locator('#ground-dialog')
+const moodDialog = (page: Page): Locator => page.locator('#mood-dialog')
+const shelterDialog = (page: Page): Locator => page.locator('#shelter-dialog')
+const presence = (page: Page): Locator => page.locator('.presence')
+
+/** «+ Інструменти» → the item, from the keyboard: Enter opens the menu, the item takes Enter. */
+async function openTool(page: Page, name: string): Promise<void> {
+  await toolsButton(page).focus()
+  await page.keyboard.press('Enter')
+  const item = page.locator('#composer-tools').getByRole('button', { name })
+  await expect(item).toBeVisible()
+  await item.focus()
+  await page.keyboard.press('Enter')
+}
+
+/** Every write to the browser's storage from now on, in the page's own words (an init script). */
+async function watchStorage(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const w = window as unknown as { __writes: string[] }
+    w.__writes = []
+    const set = Storage.prototype.setItem
+    Storage.prototype.setItem = function (this: Storage, key: string, value: string): void {
+      w.__writes.push(`${this === window.sessionStorage ? 'session' : 'local'}:${key}`)
+      set.call(this, key, value)
+    }
+    const open = indexedDB.open.bind(indexedDB)
+    indexedDB.open = ((name: string, version?: number) => {
+      w.__writes.push(`idb:${name}`)
+      return open(name, version)
+    }) as typeof indexedDB.open
+    if ('caches' in window) {
+      const cacheOpen = caches.open.bind(caches)
+      caches.open = (name: string) => {
+        w.__writes.push(`cache:${name}`)
+        return cacheOpen(name)
+      }
+    }
+  })
+}
+const storageWrites = (page: Page): Promise<string[]> => page.evaluate(() => [...(window as unknown as { __writes: string[] }).__writes])
+
+/** Requests the page makes from now on, fonts aside (part of the page, not data). */
+function countRequests(page: Page): () => string[] {
+  const seen: string[] = []
+  const listener = (request: { url(): string }): void => {
+    const url = request.url()
+    if (!/\.woff2?(\?|$)/.test(url)) seen.push(url)
+  }
+  page.on('request', listener)
+  return () => seen
+}
+
+test.describe('tools', () => {
+  test('#75 ★ each tool opens from «+ Інструменти» by keyboard as a dialog; the focus stays inside; Esc closes it and gives the focus back to «Інструменти»', async ({ page }) => {
+    await openChat(page)
+    for (const [name, dialog, title] of [
+      ['Подихати хвилину', breatheDialog(page), 'Подихати хвилину'],
+      ['Заземлення 5-4-3-2-1', groundDialog(page), 'Заземлення 5-4-3-2-1'],
+      ['Як ви зараз?', moodDialog(page), 'Як ви зараз?'],
+      ['В укритті', shelterDialog(page), 'Спершу — безпека'],
+    ] as const) {
+      await openTool(page, name)
+      await expect(dialog, name).toBeVisible()
+      // A modal dialog with its name; the menu it came from is closed.
+      expect(await dialog.evaluate((node) => (node as HTMLDialogElement).open && node.matches(':modal'))).toBe(true)
+      await expect(page.getByRole('dialog', { name: title })).toBeVisible()
+      await expect(page.locator('#composer-tools')).toBeHidden()
+      // The focus starts inside, and Tab never reaches the page under it: past the last control a
+      // native modal lets it out only to the browser's own UI (no element of the page), then back.
+      expect(await dialog.evaluate((node) => node.contains(document.activeElement))).toBe(true)
+      let inside = 0
+      for (let i = 0; i < 12; i++) {
+        await page.keyboard.press('Tab')
+        const where = await dialog.evaluate((node) => (node.contains(document.activeElement) ? 'dialog' : document.activeElement === document.body ? 'browser' : 'page'))
+        expect(where, `${name}: Tab ${i + 1}`).not.toBe('page')
+        if (where === 'dialog') inside++
+      }
+      expect(inside, name).toBeGreaterThanOrEqual(6)
+      await page.keyboard.press('Escape')
+      await expect(dialog, name).toBeHidden()
+      await expect(toolsButton(page), name).toBeFocused()
+    }
+    // Opened by pointer, «Закрити» closes it the same way.
+    await toolsButton(page).click()
+    await page.locator('#composer-tools').getByRole('button', { name: 'Заземлення 5-4-3-2-1' }).click()
+    await expect(groundDialog(page)).toBeVisible()
+    await expect(page.locator('#composer-tools')).toBeHidden()
+    await groundDialog(page).getByRole('button', { name: 'Закрити' }).click()
+    await expect(groundDialog(page)).toBeHidden()
+    await expect(toolsButton(page)).toBeFocused()
+  })
+
+  test('#76 ★ «Подихати хвилину»: in 4 s, out 6 s, the step said once; a minute, then «Ще хвилину»; «Стоп» ends it; the light breathes with it; the cyclic sigh', async ({ page, api }) => {
+    await page.clock.install()
+    await openChat(page)
+    const dialog = breatheDialog(page)
+    await openTool(page, 'Подихати хвилину')
+    const start = dialog.getByRole('button', { name: 'Почати' })
+    await expect(start).toBeFocused()
+    await expect(dialog).toContainText('Вдих на 4, видих на 6. Можна зупинитися будь-коли.')
+    await expect(presence(page)).toHaveAttribute('data-presence', 'breathing')
+    await expect(page.locator('[data-presence-label]')).toHaveText('Повільне дихання')
+    const calls = api.calls.length
+    await page.keyboard.press('Enter')
+    const stop = dialog.getByRole('button', { name: 'Стоп' })
+    await expect(stop).toBeFocused()
+    const status = dialog.locator('[data-el="breathe-status"]')
+    const count = dialog.locator('[data-el="breathe-count"]')
+    await expect(status).toHaveText('Вдих')
+    await expect(dialog.locator('[data-el="breathe-phase"]')).toHaveText('Вдих')
+    await expect(count).toHaveText('4')
+    await status.evaluate((node) => {
+      const w = window as unknown as { __said: string[] }
+      w.__said = []
+      new MutationObserver(() => w.__said.push(node.textContent ?? '')).observe(node, { childList: true, characterData: true, subtree: true })
+    })
+    await page.clock.runFor(1100)
+    await expect(count).toHaveText('3')
+    await page.clock.runFor(3000)
+    await expect(status).toHaveText('Видих')
+    await expect(count).toHaveText('6')
+    await page.clock.runFor(6000)
+    await expect(status).toHaveText('Вдих')
+    // Said when the step changes, never every second (the seconds are not live).
+    expect(await page.evaluate(() => (window as unknown as { __said: string[] }).__said)).toEqual(['Видих', 'Вдих'])
+    expect(await count.evaluate((node) => node.closest('[role="status"], [aria-live]'))).toBeNull()
+    // The minute: six breaths, then a line and «Ще хвилину»; «Стоп» is «Закрити» again.
+    await page.clock.runFor(50_000)
+    await expect(dialog.locator('[data-el="breathe-done"]')).toBeVisible()
+    await expect(dialog.locator('[data-el="breathe-done"] p').first()).toHaveText('Хвилина минула.')
+    await expect(status).toHaveText('Хвилина минула.')
+    await expect(dialog.getByRole('button', { name: 'Закрити' })).toBeFocused()
+    await dialog.getByRole('button', { name: 'Ще хвилину' }).click()
+    await expect(stop).toBeFocused()
+    await expect(status).toHaveText('Вдих')
+    // «Стоп» ends the exercise: the dialog closes, the focus is back, the light idle again.
+    await stop.click()
+    await expect(dialog).toBeHidden()
+    await expect(toolsButton(page)).toBeFocused()
+    await expect(presence(page)).toHaveAttribute('data-presence', 'idle')
+    expect(await dialog.evaluate((node) => node.hasAttribute('data-phase'))).toBe(false)
+    // The cyclic sigh: in, a short second sip, a long out. Reopened, it starts over as slow breathing.
+    await openTool(page, 'Подихати хвилину')
+    const sigh = dialog.getByRole('switch', { name: 'Циклічне зітхання' })
+    await expect(sigh).toHaveAttribute('aria-checked', 'false')
+    await sigh.click()
+    await expect(sigh).toHaveAttribute('aria-checked', 'true')
+    await expect(dialog).toContainText('Вдих носом, ще короткий довдих — і довгий повільний видих.')
+    await start.click()
+    await expect(status).toHaveText('Вдих')
+    await page.clock.runFor(2100)
+    await expect(status).toHaveText('Ще трохи')
+    await page.clock.runFor(1000)
+    await expect(status).toHaveText('Видих')
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    await openTool(page, 'Подихати хвилину')
+    await expect(sigh).toHaveAttribute('aria-checked', 'false')
+    await expect(start).toBeVisible()
+    await page.keyboard.press('Escape')
+    // Nothing asked of the server for any of it.
+    expect(api.calls.length).toBe(calls)
+  })
+
+  test('#77 without motion the minute is a count: «Пауза» and prefers-reduced-motion; with motion the circle breathes and the count steps aside', async ({ page }) => {
+    await openChat(page)
+    const dialog = breatheDialog(page)
+    const count = dialog.locator('[data-el="breathe-count"]')
+    const circle = dialog.locator('.breathe__circle')
+    const moving = (): Promise<{ transition: string; animations: number }> =>
+      dialog.evaluate((node) => ({
+        transition: getComputedStyle(node.querySelector('.breathe__circle')!).transitionProperty,
+        animations: node.getAnimations({ subtree: true }).filter((a) => a.playState === 'running').length,
+      }))
+    const run = async (): Promise<void> => {
+      await openTool(page, 'Подихати хвилину')
+      await dialog.getByRole('button', { name: 'Почати' }).click()
+      await expect(dialog.locator('[data-el="breathe-phase"]')).toHaveText('Вдих')
+    }
+    // Motion on: the circle grows on the in-breath, the count is not shown.
+    await expect(html(page)).toHaveAttribute('data-motion', 'on')
+    await run()
+    await expect(count).toBeHidden()
+    expect((await moving()).transition).toContain('scale')
+    await expect.poll(() => circle.evaluate((node) => getComputedStyle(node).scale)).not.toBe('0.62')
+    await page.keyboard.press('Escape')
+    // «Пауза»: the count in words and numbers, nothing moves.
+    await page.locator('[data-motion-toggle]').click()
+    await expect(html(page)).toHaveAttribute('data-motion', 'off')
+    await run()
+    await expect(count).toBeVisible()
+    await expect(count).toHaveText(/^[1-4]$/)
+    expect(await moving()).toEqual({ transition: 'all', animations: 0 })
+    expect(await circle.evaluate((node) => getComputedStyle(node).scale)).toBe('none')
+    await page.keyboard.press('Escape')
+    // Motion allowed on the page, but the system asks for less: the count again.
+    await page.locator('[data-motion-toggle]').click()
+    await expect(html(page)).toHaveAttribute('data-motion', 'on')
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await run()
+    await expect(count).toBeVisible()
+    expect(await circle.evaluate((node) => getComputedStyle(node).scale)).toBe('none')
+    expect((await moving()).animations).toBe(0)
+    await page.keyboard.press('Escape')
+  })
+
+  test('#78 «Заземлення 5-4-3-2-1»: one step at a time, «Далі» and «Назад», no field to type in; the end offers «Готово» and «Ще раз»', async ({ page }) => {
+    await openChat(page)
+    const dialog = groundDialog(page)
+    await openTool(page, 'Заземлення 5-4-3-2-1')
+    await expect(dialog.locator('input, textarea, [contenteditable]')).toHaveCount(0)
+    const next = dialog.getByRole('button', { name: 'Далі' })
+    const back = dialog.getByRole('button', { name: 'Назад' })
+    const status = dialog.locator('[data-el="ground-status"]')
+    await expect(next).toBeFocused()
+    await expect(back).toBeHidden()
+    await expect(dialog.locator('[data-el="ground-progress"]')).toHaveText('Крок 1 з 6')
+    await expect(dialog.locator('.ground__step:not([hidden]) .ground__text')).toHaveText('Повільно видихніть. Відчуйте ступні на підлозі.')
+    // The shelter first, in the words of the brief (never the stop-list word for an alert).
+    await expect(dialog.locator('[data-el="ground-safety"]')).toHaveText('Якщо зараз повітряна небезпека — спершу в укриття. Вправу можна зробити там.')
+    await page.keyboard.press('Enter')
+    await expect(next).toBeFocused()
+    await expect(dialog.locator('.ground__step:not([hidden]) .ground__num')).toHaveText('5')
+    await expect(status).toHaveText('Крок 2 з 6. Знайдіть поглядом 5 речей довкола.')
+    await expect(dialog.locator('[data-el="ground-safety"]')).toBeHidden()
+    await back.click()
+    await expect(dialog.locator('[data-el="ground-progress"]')).toHaveText('Крок 1 з 6')
+    // «Назад» is gone on the first step: the focus goes to «Далі», not to <body>.
+    await expect(next).toBeFocused()
+    const numbers: string[] = []
+    for (let i = 0; i < 5; i++) {
+      await page.keyboard.press('Enter')
+      numbers.push((await dialog.locator('.ground__step:not([hidden]) .ground__num').textContent()) ?? '')
+    }
+    expect(numbers).toEqual(['5', '4', '3', '2', '1'])
+    await page.keyboard.press('Enter')
+    await expect(dialog.locator('.ground__step:not([hidden]) .ground__text')).toHaveText('Ви тут. Рухайтеся далі у своєму темпі.')
+    await expect(status).toHaveText('Ви тут. Рухайтеся далі у своєму темпі.')
+    await expect(dialog.getByRole('button', { name: 'Готово' })).toBeFocused()
+    await dialog.getByRole('button', { name: 'Ще раз' }).click()
+    await expect(next).toBeFocused()
+    await expect(dialog.locator('[data-el="ground-progress"]')).toHaveText('Крок 1 з 6')
+    for (let i = 0; i < 6; i++) await page.keyboard.press('Enter')
+    await page.keyboard.press('Enter')
+    await expect(dialog).toBeHidden()
+    await expect(toolsButton(page)).toBeFocused()
+    // Opened again: from the first step.
+    await openTool(page, 'Заземлення 5-4-3-2-1')
+    await expect(dialog.locator('[data-el="ground-progress"]')).toHaveText('Крок 1 з 6')
+    await expect(status).toHaveText('')
+  })
+
+  test('#79 ★ «Як ви зараз?»: a cell, then a word; «Додати до розмови» puts a sentence into the field and sends nothing; «А зараз?» on the theses and «Збережено» says before → after in words', async ({ page, api }) => {
+    await watchStorage(page)
+    await openChat(page)
+    const dialog = moodDialog(page)
+    // From the new conversation: the chip beside the starters.
+    await page.locator('[data-el="starters"]').getByRole('button', { name: 'Як ви зараз?' }).click()
+    await expect(dialog).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Як ви зараз?' })).toBeVisible()
+    const cells = dialog.locator('.mood__cell')
+    await expect(cells).toHaveText(['Багато сил, неприємно', 'Багато сил, приємно', 'Мало сил, неприємно', 'Мало сил, приємно'])
+    await expect(cells.first()).toBeFocused()
+    await expect(dialog.locator('.mood__word:visible')).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: 'Готово' })).toBeHidden()
+    await dialog.getByRole('button', { name: 'Багато сил, неприємно' }).click()
+    await expect(cells.first()).toHaveAttribute('aria-pressed', 'true')
+    await expect(dialog.locator('.mood__word:visible')).toHaveText(['неспокій', 'роздратування', 'злість', 'напруга', 'страх', 'розгубленість'])
+    await dialog.getByRole('button', { name: 'напруга', exact: true }).click()
+    await expect(dialog.getByRole('button', { name: 'напруга', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await dialog.getByRole('button', { name: 'Додати до розмови' }).click()
+    await expect(dialog).toBeHidden()
+    await expect(composer(page)).toHaveValue('Зараз у мене — напруга.')
+    await page.waitForTimeout(300)
+    expect(api.count('POST /chat/turn')).toBe(0)
+    // «Пропустити» and Esc record nothing (the first word stays «напруга» below).
+    await openTool(page, 'Як ви зараз?')
+    await dialog.getByRole('button', { name: 'Мало сил, приємно' }).click()
+    await dialog.getByRole('button', { name: 'спокій', exact: true }).click()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    // The person sends what they chose to; the end of the conversation asks «А зараз?».
+    await sendButton(page).click()
+    await answered(page, 1)
+    await toReview(page)
+    const line = page.locator('section[data-screen="review"] [data-el="mood-line"]')
+    await expect(line).toHaveText('Спершу — напруга.')
+    const now = page.locator('section[data-screen="review"]').getByRole('button', { name: 'А зараз?' })
+    await now.click()
+    await expect(page.getByRole('dialog', { name: 'А зараз?' })).toBeVisible()
+    // No field to add to here.
+    await dialog.getByRole('button', { name: 'Мало сил, приємно' }).click()
+    await dialog.getByRole('button', { name: 'спокій', exact: true }).click()
+    await expect(dialog.getByRole('button', { name: 'Додати до розмови' })).toBeHidden()
+    await dialog.getByRole('button', { name: 'Готово' }).click()
+    await expect(dialog).toBeHidden()
+    await expect(now).toBeFocused()
+    await expect(line).toHaveText('Спершу — напруга, зараз — спокій.')
+    await expect(line).not.toHaveText(/\d|краще|гірше|%/)
+    await page.getByRole('button', { name: 'Зберегти в щоденник' }).click()
+    await onScreen(page, 'saved')
+    await expect(page.locator('section[data-screen="saved"] [data-el="mood-line"]')).toHaveText('Спершу — напруга, зараз — спокій.')
+    // Never a tag, never in a body: the word of «А зараз?» went nowhere, and the record saved has
+    // neither word (the first one reached the AI only inside the message the person sent).
+    expect(JSON.stringify(api.calls.map((call) => call.body))).not.toContain('спокій')
+    expect(JSON.stringify(api.bodies('POST /summaries'))).not.toContain('напруга')
+    expect(await storageWrites(page)).toEqual([])
+    // A new conversation starts without them.
+    await page.getByRole('button', { name: 'Почати нову розмову' }).click()
+    await onScreen(page, 'chat')
+    await expect(page.locator('[data-el="mood-after"]:visible')).toHaveCount(0)
+    expect((await markup(page)).includes('напруга, зараз')).toBe(false)
+  })
+
+  test('#79b «Розмову завершено» after a check-in: «Спершу — …» and «А зараз?»; without a check-in there is neither', async ({ page }) => {
+    await openChat(page)
+    await exchange(page, USER)
+    await endWithoutTheses(page)
+    await expect(page.locator('[data-el="mood-after"]:visible')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Почати нову розмову' }).click()
+    await onScreen(page, 'chat')
+    await openTool(page, 'Як ви зараз?')
+    await moodDialog(page).getByRole('button', { name: 'Мало сил, неприємно' }).click()
+    await moodDialog(page).getByRole('button', { name: 'втома', exact: true }).click()
+    await moodDialog(page).getByRole('button', { name: 'Готово' }).click()
+    await expect(composer(page)).toHaveValue('')
+    await exchange(page, USER)
+    await endWithoutTheses(page)
+    await expect(page.locator('section[data-screen="ended"] [data-el="mood-line"]')).toHaveText('Спершу — втома.')
+    await expect(page.locator('section[data-screen="ended"]').getByRole('button', { name: 'А зараз?' })).toBeVisible()
+  })
+
+  test('#80 ★ the crisis closes each tool in the frame it comes — a running minute, grounding, the check-in, the shelter and breathing over it; no tool opens beside the contacts', async ({ page }) => {
+    const stream = await streamTurns(page)
+    await openChat(page)
+    // What the page shows the moment the crisis screen is set: no dialog still open, in the same task.
+    await page.evaluate(() => {
+      const w = window as unknown as { __atCrisis: number[] }
+      w.__atCrisis = []
+      new MutationObserver(() => {
+        if (document.documentElement.dataset.screen === 'crisis') w.__atCrisis.push(document.querySelectorAll('dialog[open]').length)
+      }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-screen'] })
+    })
+    const cases: readonly (readonly string[])[] = [['Подихати хвилину'], ['Заземлення 5-4-3-2-1'], ['Як ви зараз?'], ['В укритті'], ['В укритті', 'Подихати хвилину']]
+    for (const [i, steps] of cases.entries()) {
+      await send(page, CRISIS_TEXT)
+      await stream.requests(i + 1)
+      await stream.write(meta())
+      await openTool(page, steps[0]!)
+      if (steps[1] !== undefined) {
+        await shelterDialog(page).getByRole('button', { name: steps[1] }).click()
+        await expect(page.locator('dialog[open]')).toHaveCount(2)
+      }
+      if (steps.at(-1) === 'Подихати хвилину') {
+        await breatheDialog(page).getByRole('button', { name: 'Почати' }).click()
+        await expect(breatheDialog(page).locator('[data-el="breathe-status"]')).toHaveText('Вдих')
+        await expect(presence(page)).toHaveAttribute('data-presence', 'breathing')
+      }
+      await stream.write(crisis('model'))
+      await onScreen(page, 'crisis')
+      const label = steps.join(' → ')
+      await expect(page.locator('dialog[open]'), label).toHaveCount(0)
+      await expect(page.locator('#crisis-title'), label).toBeFocused()
+      await expect(presence(page), label).toHaveAttribute('data-presence', 'quiet')
+      expect(await page.evaluate(() => (window as unknown as { __atCrisis: number[] }).__atCrisis.at(-1)), label).toBe(0)
+      // The minute's clock stopped with it: nothing is said or drawn after the dialog went.
+      await page.waitForTimeout(1200)
+      await expect(breatheDialog(page).locator('[data-el="breathe-status"]')).toHaveText('')
+      expect(await breatheDialog(page).evaluate((node) => node.hasAttribute('data-phase'))).toBe(false)
+      if (i === 0) {
+        // «Якщо важко» in the crisis: the contacts, and no tools.
+        await page.locator('.help-link').click()
+        await expect(page.locator('#help-dialog')).toBeVisible()
+        await expect(page.locator('[data-el="help-tools"]')).toBeHidden()
+        await page.keyboard.press('Escape')
+      }
+      await page.locator('[data-act="new-after-crisis"]').click()
+      await confirmDialog(page).getByRole('button', { name: 'Почати нову', exact: true }).click()
+      await onScreen(page, 'chat')
+    }
+  })
+
+  test('#81 «В укритті»: safety first, dark and silent in the light theme too, large controls; breathing and grounding over it come back to it on Esc', async ({ page, api }) => {
+    await page.emulateMedia({ colorScheme: 'light' })
+    await openChat(page)
+    await expect(html(page)).toHaveCSS('background-color', PAPER)
+    const dialog = shelterDialog(page)
+    await openTool(page, 'В укритті')
+    await expect(dialog).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Спершу — безпека' })).toHaveAccessibleDescription('Якщо ви ще не в укритті — ідіть туди. Ця сторінка зачекає.')
+    // The first words are about safety; the contacts are the page's own, not a request.
+    const text = (await dialog.innerText()).toLowerCase()
+    expect(text.indexOf('безпека')).toBeLessThan(text.indexOf('подихати'))
+    expect(text).not.toMatch(/тривог/)
+    await expect(dialog.locator('a[href="tel:112"]')).toBeVisible()
+    await expect(dialog.locator('a[href="tel:103"]')).toBeVisible()
+    await expect(dialog.locator('a[href="https://howareu.com/hot-lines"]')).toBeVisible()
+    // Dark whatever the theme: the dark theme's background and text, and the gutter beside it.
+    expect(await dialog.evaluate((node) => ({ bg: getComputedStyle(node).backgroundColor, text: getComputedStyle(node).color }))).toEqual({
+      bg: LAMP,
+      text: 'rgb(236, 241, 237)',
+    })
+    await expect(html(page)).toHaveCSS('background-color', LAMP)
+    // Large controls: 64 px for the tools, 56 px for «Закрити».
+    for (const button of await dialog.locator('.shelter__button').all()) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(63.5)
+    expect((await dialog.getByRole('button', { name: 'Закрити' }).boundingBox())!.height).toBeGreaterThanOrEqual(55.5)
+    // Silent: the sound stays off however it was set.
+    await expect(html(page)).not.toHaveAttribute('data-sound', 'on')
+    // Breathing over it keeps it dark; Esc gives the shelter back with the focus on its button.
+    const breathe = dialog.getByRole('button', { name: 'Подихати хвилину' })
+    await breathe.click()
+    await expect(breatheDialog(page)).toBeVisible()
+    await expect(breatheDialog(page)).toHaveAttribute('data-shelter', '')
+    expect(await breatheDialog(page).evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(LAMP)
+    await page.keyboard.press('Escape')
+    await expect(breatheDialog(page)).toBeHidden()
+    await expect(dialog).toBeVisible()
+    await expect(breathe).toBeFocused()
+    await dialog.getByRole('button', { name: 'Заземлення 5-4-3-2-1' }).click()
+    // The shelter's own line about the shelter is not repeated there.
+    await expect(groundDialog(page).locator('[data-el="ground-safety"]')).toBeHidden()
+    await page.keyboard.press('Escape')
+    await expect(dialog.getByRole('button', { name: 'Заземлення 5-4-3-2-1' })).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    await expect(toolsButton(page)).toBeFocused()
+    await expect(html(page)).toHaveCSS('background-color', PAPER)
+    await expect(breatheDialog(page)).not.toHaveAttribute('data-shelter', '')
+    expect(api.count('GET /helplines')).toBe(0)
+  })
+
+  test('#82 ★ the kit without a conversation: from the signed-out screen and «Якщо важко», no request and no storage; the new conversation stays unstarted', async ({ page, api }) => {
+    await watchStorage(page)
+    api.on('GET /me', fail(401, 'unauthenticated'))
+    await openChat(page, '/chat/', 'signed-out')
+    await page.evaluate(() => document.fonts.ready)
+    const calls = api.calls.length
+    const requests = countRequests(page)
+    const kit = page.locator('section[data-screen="signed-out"] .kit')
+    for (const [name, dialog] of [
+      ['Подихати хвилину', breatheDialog(page)],
+      ['Заземлення 5-4-3-2-1', groundDialog(page)],
+      ['В укритті', shelterDialog(page)],
+    ] as const) {
+      const button = kit.getByRole('button', { name })
+      await button.click()
+      await expect(dialog).toBeVisible()
+      if (name === 'Подихати хвилину') {
+        await dialog.getByRole('button', { name: 'Почати' }).click()
+        await expect(dialog.locator('[data-el="breathe-status"]')).toHaveText('Вдих')
+      }
+      if (name === 'Заземлення 5-4-3-2-1') await dialog.getByRole('button', { name: 'Далі' }).click()
+      await page.keyboard.press('Escape')
+      await expect(dialog).toBeHidden()
+      await expect(button).toBeFocused()
+    }
+    expect(api.calls.length).toBe(calls)
+    expect(requests()).toEqual([])
+    expect(await storageWrites(page)).toEqual([])
+    await expect(html(page)).toHaveAttribute('data-screen', 'signed-out')
+  })
+
+  test('#82b «Якщо важко» offers the tools under the contacts: the tool stands over it, Esc gives the contacts back; no request but its own GET /helplines', async ({ page, api }) => {
+    await watchStorage(page)
+    await openChat(page)
+    await page.locator('.help-link').click()
+    const help = page.locator('#help-dialog')
+    await expect(help).toBeVisible()
+    await expect(help.getByRole('list', { name: 'Вправи без розмови' }).getByRole('button')).toHaveText(['Подихати хвилину', 'Заземлення 5-4-3-2-1', 'В укритті'])
+    await expect.poll(() => api.count('GET /helplines')).toBe(1)
+    const calls = api.calls.length
+    const ground = help.getByRole('button', { name: 'Заземлення 5-4-3-2-1' })
+    await ground.click()
+    await expect(groundDialog(page)).toBeVisible()
+    await expect(page.locator('dialog[open]')).toHaveCount(2)
+    await page.keyboard.press('Escape')
+    await expect(groundDialog(page)).toBeHidden()
+    await expect(help).toBeVisible()
+    await expect(ground).toBeFocused()
+    await help.getByRole('button', { name: 'В укритті' }).click()
+    await shelterDialog(page).getByRole('button', { name: 'Подихати хвилину' }).click()
+    await expect(page.locator('dialog[open]')).toHaveCount(3)
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Escape')
+    await expect(help).toBeVisible()
+    await expect(help.getByRole('button', { name: 'В укритті' })).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.help-link')).toBeFocused()
+    expect(api.calls.length).toBe(calls)
+    expect(await storageWrites(page)).toEqual([])
+    // The conversation never started: no session, no turn.
+    await expect(page.locator('[data-el="session"]')).toBeHidden()
+    expect(api.count('POST /chat/turn')).toBe(0)
+  })
+
+  test('#83 axe on every tool in both themes: breathing ready and running, grounding, the check-in with a word, the shelter and breathing over it, «Якщо важко» with its tools', async ({ page }) => {
+    await openChat(page)
+    for (const scheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme: scheme })
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await openTool(page, 'Подихати хвилину')
+      await axe(page, `${scheme}: breathing, ready`)
+      await breatheDialog(page).getByRole('button', { name: 'Почати' }).click()
+      await axe(page, `${scheme}: breathing, running`)
+      await page.keyboard.press('Escape')
+      await openTool(page, 'Заземлення 5-4-3-2-1')
+      await page.keyboard.press('Enter')
+      await axe(page, `${scheme}: grounding, step 2`)
+      await page.keyboard.press('Escape')
+      await openTool(page, 'Як ви зараз?')
+      await moodDialog(page).getByRole('button', { name: 'Мало сил, приємно' }).click()
+      await moodDialog(page).getByRole('button', { name: 'затишок', exact: true }).click()
+      await axe(page, `${scheme}: the check-in with a word`)
+      await page.keyboard.press('Escape')
+      await openTool(page, 'В укритті')
+      await axe(page, `${scheme}: the shelter`)
+      await shelterDialog(page).getByRole('button', { name: 'Подихати хвилину' }).click()
+      await breatheDialog(page).getByRole('button', { name: 'Почати' }).click()
+      await axe(page, `${scheme}: breathing in the shelter`)
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await page.locator('.help-link').click()
+      await expect(page.locator('[data-el="help-tools"]')).toBeVisible()
+      await axe(page, `${scheme}: «Якщо важко» with the tools`)
+      await page.keyboard.press('Escape')
+    }
+  })
+
+  test('#84 axe in both themes: the kit on the signed-out screen, the check-in chip, «А зараз?» on the theses', async ({ page, api }) => {
+    api.on('GET /me', fail(401, 'unauthenticated'), { json: ME })
+    await openChat(page, '/chat/', 'signed-out')
+    for (const scheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme: scheme })
+      await expect(page.locator('section[data-screen="signed-out"] .kit')).toBeVisible()
+      await axe(page, `${scheme}: signed-out with the kit`)
+    }
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await openChat(page)
+    await page.locator('[data-el="checkin"]').click()
+    await moodDialog(page).getByRole('button', { name: 'Багато сил, приємно' }).click()
+    await moodDialog(page).getByRole('button', { name: 'цікавість', exact: true }).click()
+    await moodDialog(page).getByRole('button', { name: 'Готово' }).click()
+    await exchange(page, USER)
+    await toReview(page)
+    await expect(page.locator('section[data-screen="review"] [data-el="mood-line"]')).toHaveText('Спершу — цікавість.')
+    for (const scheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme: scheme })
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await axe(page, `${scheme}: the theses with «А зараз?»`)
+    }
+  })
+
+  test('#85 the tools fit: at 320 px nothing leaves the dialog; a phone on its side keeps «Стоп» in view', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'mobile', 'a phone layout')
+    await page.setViewportSize({ width: 320, height: 640 })
+    await openChat(page)
+    const overflow = (dialog: Locator): Promise<string[]> =>
+      dialog.evaluate((node) => {
+        const box = node.getBoundingClientRect()
+        return Array.from(node.querySelectorAll<HTMLElement>('*'))
+          .filter((el) => el.getClientRects().length > 0 && el.closest('.visually-hidden') === null)
+          .filter((el) => {
+            const r = el.getBoundingClientRect()
+            return r.width > 0 && (r.right > box.right + 1 || r.left < box.left - 1)
+          })
+          .map((el) => `<${el.tagName.toLowerCase()} class="${el.className}">`)
+      })
+    await openTool(page, 'Як ви зараз?')
+    await moodDialog(page).getByRole('button', { name: 'Багато сил, неприємно' }).click()
+    await moodDialog(page).getByRole('button', { name: 'розгубленість', exact: true }).click()
+    expect(await overflow(moodDialog(page))).toEqual([])
+    await page.keyboard.press('Escape')
+    await openTool(page, 'В укритті')
+    expect(await overflow(shelterDialog(page))).toEqual([])
+    await shelterDialog(page).getByRole('button', { name: 'Подихати хвилину' }).click()
+    await breatheDialog(page).getByRole('button', { name: 'Почати' }).click()
+    expect(await overflow(breatheDialog(page))).toEqual([])
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Escape')
+    await openTool(page, 'Заземлення 5-4-3-2-1')
+    expect(await overflow(groundDialog(page))).toEqual([])
+    await page.keyboard.press('Escape')
+    // 839 × 200: the body scrolls under the head; «Стоп» never leaves the screen.
+    await page.setViewportSize({ width: 839, height: 200 })
+    await openTool(page, 'Подихати хвилину')
+    await breatheDialog(page).getByRole('button', { name: 'Почати' }).click()
+    const stop = breatheDialog(page).getByRole('button', { name: 'Стоп' })
+    await expect(stop).toBeInViewport({ ratio: 1 })
+    await breatheDialog(page).locator('.tool__body').evaluate((node) => node.scrollTo({ top: node.scrollHeight }))
+    await expect(stop).toBeInViewport({ ratio: 1 })
+  })
+})
+
 // ── The light (needs WebGL: local only) ──────────────────────────────────────────────────────
 
 test.describe('the light', () => {

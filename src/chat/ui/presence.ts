@@ -2,7 +2,9 @@
 // One attribute on .presence drives all of them; without motion only the label tells the state.
 // `listening` is the page's own: while the person types (and the AI is idle in the conversation)
 // the light is a little more awake. It never reaches the state machine — a keystroke is not an
-// action — and nothing is sent: the label says so («Ви пишете…»).
+// action — and nothing is sent: the label says so («Ви пишете…»). `breathing` while «Подихати
+// хвилину» is open (spec §3.13): the light (later the character) keeps the slow pace with the
+// person. «В укритті» is silent, like «Якщо важко».
 
 import type { GlControl } from '../../gl/core/boot'
 import type { PresenceHandle } from '../../gl/presence'
@@ -12,13 +14,15 @@ import { PRESENCE_LABEL, type Presence } from './copy'
 import { setAttr, setText } from './dom'
 
 /** The landing's scene state each presence borrows its chord from (sound-engine moods). */
-const MOOD: Readonly<Record<Presence, number>> = { idle: 0, listening: 0, thinking: 2, speaking: 2, summary: 3, saved: 5, quiet: 6 }
+const MOOD: Readonly<Record<Presence, number>> = { idle: 0, listening: 0, thinking: 2, speaking: 2, summary: 3, saved: 5, quiet: 6, breathing: 0 }
 
 /** How long `listening` outlasts the last keystroke. */
 const LISTEN_MS = 1600
 
 export function presenceOf(model: Model): Presence {
   const { state } = model
+  // The crisis closes every tool in the same step (reduce), so this never outlives it.
+  if (state.s !== 'crisis' && model.overlay.some((o) => o.o === 'breathe')) return 'breathing'
   switch (state.s) {
     case 'chat':
       if (state.turn.p === 'streaming') return 'speaking'
@@ -75,8 +79,9 @@ export function createPresence(
       gl?.handle()?.setPresence(next)
       sound?.setMood(MOOD[next])
     }
-    // Silent in the crisis and while the help dialog is open (§3.11, §9.3).
-    sound?.setQuiet(next === 'quiet' || helpOpen)
+    // Silent in the crisis, while the help dialog is open (§3.11, §9.3) and in the shelter mode
+    // (§3.13), with whatever was opened over it.
+    sound?.setQuiet(next === 'quiet' || helpOpen || model.overlay.some((o) => o.o === 'shelter'))
   }
 
   return {

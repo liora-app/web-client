@@ -49,7 +49,7 @@ import somaFrag from './shaders/soma.frag.glsl?raw'
 import somaVert from './shaders/soma.vert.glsl?raw'
 import { THEME_EVENT, resolvedTheme } from '../ui/theme'
 
-export type Presence = 'idle' | 'listening' | 'thinking' | 'speaking' | 'summary' | 'saved' | 'quiet'
+export type Presence = 'idle' | 'listening' | 'thinking' | 'speaking' | 'summary' | 'saved' | 'quiet' | 'breathing'
 
 export interface PresenceHandle extends SceneHandle {
   setPresence(presence: Presence): void
@@ -105,6 +105,8 @@ const MOOD: Readonly<Record<Presence, Readonly<{ fire: number; glow: number; int
   summary: { fire: 0.5, glow: 0.32, intensity: 0.92 },
   saved: { fire: 0.6, glow: 0.4, intensity: 1 },
   quiet: { fire: 0, glow: 0.2, intensity: 0.7 },
+  // «Подихати хвилину»: little signal, a soft halo; the breath itself already runs at 4/6.
+  breathing: { fire: 0.1, glow: 0.32, intensity: 0.9 },
 }
 
 function breath(seconds: number): number {

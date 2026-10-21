@@ -45,6 +45,19 @@ import {
   type Draft,
 } from '../../src/chat/core/limits'
 import { formOf, patchOf, searchQuery, shiftDay, tagsFromText } from '../../src/chat/core/journal'
+import {
+  MOOD_QUADRANTS,
+  MOOD_WORDS,
+  NO_MOOD,
+  TOOL_KINDS,
+  breathAt,
+  breathCycleMs,
+  breathNextChangeMs,
+  breathTotalMs,
+  isMoodWord,
+  isToolKind,
+  type BreathPattern,
+} from '../../src/chat/core/selfhelp'
 import { MAX_FRAME_BUFFER, ProtocolError, chatEvents, readFrames, type TurnEvent } from '../../src/chat/core/sse'
 import {
   FALLBACK_SCENARIO,
@@ -56,6 +69,7 @@ import {
   llmInFlight,
   matchesSaved,
   reduce,
+  topTool,
   transferAskable,
   type Action,
   type ChatState,
@@ -78,8 +92,9 @@ import type { ConsentState, ScenarioOut, SummaryCreate, SummaryList, SummaryOut,
 // UI modules whose logic needs no DOM to load: what they decide is tested here, the page in CI.
 import { CLEAR_AFTER_MS, createAnnouncer, type Region } from '../../src/chat/ui/announcer'
 import { conversationText, entryMarkdown, thesesText } from '../../src/chat/ui/clipboard'
-import { sayAnswer, sayRetry } from '../../src/chat/ui/copy'
+import { moodLine, moodSentence, sayAnswer, sayRetry } from '../../src/chat/ui/copy'
 import { KEYBOARD_DROP, keyboardInset, keyboardShown } from '../../src/chat/ui/keyboard'
+import { presenceOf } from '../../src/chat/ui/presence'
 import { SKY_KEY, parseSky, skyAttribute } from '../../src/ui/sky'
 
 test.beforeEach(({}, testInfo) => {
@@ -2670,10 +2685,18 @@ test.describe('state: crisis and invariants', () => {
       { type: 'journal/revisit', id: 's-1' },
       { type: 'confirm/open', kind: 'delete-summary', summary: 's-1' },
       { type: 'confirm/open', kind: 'revisit-restart', summary: 's-1' },
+      // The self-help tools (§3.13): no dialog and no timer open beside the contacts.
+      { type: 'overlay/open', overlay: 'breathe' },
+      { type: 'overlay/open', overlay: 'ground' },
+      { type: 'overlay/open', overlay: 'mood' },
+      { type: 'overlay/open', overlay: 'mood', when: 'after' },
+      { type: 'overlay/open', overlay: 'shelter' },
+      { type: 'mood/pick', word: 'спокій' },
     ]
     for (const action of actions) {
       const [next] = reduce(crisis, action)
       expect(next.state.s, action.type).toBe('crisis')
+      if (action.type === 'overlay/open' && action.overlay !== 'help' && action.overlay !== 'account') expect(next.overlay, action.overlay).toEqual([])
     }
     const fresh = run(crisis, { type: 'confirm/open', kind: 'new-after-crisis' }, { type: 'confirm/accept' })
     const c = chatOf(fresh.model)
@@ -2715,6 +2738,217 @@ test.describe('state: crisis and invariants', () => {
     for (const effect of all.effects) {
       if (effect.type === 'turn') continue
       expect(JSON.stringify(effect)).not.toContain('ПРИВАТНИЙ-ТЕКСТ')
+    }
+  })
+})
+
+// ── The self-help tools (spec §3.13) ─────────────────────────────────────────────────────────
+
+test.describe('state: the self-help tools', () => {
+  const crisisOutcome = (id: number): Action => ({
+    type: 'turn/outcome',
+    id,
+    now: NOW,
+    outcome: { kind: 'crisis', source: 'keyword', helplines: sanitizeHelplines(RAW_HELPLINES) },
+  })
+  /** The conversation (answered) through «Підсумувати» to the theses. */
+  function toReview(model: Model): Model {
+    const s = run(answered(model), { type: 'chat/summarize' })
+    const fx = s.effects.find((e): e is Extract<Effect, { type: 'summarize' }> => e.type === 'summarize')!
+    return run(s.model, { type: 'summarize/ok', id: fx.id, draft: { title: 'Розмова про день', bullets: ['перша', 'друга'], tags: ['день'] } }).model
+  }
+  const checkedIn = (model: Model, word: string): Model => run(model, { type: 'overlay/open', overlay: 'mood' }, { type: 'mood/pick', word }).model
+
+  test('a tool opens over nothing, stacks over «Якщо важко» and the shelter, asks the server nothing; never in the crisis or the boot', () => {
+    const m = booted()
+    for (const kind of TOOL_KINDS) {
+      const open = run(m, { type: 'overlay/open', overlay: kind })
+      expect(open.model.overlay, kind).toEqual([kind === 'mood' ? { o: 'mood', when: 'before' } : { o: kind }])
+      expect(open.effects, kind).toEqual([])
+      expect(topTool(open.model)?.o, kind).toBe(kind)
+      // The same tool again changes nothing.
+      expect(run(open.model, { type: 'overlay/open', overlay: kind }).model, kind).toBe(open.model)
+    }
+    // «Якщо важко» → «В укритті» → breathing: three deep, Esc gives back each one under it.
+    const deep = run(m, { type: 'overlay/open', overlay: 'help' }, { type: 'overlay/open', overlay: 'shelter' }, { type: 'overlay/open', overlay: 'breathe' })
+    expect(deep.model.overlay).toEqual([{ o: 'help' }, { o: 'shelter' }, { o: 'breathe' }])
+    expect(types(deep.effects)).toEqual(['helplines'])
+    expect(run(deep.model, { type: 'overlay/close' }).model.overlay).toEqual([{ o: 'help' }, { o: 'shelter' }])
+    expect(run(deep.model, { type: 'overlay/close' }, { type: 'overlay/close' }).model.overlay).toEqual([{ o: 'help' }])
+    // Over the shelter only breathing and grounding stack; anything over another tool replaces it.
+    const shelter = run(m, { type: 'overlay/open', overlay: 'shelter' }).model
+    expect(run(shelter, { type: 'overlay/open', overlay: 'ground' }).model.overlay).toEqual([{ o: 'shelter' }, { o: 'ground' }])
+    expect(run(shelter, { type: 'overlay/open', overlay: 'mood' }).model.overlay).toEqual([{ o: 'mood', when: 'before' }])
+    const breathing = run(m, { type: 'overlay/open', overlay: 'breathe' }).model
+    expect(run(breathing, { type: 'overlay/open', overlay: 'ground' }).model.overlay).toEqual([{ o: 'ground' }])
+    // Signed out: no session needed.
+    const out = run(INITIAL_MODEL, { type: 'boot', search: '' }, { type: 'me/fail', purpose: 'boot', error: apiError(401, 'unauthenticated') }).model
+    expect(out.state.s).toBe('signed-out')
+    expect(run(out, { type: 'overlay/open', overlay: 'ground' }).model.overlay).toEqual([{ o: 'ground' }])
+    // Booting: nothing yet.
+    expect(run(INITIAL_MODEL, { type: 'overlay/open', overlay: 'breathe' }).model).toBe(INITIAL_MODEL)
+    // The crisis: no dialog and no timer beside the contacts, not even from «Якщо важко» there.
+    const sent = run(m, { type: 'chat/send', text: 'Синтетична кризова фраза' })
+    const crisis = run(sent.model, crisisOutcome(turnEffect(sent.effects).id)).model
+    for (const kind of TOOL_KINDS) expect(run(crisis, { type: 'overlay/open', overlay: kind }).model, kind).toBe(crisis)
+    const help = run(crisis, { type: 'overlay/open', overlay: 'help' }).model
+    expect(run(help, { type: 'overlay/open', overlay: 'breathe' }).model.overlay).toEqual([{ o: 'help' }])
+  })
+
+  test('the crisis closes every tool in the step it comes, the stack under it too, and forgets the check-in', () => {
+    const before = checkedIn(booted(), 'напруга')
+    const sent = run(before, { type: 'chat/send', text: 'Синтетична кризова фраза' })
+    const { id } = turnEffect(sent.effects)
+    for (const stack of [['breathe'], ['ground'], ['mood'], ['shelter'], ['help', 'shelter', 'breathe'], ['shelter', 'ground']] as const) {
+      const open = run(sent.model, ...stack.map((overlay): Action => ({ type: 'overlay/open', overlay })))
+      expect(open.model.overlay.map((o) => o.o), stack.join(' → ')).toEqual([...stack])
+      const crisis = run(open.model, crisisOutcome(id)).model
+      expect(crisis.state.s).toBe('crisis')
+      expect(crisis.overlay, stack.join(' → ')).toEqual([])
+      expect(crisis.ctx.mood).toEqual(NO_MOOD)
+    }
+    // A 401 under a tool: session-expired, the tool closed (I6).
+    const tool = run(sent.model, { type: 'overlay/open', overlay: 'breathe' }).model
+    const expired = run(tool, { type: 'turn/outcome', id, now: NOW, outcome: { kind: 'http', error: apiError(401, 'unauthenticated') } }).model
+    expect(expired.state.s).toBe('session-expired')
+    expect(expired.overlay).toEqual([])
+  })
+
+  test('the check-in takes a word of the dictionary; the first stays; «А зараз?» only at the end with a first word; nothing carries it out', () => {
+    const m = booted()
+    expect(run(m, { type: 'mood/pick', word: 'спокій' }).model).toBe(m)
+    const open = run(m, { type: 'overlay/open', overlay: 'mood' }).model
+    // A word the page does not offer is not taken (and the check-in stays open).
+    expect(run(open, { type: 'mood/pick', word: 'синтетичне-слово' }).model).toBe(open)
+    const first = run(open, { type: 'mood/pick', word: 'неспокій' })
+    expect(first.model.ctx.mood).toEqual({ before: 'неспокій', after: null })
+    expect(first.model.overlay).toEqual([])
+    expect(first.effects).toEqual([])
+    // A check-in in the middle names a feeling; «спершу» stays the first word.
+    const again = checkedIn(answered(first.model), 'радість')
+    expect(again.ctx.mood).toEqual({ before: 'неспокій', after: null })
+    expect(again.overlay).toEqual([])
+    // «А зараз?» is the end's question: not in the conversation, not without a first word.
+    expect(run(again, { type: 'overlay/open', overlay: 'mood', when: 'after' }).model).toBe(again)
+    const noFirst = toReview(m)
+    expect(run(noFirst, { type: 'overlay/open', overlay: 'mood', when: 'after' }).model).toBe(noFirst)
+    // On the theses, «Збережено» and «Розмову завершено».
+    const review = toReview(first.model)
+    const after = run(review, { type: 'overlay/open', overlay: 'mood', when: 'after' })
+    expect(after.model.overlay).toEqual([{ o: 'mood', when: 'after' }])
+    const picked = run(after.model, { type: 'mood/pick', word: 'спокій' })
+    expect(picked.model.ctx.mood).toEqual({ before: 'неспокій', after: 'спокій' })
+    const ended: Model = { ...picked.model, state: { s: 'ended' }, overlay: [] }
+    expect(run(ended, { type: 'overlay/open', overlay: 'mood', when: 'after' }).model.overlay).toEqual([{ o: 'mood', when: 'after' }])
+    // Never a tag, never in a body: the save and the theses send what they always sent (I1, I9).
+    const save = run(picked.model, { type: 'review/save' })
+    const all = [...first.effects, ...after.effects, ...picked.effects, ...save.effects]
+    for (const word of ['неспокій', 'радість', 'спокій']) expect(JSON.stringify(all)).not.toContain(word)
+    const body = (save.effects[0] as Extract<Effect, { type: 'save' }>).body
+    expect(body.tags).toEqual([{ name: 'день', source: 'ai' }])
+  })
+
+  test('the check-in goes with its conversation: a new one, a revisit, a sign-out, a deleted account; the diary and back keep it', () => {
+    const talk = answered(checkedIn(booted(), 'втома'))
+    expect(talk.ctx.mood.before).toBe('втома')
+    // The diary from the conversation and back: the same conversation, the same word.
+    const diary = run(talk, { type: 'journal/open', tz: 'Europe/Kyiv' }).model
+    expect(run(diary, { type: 'journal/back' }).model.ctx.mood.before).toBe('втома')
+    // «Почати нову розмову» from «Збережено» / «Розмову завершено», and the diary opened there.
+    const saved: Model = { ...talk, state: { s: 'saved', summary: SUMMARY } }
+    expect(run(saved, { type: 'chat/new' }).model.ctx.mood).toEqual(NO_MOOD)
+    expect(run(saved, { type: 'journal/open', tz: null }, { type: 'journal/back' }).model.ctx.mood).toEqual(NO_MOOD)
+    // «Повернутися до цього» starts another conversation.
+    const opened = run(talk, { type: 'journal/open', tz: 'Europe/Kyiv' })
+    const list = opened.effects.find((e): e is Extract<Effect, { type: 'journal-list' }> => e.type === 'journal-list')!
+    const listed = run(opened.model, { type: 'journal/list-ok', req: list.req, diary: DIARY }).model
+    const revisit = run(listed, { type: 'journal/revisit', id: 's-1' }, { type: 'confirm/accept' }).model
+    expect(chatOf(revisit).session.scenario).toBe('revisit')
+    expect(revisit.ctx.mood).toEqual(NO_MOOD)
+    // Signed out, the account deleted, a fresh boot.
+    expect(run(talk, { type: 'account/logout' }, { type: 'confirm/accept' }, { type: 'logout/ok' }).model.ctx.mood).toEqual(NO_MOOD)
+    expect(run(talk, { type: 'overlay/open', overlay: 'account' }, { type: 'confirm/open', kind: 'delete-account' }, { type: 'confirm/accept' }, { type: 'delete/ok' }).model.ctx.mood).toEqual(NO_MOOD)
+    expect(INITIAL_MODEL.ctx.mood).toEqual(NO_MOOD)
+  })
+
+  test('the light breathes with the exercise and is quiet in the crisis', () => {
+    const m = booted()
+    expect(presenceOf(m)).toBe('idle')
+    expect(presenceOf(run(m, { type: 'overlay/open', overlay: 'breathe' }).model)).toBe('breathing')
+    expect(presenceOf(run(m, { type: 'overlay/open', overlay: 'shelter' }, { type: 'overlay/open', overlay: 'breathe' }).model)).toBe('breathing')
+    expect(presenceOf(run(m, { type: 'overlay/open', overlay: 'ground' }).model)).toBe('idle')
+    const sent = run(m, { type: 'chat/send', text: 'Синтетична кризова фраза' }, { type: 'overlay/open', overlay: 'breathe' })
+    expect(presenceOf(sent.model)).toBe('breathing')
+    expect(presenceOf(run(sent.model, crisisOutcome(turnEffect(sent.effects).id)).model)).toBe('quiet')
+  })
+})
+
+test.describe('self-help: the minute, the words', () => {
+  test('slow breathing is in 4 s, out 6 s, six times; the cyclic sigh 2 + 1 + 6 s, seven times; the count runs 4 3 2 1', () => {
+    expect(breathCycleMs('slow')).toBe(10_000)
+    expect(breathTotalMs('slow')).toBe(60_000)
+    expect(breathCycleMs('sigh')).toBe(9_000)
+    expect(breathTotalMs('sigh')).toBe(63_000)
+    const at = (pattern: BreathPattern, ms: number) => {
+      const x = breathAt(pattern, ms)
+      return [x.phase, x.left, x.round, x.done]
+    }
+    expect(at('slow', 0)).toEqual(['in', 4, 0, false])
+    expect(at('slow', 999)).toEqual(['in', 4, 0, false])
+    expect(at('slow', 1000)).toEqual(['in', 3, 0, false])
+    expect(at('slow', 3999)).toEqual(['in', 1, 0, false])
+    expect(at('slow', 4000)).toEqual(['out', 6, 0, false])
+    expect(at('slow', 9999)).toEqual(['out', 1, 0, false])
+    expect(at('slow', 10_000)).toEqual(['in', 4, 1, false])
+    expect(at('slow', 59_999)).toEqual(['out', 1, 5, false])
+    expect(breathAt('slow', 60_000).done).toBe(true)
+    expect(at('sigh', 0)).toEqual(['in', 2, 0, false])
+    expect(at('sigh', 2000)).toEqual(['top', 1, 0, false])
+    expect(at('sigh', 3000)).toEqual(['out', 6, 0, false])
+    expect(at('sigh', 62_999)).toEqual(['out', 1, 6, false])
+    expect(breathAt('sigh', 63_000).done).toBe(true)
+    // Garbage time is the start, not a crash.
+    expect(at('slow', Number.NaN)).toEqual(['in', 4, 0, false])
+    expect(at('slow', -5)).toEqual(['in', 4, 0, false])
+    // The next tick lands where the count changes.
+    expect(breathNextChangeMs(breathAt('slow', 250))).toBe(750)
+    expect(breathNextChangeMs(breathAt('slow', 3000))).toBe(1000)
+    expect(breathNextChangeMs(breathAt('sigh', 2500))).toBe(500)
+  })
+
+  test('the check-in dictionary: four cells of six words, each once, none on the stop-list; the sentences say words, not scores', () => {
+    const all = MOOD_QUADRANTS.flatMap((q) => [...MOOD_WORDS[q]])
+    for (const q of MOOD_QUADRANTS) expect(MOOD_WORDS[q], q).toHaveLength(6)
+    expect(new Set(all).size).toBe(24)
+    const clinical = /терапі|терапевт|психолог|психіатр|лікув|лікує|діагно[зс]|депрес|тривог|тривожн/
+    for (const word of all) {
+      expect(word, word).not.toMatch(clinical)
+      expect(isMoodWord(word)).toBe(true)
+    }
+    expect(isMoodWord('Спокій')).toBe(false)
+    expect(isToolKind('shelter') && isToolKind('breathe') && !isToolKind('account')).toBe(true)
+    expect(moodSentence('втома')).toBe('Зараз у мене — втома.')
+    expect(moodLine('втома', null)).toBe('Спершу — втома.')
+    expect(moodLine('втома', 'спокій')).toBe('Спершу — втома, зараз — спокій.')
+    expect(moodLine('втома', 'спокій')).not.toMatch(/\d|краще|гірше|%/)
+  })
+
+  test('the shelter is the dark theme whatever the page: its tokens are the dark side of each light-dark()', () => {
+    const tokens = readFileSync(resolve(test.info().project.testDir, '..', '..', 'src', 'styles', 'tokens.css'), 'utf8')
+    const block = (selector: string): string => {
+      const start = tokens.indexOf(`${selector} {`)
+      expect(start, selector).toBeGreaterThanOrEqual(0)
+      return tokens.slice(start, tokens.indexOf('}', start))
+    }
+    const theme = block(':root:not([data-theme-lock])')
+    const shelter = block(':root:not([data-theme-lock]) :is(.sheet--shelter, .sheet--tool[data-shelter])')
+    expect(shelter).toContain('color-scheme: dark;')
+    const pairs = [...shelter.matchAll(/--([a-z0-9-]+):\s*([^;]+);/g)].map((m) => [m[1]!, m[2]!.trim()] as const)
+    expect(pairs.length).toBeGreaterThan(20)
+    for (const [name, value] of pairs) {
+      const source = theme.match(new RegExp(`--${name}:\\s*light-dark\\((#[0-9a-f]{6}|rgb\\([^)]*\\)),\\s*(#[0-9a-f]{6}|rgb\\([^)]*\\))\\)`, 'i'))
+      expect(source, name).not.toBeNull()
+      expect(value, name).toBe(source![2])
     }
   })
 })
@@ -3451,7 +3685,7 @@ test.describe('source rules', () => {
   test('src/chat/core/**: no DOM, browser globals, storage, three.js, UI imports or console', () => {
     const core = sources('chat/core')
     expect(core.map((f) => f.path).sort()).toEqual(
-      ['api', 'country', 'errors', 'helplines', 'journal', 'limits', 'sse', 'state', 'turn', 'types'].map((n) => `src/chat/core/${n}.ts`),
+      ['api', 'country', 'errors', 'helplines', 'journal', 'limits', 'selfhelp', 'sse', 'state', 'turn', 'types'].map((n) => `src/chat/core/${n}.ts`),
     )
     for (const pattern of [
       /\bdocument\b/,

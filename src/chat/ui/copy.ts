@@ -5,6 +5,7 @@
 import type { UiError } from '../core/errors'
 import { maskPausedLine } from '../core/helplines'
 import type { AuthCode, AuthNotice } from '../core/state'
+import type { BreathPhase } from '../core/selfhelp'
 import type { ScenarioId, ScenarioOut } from '../core/types'
 
 /** Scenario descriptions, one line each (spec §3.6). The server's own `situation` text names a
@@ -349,7 +350,7 @@ export function requestIdLine(id: string | null): string | null {
 
 // ── Presence (§3.1 «Під кулею», §9.2) ────────────────────────────────────────────────────────
 
-export type Presence = 'idle' | 'listening' | 'thinking' | 'speaking' | 'summary' | 'saved' | 'quiet'
+export type Presence = 'idle' | 'listening' | 'thinking' | 'speaking' | 'summary' | 'saved' | 'quiet' | 'breathing'
 
 export const PRESENCE_LABEL: Readonly<Record<Presence, string>> = {
   idle: 'Чекає на ваше повідомлення',
@@ -360,6 +361,8 @@ export const PRESENCE_LABEL: Readonly<Record<Presence, string>> = {
   summary: 'Складає тези',
   saved: 'Тези збережено',
   quiet: 'Розмову зупинено',
+  // «Подихати хвилину» is open (spec §3.13): the light keeps the 4/6 pace, the label says what it is.
+  breathing: 'Повільне дихання',
 }
 
 // ── Announcer (§5.7) ─────────────────────────────────────────────────────────────────────────
@@ -518,3 +521,22 @@ export function deleteError(error: UiError, csrfFailures: number): ErrorText {
   if (error.code === 'network') return line(NO_CONNECTION)
   return shared(error, csrfFailures) ?? line('Не вдалося видалити запис. Спробуйте ще раз.', true)
 }
+
+// ── The self-help tools (§3.13; research selfhelp.md §3.1–3.6, §8) ─────────────────────────
+// Short, on «ви», no promise of an effect, no praise, no scores. Static copy is in chat/index.html.
+
+/** The step of «Подихати хвилину», on the screen and said once when it changes. */
+export const BREATH_PHASE: Readonly<Record<BreathPhase, string>> = { in: 'Вдих', top: 'Ще трохи', out: 'Видих' }
+/** The head button while the minute runs: it ends the exercise; «Закрити» otherwise. */
+export const BREATH_STOP = 'Стоп'
+export const BREATH_CLOSE = 'Закрити'
+export const BREATH_DONE = 'Хвилина минула.'
+
+export const groundProgress = (step: number, of: number): string => `Крок ${step} з ${of}`
+
+export const MOOD_TITLE: Readonly<Record<'before' | 'after', string>> = { before: 'Як ви зараз?', after: 'А зараз?' }
+/** «Додати до розмови»: into the field, never sent by itself. */
+export const moodSentence = (word: string): string => `Зараз у мене — ${word}.`
+/** The end of a conversation (§3.13): before → after in words, no «краще/гірше». */
+export const moodLine = (before: string, after: string | null): string =>
+  after === null ? `Спершу — ${before}.` : `Спершу — ${before}, зараз — ${after}.`

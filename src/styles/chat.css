@@ -3497,6 +3497,446 @@ html[data-motion='on'] :is(.confirm, .sheet--side, .sheet--pick)[open]::backdrop
   font-size: clamp(3rem, 2.2rem + 3vw, 4.75rem);
 }
 
+/* ---------- The self-help tools (spec §3.13) ---------- */
+
+/* «Як ви зараз?» after the starters: the same chip with a small face, so it reads as its own kind. */
+.checkin {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.5rem;
+  max-width: 100%;
+  padding: 0.35rem 0.95rem 0.35rem 0.75rem;
+  border: 1px solid var(--color-field-border);
+  border-radius: 1.25rem;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  line-height: 1.35;
+  color: var(--color-text-soft);
+  cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease-standard),
+    background-color var(--dur-1) var(--ease-standard),
+    border-color var(--dur-1) var(--ease-standard);
+}
+
+.checkin:hover {
+  border-color: var(--color-text-muted);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.checkin:focus-visible {
+  outline-offset: 2px;
+  border-radius: 1.25rem;
+}
+
+.checkin svg {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+@media (max-width: 63.99em) {
+  .checkin {
+    min-height: 2.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-motion='on'] .starters:not([hidden]) .checkin {
+    animation: rise-in var(--dur-item) var(--ease-decelerate) 160ms backwards;
+    --rise: var(--rise-item);
+  }
+}
+
+/* The signed-out screen and «Якщо важко»: the tools as a quiet row of words. */
+.kit {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.kit__title {
+  font-size: var(--step--1);
+  color: var(--color-text-muted);
+}
+
+.help-tools {
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-line);
+}
+
+/* The theses, «Збережено», «Розмову завершено»: «Спершу — …, зараз — …» and «А зараз?». */
+.mood-after {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 1.25rem;
+}
+
+.mood-after__line {
+  color: var(--color-text-soft);
+}
+
+.mood-after__line:empty {
+  display: none;
+}
+
+/* The tools' dialogs: the whole screen on a phone (like «Якщо важко»), a centred sheet from 48em
+   that is as tall as what it holds. The head never scrolls away — «Стоп» and «Закрити» are always
+   in view, on a phone on its side too; only the body under it scrolls. */
+.sheet--tool,
+.sheet--shelter {
+  gap: 1rem;
+  overflow: hidden;
+}
+
+.tool__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1.1rem;
+  min-height: 0;
+  /* Room for the focus ring of what touches the edge. */
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tool__body > p {
+  color: var(--color-text-soft);
+}
+
+.sheet--tool .screen__actions {
+  margin: 0;
+}
+
+@media (min-width: 48em) {
+  .sheet--tool:not([data-shelter]) {
+    inset: 0;
+    width: min(38rem, 100% - 2 * var(--gutter));
+    height: fit-content;
+    max-height: calc(100dvh - 3rem);
+    margin: auto;
+    padding: 1.75rem;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-dialog);
+  }
+}
+
+/* A tool comes in like the record picker: a fade and a short rise, only with motion. It leaves at
+   once — the crisis closes it in the frame it comes. The shelter opens at once, like the contacts. */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-motion='on'] .sheet--tool:not([data-shelter])[open] {
+    transition:
+      opacity var(--dur-4) var(--ease-decelerate),
+      transform var(--dur-4) var(--ease-decelerate);
+  }
+
+  @starting-style {
+    html[data-motion='on'] .sheet--tool:not([data-shelter])[open] {
+      opacity: 0;
+      transform: translate3d(0, 12px, 0);
+    }
+  }
+}
+
+/* ── «Подихати хвилину» ── */
+
+.breathe__ready,
+.breathe__run,
+.breathe__done {
+  display: grid;
+  gap: 1rem;
+}
+
+.breathe__ready > p,
+.breathe__done > p {
+  color: var(--color-text-soft);
+}
+
+.breathe__stage {
+  position: relative;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.15rem;
+  width: min(16rem, 68vw, 42dvh);
+  aspect-ratio: 1;
+  margin: 0.5rem auto;
+}
+
+/* Decorative (aria-hidden): the step is in the words over it. */
+.breathe__circle {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--color-ai);
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--color-accent-tint-strong) 0%, var(--color-accent-tint) 55%, var(--color-fade-0) 72%);
+}
+
+.breathe__phase {
+  position: relative;
+  font-size: var(--step-2);
+  font-weight: 580;
+  color: var(--color-text);
+}
+
+/* Without motion the count is the guide: «Вдих · 4 3 2 1» in words and numbers. */
+.breathe__count {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: 2.25rem;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--color-text-soft);
+}
+
+.breathe__note {
+  text-align: center;
+}
+
+/* With motion the circle grows on the in-breath and settles on the out-breath, over the step's own
+   length (src/chat/ui/tools.ts sets --breath-ms to what is left of it); the count steps aside. */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-motion='on'] .breathe__circle {
+    scale: 0.62;
+    transition: scale var(--breath-ms, 4000ms) cubic-bezier(0.37, 0, 0.63, 1);
+  }
+
+  html[data-motion='on'] .breathe[data-phase='in'] .breathe__circle,
+  html[data-motion='on'] .breathe[data-phase='top'] .breathe__circle {
+    scale: 1;
+  }
+
+  html[data-motion='on'] .breathe[data-pattern='sigh'][data-phase='in'] .breathe__circle {
+    scale: 0.88;
+  }
+
+  html[data-motion='on'] .breathe__count {
+    display: none;
+  }
+}
+
+/* The light keeps the same pace while the exercise is open (later the character will). */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-motion='on'] .presence[data-presence='breathing'] .orb {
+    animation: orb-pace 10s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  }
+}
+
+@keyframes orb-pace {
+  0%,
+  100% {
+    transform: scale(0.96);
+  }
+  /* In for 4 s, out for 6. */
+  40% {
+    transform: scale(1.04);
+  }
+}
+
+/* ── «Заземлення 5-4-3-2-1» ── */
+
+.ground__progress {
+  font-size: var(--step--1);
+  color: var(--color-text-muted);
+}
+
+.ground__steps {
+  display: grid;
+  align-content: center;
+  min-height: 8.5rem;
+}
+
+.ground__step {
+  display: grid;
+  gap: 0.4rem;
+  justify-items: start;
+}
+
+.ground__num {
+  font-family: var(--font-mono);
+  font-size: clamp(3rem, 2.4rem + 2.5vw, 4.25rem);
+  font-weight: 300;
+  font-stretch: 87.5%;
+  line-height: 1;
+  color: var(--color-ai);
+}
+
+.ground__text {
+  max-width: 30ch;
+  font-size: var(--step-2);
+  line-height: 1.35;
+  color: var(--color-text);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-motion='on'] .ground__step:not([hidden]) {
+    animation: rise-in var(--dur-item) var(--ease-decelerate) backwards;
+    --rise: var(--rise-item);
+  }
+}
+
+.ground__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+/* ── «Як ви зараз?» ── */
+
+/* Energy × pleasantness. Every cell says it in words; the chosen one is filled and edged, not only
+   tinted. */
+.mood__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.mood__cell {
+  min-height: 4.25rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--color-field-border);
+  border-radius: var(--radius-field);
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  line-height: 1.35;
+  color: var(--color-text-soft);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease-standard),
+    background-color var(--dur-1) var(--ease-standard),
+    border-color var(--dur-1) var(--ease-standard);
+}
+
+.mood__cell:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.mood__cell[aria-pressed='true'] {
+  border-color: var(--color-accent);
+  background: var(--color-accent-tint-strong);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+  color: var(--color-text);
+}
+
+.mood__words:empty {
+  display: none;
+}
+
+.mood__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.mood__word {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.35rem 0.95rem;
+  border: 1px solid var(--color-field-border);
+  border-radius: 1.25rem;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  color: var(--color-text-soft);
+  cursor: pointer;
+}
+
+.mood__word:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.mood__word[aria-pressed='true'] {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.mood__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+/* ── «В укритті»: dark whatever the theme (its tokens are the dark theme's, tokens.css), no sound
+   (presence.ts), large controls, one column. Breathing and grounding opened from it keep the same
+   look. ── */
+
+.sheet--shelter,
+.sheet--tool[data-shelter] {
+  gap: 1.25rem;
+}
+
+.sheet--shelter > *,
+.sheet--tool[data-shelter] > * {
+  width: min(36rem, 100%);
+  margin-inline: auto;
+}
+
+.sheet--shelter .sheet__close,
+.sheet--tool[data-shelter] .sheet__close,
+.sheet--tool[data-shelter] .button {
+  min-height: 3.5rem;
+  font-size: var(--step-0);
+}
+
+/* The scrollbar's gutter shows the root's background: dark too while the shelter is open. */
+html:has(dialog[open]:is(.sheet--shelter, .sheet--tool[data-shelter])) {
+  background: var(--color-shelter-bg);
+}
+
+.shelter__first {
+  font-size: var(--step-1);
+  line-height: 1.5;
+}
+
+.tool__body > .shelter__first {
+  color: var(--color-text);
+}
+
+.shelter__tools {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.shelter__button {
+  display: flex;
+  align-items: center;
+  min-height: 4rem;
+  padding: 0 1.25rem;
+  border: 1px solid var(--color-field-border);
+  border-radius: var(--radius-field);
+  background: var(--color-surface);
+  font-family: var(--font-body);
+  font-size: var(--step-1);
+  font-weight: 560;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.shelter__button:hover {
+  border-color: var(--color-text-muted);
+}
+
+.help--shelter .help__number {
+  font-size: clamp(3rem, 2.4rem + 3vw, 4.5rem);
+}
+
 /* ---------- Windows High Contrast and similar ---------- */
 
 @media (forced-colors: active) {
@@ -3513,8 +3953,19 @@ html[data-motion='on'] :is(.confirm, .sheet--side, .sheet--pick)[open]::backdrop
   .sheet__close,
   .jump,
   .confirm,
-  .sheet {
+  .sheet,
+  .checkin,
+  .mood__cell,
+  .mood__word,
+  .shelter__button,
+  .breathe__circle {
     border: 1px solid CanvasText;
+  }
+
+  /* The chosen cell and word of «Як ви зараз?» (spec §3.13). */
+  .mood__cell[aria-pressed='true'],
+  .mood__word[aria-pressed='true'] {
+    outline: 2px solid Highlight;
   }
 
   /* After the group above: a wrong tag keeps its dashed 2 px border in forced colours too. */

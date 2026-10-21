@@ -4,8 +4,11 @@
 // else the screen's h1 (I6). A new screen closes every dialog without that return: focus goes to
 // the new screen's h1 instead (render.ts).
 //
-// The stack is at most two deep, and only as account → confirm(logout | delete-account | revoke):
-// closing the confirm leaves the account sheet open with the focus on the button that opened it.
+// The stack is account → confirm(logout | delete-account | revoke), help → a tool, and help →
+// shelter → breathing or grounding (spec §3.13): closing the top leaves the one under it open with
+// the focus on the button that opened the top. A tool's own life (its clock, its step) is
+// tools.ts's: told here, synchronously, when its dialog opens and when it closes — a dialog's
+// `close` event comes a task later, after the crisis has already shown.
 //
 // The page's live region moves into the dialog on top: showModal() makes the rest of the document
 // inert, and an inert region is not read — an answer that arrives under «Якщо важко» would go
@@ -17,6 +20,7 @@ import { maskPausedLine, type SafeLine } from '../core/helplines'
 import { accountOpError, dayMonth, requestIdLine, shortDate } from './copy'
 import { byEl, fromTemplate, headingOf, setAttr, setText, show } from './dom'
 import { fillProvider } from './screens/consent'
+import type { Tools } from './tools'
 
 type Kind = Overlay['o']
 
@@ -41,6 +45,9 @@ const SEARCH_DEBOUNCE_MS = 300
 /** The confirms of an account operation (core/state.ts: one at a time). */
 const ACCOUNT_CONFIRMS: ReadonlySet<string> = new Set(['logout', 'delete-account', 'revoke'])
 
+const TOOLS: ReadonlySet<Kind> = new Set<Kind>(['breathe', 'ground', 'mood', 'shelter'])
+const isTool = (kind: Kind): kind is 'breathe' | 'ground' | 'mood' | 'shelter' => TOOLS.has(kind)
+
 export function fillLines(list: HTMLElement, block: HTMLElement, lines: readonly SafeLine[]): void {
   list.replaceChildren()
   for (const line of lines) {
@@ -63,12 +70,17 @@ function hasTalk(model: Model): boolean {
   return hasUserMessage(sessionOf(model.state), pendingOf(model.state))
 }
 
-export function createDialogs(dispatch: (action: Action) => void): Dialogs {
+export function createDialogs(dispatch: (action: Action) => void, tools: Tools): Dialogs {
+  const dialog = (kind: Kind): HTMLDialogElement => document.querySelector<HTMLDialogElement>(`[data-dialog="${kind}"]`)!
   const elements: Record<Kind, HTMLDialogElement> = {
-    account: document.querySelector<HTMLDialogElement>('[data-dialog="account"]')!,
-    help: document.querySelector<HTMLDialogElement>('[data-dialog="help"]')!,
-    'revisit-pick': document.querySelector<HTMLDialogElement>('[data-dialog="revisit-pick"]')!,
-    confirm: document.querySelector<HTMLDialogElement>('[data-dialog="confirm"]')!,
+    account: dialog('account'),
+    help: dialog('help'),
+    'revisit-pick': dialog('revisit-pick'),
+    confirm: dialog('confirm'),
+    breathe: dialog('breathe'),
+    ground: dialog('ground'),
+    mood: dialog('mood'),
+    shelter: dialog('shelter'),
   }
   const confirmBody = byEl('confirm-body')
   const pickRoot = elements['revisit-pick']
@@ -306,10 +318,23 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
     }
   }
 
+  /** An item of a menu (a popover) that has closed cannot take the focus back: its button can. */
+  function reachable(node: HTMLElement): HTMLElement {
+    const menu = node.closest<HTMLElement>('[popover]')
+    if (menu === null || menu.id === '') return node
+    let open = false
+    try {
+      open = menu.matches(':popover-open')
+    } catch {
+      open = false
+    }
+    return open ? node : (document.querySelector<HTMLElement>(`[popovertarget="${menu.id}"]`) ?? node)
+  }
+
   function openerNow(): HTMLElement | null {
     const active = document.activeElement
-    if (active instanceof HTMLElement && active !== document.body) return active
-    return noted !== null && noted.isConnected ? noted : null
+    if (active instanceof HTMLElement && active !== document.body) return reachable(active)
+    return noted !== null && noted.isConnected ? reachable(noted) : null
   }
 
   return {
@@ -337,6 +362,7 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
         const top = stack.pop()!
         if (top.el.open) top.el.close()
         if (top.kind === 'revisit-pick') clearPick()
+        if (isTool(top.kind)) tools.close(top.kind)
         if (!screenChanged) returnFocus(top.opener)
       }
       if (wanted.every((o) => o.o !== 'revisit-pick')) pickTried = false
@@ -353,6 +379,9 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
         if (overlay.o === 'account') refreshAccount(next)
         if (overlay.o === 'help') refreshHelp(next)
         if (overlay.o === 'revisit-pick') refreshPick(next)
+        if (overlay.o === 'breathe' || overlay.o === 'ground' || overlay.o === 'mood' || overlay.o === 'shelter') {
+          tools.open(overlay, next, stack.slice(0, -1).some((o) => o.kind === 'shelter'))
+        }
         if (!el.open) el.showModal()
         initialFocus(el)
       }

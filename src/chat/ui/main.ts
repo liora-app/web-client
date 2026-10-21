@@ -153,6 +153,7 @@ function act(name: string, target: HTMLElement, event: Event): void {
   if (target.getAttribute('aria-busy') === 'true') return
   if (view.review.act(name, target)) return
   if (view.journal.act(name, target)) return
+  if (view.tools.act(name, target)) return
   switch (name) {
     case 'leave-home':
       // Something would be lost: ask first (spec §3.12); otherwise the link just works.

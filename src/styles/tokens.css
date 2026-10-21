@@ -178,6 +178,8 @@
   --color-hover: light-dark(rgb(28 38 38 / 0.06), rgb(236 241 237 / 0.08));
   --color-pressed: light-dark(rgb(28 38 38 / 0.1), rgb(236 241 237 / 0.14));
   --color-field-border: light-dark(#78827f, #6f7c78); /* ≥ 3:1 on the darkest paper sky too */
+  /* «В укритті» is dark in both themes (spec §3.13): the dark theme's background. */
+  --color-shelter-bg: #121a1b;
   /* Light: a warm veil, not a grey-green one; the paper stays paper under a dialog. */
   --color-scrim: light-dark(rgb(60 48 36 / 0.2), rgb(6 10 11 / 0.62));
   --color-band-top: light-dark(rgb(246 241 234 / 0.97), rgb(18 26 27 / 0.97));
@@ -308,4 +310,38 @@ html[data-theme-switching] *::after {
     --orb-core-glow-0: rgb(255 197 143 / 0);
     --orb-shadow: rgb(0 0 0 / 0);
   }
+}
+
+/* «В укритті» (chat.css, spec §3.13): the dark theme whatever the page's. light-dark() above is
+   resolved where it is declared — on :root — so a dialog's own color-scheme cannot flip it; the
+   dark side of each token is restated here (tests/e2e/chat-core.spec.ts checks it still matches). */
+:root:not([data-theme-lock]) :is(.sheet--shelter, .sheet--tool[data-shelter]) {
+  color-scheme: dark;
+  --color-bg: #121a1b;
+  --color-sky: #121a1b;
+  --color-surface: #192324;
+  --color-text: #ecf1ed;
+  --color-text-soft: #c9d3cf;
+  --color-text-muted: #a7b2ae;
+  --color-text-dim: #97a39f;
+  --color-line: rgb(236 241 237 / 0.13);
+  --color-line-strong: rgb(236 241 237 / 0.26);
+  --color-ai: #8fe3d4;
+  --color-teal: #8fe3d4;
+  --color-light: #ffc58f;
+  --color-light-strong: #ffe1bf;
+  --color-accent: #ffc58f;
+  --color-accent-strong: #ffe1bf;
+  --color-on-accent: #121a1b;
+  --color-accent-line: rgb(255 197 143 / 0.55);
+  --color-accent-tint: rgb(255 197 143 / 0.12);
+  --color-accent-tint-strong: rgb(255 197 143 / 0.14);
+  --color-focus: #ffc58f;
+  --color-selection: rgb(255 197 143 / 0.3);
+  --color-hover: rgb(236 241 237 / 0.08);
+  --color-pressed: rgb(236 241 237 / 0.14);
+  --color-field-border: #6f7c78;
+  --color-scrim: rgb(6 10 11 / 0.62);
+  --color-fade-0: rgb(18 26 27 / 0);
+  --color-shadow: rgb(0 0 0 / 0.42);
 }

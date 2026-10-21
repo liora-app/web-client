@@ -121,6 +121,15 @@
               <li><a href="/">На головну</a></li>
             </ul>
             <p class="helpline">Якщо вам зараз дуже важко, не чекайте входу: <a href="tel:112">112</a> або <a href="tel:103">103</a> — цілодобово й безкоштовно.</p>
+            <!-- The kit without a conversation (spec §3.13): no sign-in, no request. -->
+            <div class="kit">
+              <p class="kit__title" id="kit-title">Без входу</p>
+              <ul class="arrows arrows--row" role="list" aria-labelledby="kit-title">
+                <li><button type="button" data-act="tool" data-tool="breathe" aria-haspopup="dialog">Подихати хвилину</button></li>
+                <li><button type="button" data-act="tool" data-tool="ground" aria-haspopup="dialog">Заземлення 5-4-3-2-1</button></li>
+                <li><button type="button" data-act="tool" data-tool="shelter" aria-haspopup="dialog">В укритті</button></li>
+              </ul>
+            </div>
           </section>
 
           <!-- ============ not-invited ============ -->
@@ -343,7 +352,13 @@
 
             <!-- Until the first message: a few ways to begin. A chip puts its words into the field; the
                  person edits them and sends — nothing goes by itself. -->
-            <div class="starters" role="group" aria-label="Почати зі слів" data-el="starters" hidden></div>
+            <div class="starters" role="group" aria-label="Почати зі слів" data-el="starters" hidden>
+              <!-- The check-in (spec §3.13): optional; its word goes into the field only on «Додати до розмови». -->
+              <button class="checkin" type="button" data-act="tool" data-tool="mood" aria-haspopup="dialog" data-el="checkin">
+                <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6.5" /><path d="M7.25 11.75c.7.8 1.6 1.25 2.75 1.25s2.05-.45 2.75-1.25" /></svg>
+                Як ви зараз?
+              </button>
+            </div>
 
             <div class="nosave" data-el="nosave">
               <button class="switch" type="button" role="switch" aria-checked="false" data-act="no-save" aria-describedby="nosave-hint">
@@ -377,23 +392,28 @@
               <label class="visually-hidden" for="composer-input">Ваше повідомлення для AI</label>
               <div class="composer__field">
                 <textarea class="composer__input" id="composer-input" rows="1" autocomplete="off" placeholder="Пишіть так, як думаєте…" aria-describedby="composer-note"></textarea>
-                <!-- «Інструменти»: small exercises beside the conversation (each is wired in a later step). -->
+                <!-- «Інструменти»: small exercises beside the conversation (spec §3.13). Each opens its own
+                     dialog; none of them sends anything or starts the conversation. -->
                 <button class="composer__tools" type="button" popovertarget="composer-tools" aria-label="Інструменти" data-el="composer-tools">
                   <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 4.75v10.5M4.75 10h10.5" /></svg>
                 </button>
                 <div class="composer__menu" id="composer-tools" popover aria-labelledby="composer-tools-title">
                   <p class="composer__menu-title" id="composer-tools-title">Інструменти</p>
-                  <button class="composer__menu-item" type="button" data-act="tool" data-tool="breathe" aria-disabled="true">
+                  <button class="composer__menu-item" type="button" data-act="tool" data-tool="breathe" aria-haspopup="dialog">
                     <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="2.75" /><circle cx="10" cy="10" r="6.5" /></svg>
                     <span>Подихати хвилину</span>
                   </button>
-                  <button class="composer__menu-item" type="button" data-act="tool" data-tool="ground" aria-disabled="true">
+                  <button class="composer__menu-item" type="button" data-act="tool" data-tool="ground" aria-haspopup="dialog">
                     <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3.5 14.5h13M6 11.25h8M8.5 8h3" /></svg>
                     <span>Заземлення 5-4-3-2-1</span>
                   </button>
-                  <button class="composer__menu-item" type="button" data-act="tool" data-tool="mood" aria-disabled="true">
+                  <button class="composer__menu-item" type="button" data-act="tool" data-tool="mood" aria-haspopup="dialog">
                     <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6.5" /><path d="M7.25 11.75c.7.8 1.6 1.25 2.75 1.25s2.05-.45 2.75-1.25" /></svg>
                     <span>Як ви зараз?</span>
+                  </button>
+                  <button class="composer__menu-item" type="button" data-act="tool" data-tool="shelter" aria-haspopup="dialog">
+                    <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3.5 9.25 10 4l6.5 5.25M5.5 8v7.75h9V8" /><path d="M8.5 15.75v-3.5h3v3.5" /></svg>
+                    <span>В укритті</span>
                   </button>
                 </div>
                 <button class="composer__send" type="button" aria-label="Надіслати" aria-disabled="true" data-el="composer-send">
@@ -556,6 +576,11 @@
             </div>
             <p class="field-error" data-el="review-error" role="alert"></p>
             <p class="small" data-el="review-request-id" hidden></p>
+            <!-- «Як ви зараз?» of this conversation (spec §3.13): words, never scores; in this tab only. -->
+            <div class="mood-after" data-el="mood-after" hidden>
+              <p class="mood-after__line" data-el="mood-line"></p>
+              <span class="arrows arrows--inline"><button type="button" data-act="tool" data-tool="mood" data-when="after" aria-haspopup="dialog">А зараз?</button></span>
+            </div>
             <p class="screen__actions" data-el="review-reload-row" hidden>
               <button class="button button--secondary" type="button" data-act="copy-theses">Скопіювати тези</button>
               <button class="button button--secondary" type="button" data-act="reload">Оновити сторінку</button>
@@ -583,6 +608,11 @@
               <li><a href="/api/v1/export?format=md" download>Завантажити щоденник (.md)</a></li>
             </ul>
             <p class="quiet">Добре, що ви знайшли на це час.</p>
+            <!-- «Як ви зараз?» of this conversation (spec §3.13): words, never scores; in this tab only. -->
+            <div class="mood-after" data-el="mood-after" hidden>
+              <p class="mood-after__line" data-el="mood-line"></p>
+              <span class="arrows arrows--inline"><button type="button" data-act="tool" data-tool="mood" data-when="after" aria-haspopup="dialog">А зараз?</button></span>
+            </div>
             <p class="screen__actions">
               <button class="button button--primary" type="button" data-act="new-chat">Почати нову розмову</button>
             </p>
@@ -612,6 +642,11 @@
               </ul>
             </div>
             <p class="quiet">Добре, що ви знайшли на це час. Якщо після розмови стало важче — <a href="tel:112">112</a>, <a href="tel:103">103</a> або <a href="https://howareu.com/hot-lines" target="_blank" rel="noopener noreferrer">гарячі лінії «Ти як?»<span class="visually-hidden"> (відкриється в новій вкладці)</span></a>.</p>
+            <!-- «Як ви зараз?» of this conversation (spec §3.13): words, never scores; in this tab only. -->
+            <div class="mood-after" data-el="mood-after" hidden>
+              <p class="mood-after__line" data-el="mood-line"></p>
+              <span class="arrows arrows--inline"><button type="button" data-act="tool" data-tool="mood" data-when="after" aria-haspopup="dialog">А зараз?</button></span>
+            </div>
             <p class="screen__actions">
               <button class="button button--primary" type="button" data-act="new-chat">Почати нову розмову</button>
             </p>
@@ -743,7 +778,157 @@
         <h3 class="row__title">Лінії підтримки</h3>
         <ul class="lines__list" role="list" data-el="help-lines" data-no-stoplist></ul>
       </div>
+      <!-- The tools (spec §3.13): none of them asks the server for anything. Not in the crisis: the
+           contacts are all there is there (§6.7). -->
+      <div class="help-tools" data-el="help-tools">
+        <h3 class="row__title" id="help-tools-title">Вправи без розмови</h3>
+        <ul class="arrows arrows--row" role="list" aria-labelledby="help-tools-title">
+          <li><button type="button" data-act="tool" data-tool="breathe" aria-haspopup="dialog">Подихати хвилину</button></li>
+          <li><button type="button" data-act="tool" data-tool="ground" aria-haspopup="dialog">Заземлення 5-4-3-2-1</button></li>
+          <li><button type="button" data-act="tool" data-tool="shelter" aria-haspopup="dialog">В укритті</button></li>
+        </ul>
+      </div>
       <p class="sheet__kept" data-el="help-kept" hidden>Ваша розмова на сторінці нікуди не зникла — закрийте це вікно, щоб повернутися до неї.</p>
+    </dialog>
+
+    <!-- ============ The self-help tools (spec §3.13) ============
+         Dialogs like the others: the focus stays inside, Esc closes, the focus goes back to what opened
+         them, and a new screen — the crisis above all — closes them in the same frame. Nothing about an
+         exercise or a check-in leaves this page or stays after it. -->
+
+    <dialog class="sheet sheet--tool breathe" id="breathe-dialog" aria-labelledby="breathe-title" data-dialog="breathe">
+      <div class="sheet__head">
+        <p class="sheet__kicker">Вправа</p>
+        <!-- «Стоп» while the minute runs: always in view, it ends the exercise. -->
+        <button class="sheet__close" type="button" data-act="close" data-el="breathe-close">Закрити</button>
+      </div>
+      <!-- The head stays put; what is under it scrolls on a short screen. -->
+      <div class="tool__body">
+        <h2 class="sheet__title" id="breathe-title">Подихати хвилину</h2>
+        <!-- The step, said once when it changes; never every second. -->
+        <p class="visually-hidden" role="status" data-el="breathe-status"></p>
+        <div class="breathe__ready" data-el="breathe-ready">
+          <p data-el="breathe-line-slow">Вдих на 4, видих на 6. Можна зупинитися будь-коли.</p>
+          <p data-el="breathe-line-sigh" hidden>Вдих носом, ще короткий довдих — і довгий повільний видих.</p>
+          <button class="switch" type="button" role="switch" aria-checked="false" data-act="breathe-sigh" data-el="breathe-sigh">
+            <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+            <span class="switch__label">Циклічне зітхання</span>
+          </button>
+          <p class="screen__actions">
+            <button class="button button--primary" type="button" data-act="breathe-start" data-focus>Почати</button>
+          </p>
+          <details class="more">
+            <summary>Чому це може допомогти</summary>
+            <div class="more__body">
+              <p>Довший видих — простий спосіб трохи сповільнитися. Комусь допомагає, комусь ні — спробуйте й подивіться на себе.</p>
+            </div>
+          </details>
+        </div>
+        <div class="breathe__run" data-el="breathe-run" hidden>
+          <div class="breathe__stage" aria-hidden="true">
+            <span class="breathe__circle" data-el="breathe-circle"></span>
+            <span class="breathe__phase" data-el="breathe-phase"></span>
+            <span class="breathe__count" data-el="breathe-count"></span>
+          </div>
+          <p class="small breathe__note">Якщо паморочиться в голові — дихайте як зазвичай.</p>
+        </div>
+        <div class="breathe__done" data-el="breathe-done" hidden>
+          <p>Хвилина минула.</p>
+          <p class="screen__actions">
+            <button class="button button--secondary" type="button" data-act="breathe-again" data-el="breathe-again">Ще хвилину</button>
+          </p>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="sheet sheet--tool ground" id="ground-dialog" aria-labelledby="ground-title" data-dialog="ground">
+      <div class="sheet__head">
+        <p class="sheet__kicker">Вправа</p>
+        <button class="sheet__close" type="button" data-act="close">Закрити</button>
+      </div>
+      <!-- The head stays put; what is under it scrolls on a short screen. -->
+      <div class="tool__body">
+        <h2 class="sheet__title" id="ground-title">Заземлення 5-4-3-2-1</h2>
+        <p class="visually-hidden" role="status" data-el="ground-status"></p>
+        <p class="ground__progress" data-el="ground-progress" aria-hidden="true"></p>
+        <div class="ground__steps">
+          <div class="ground__step" data-step="0"><p class="ground__text">Повільно видихніть. Відчуйте ступні на підлозі.</p></div>
+          <div class="ground__step" data-step="1" hidden><span class="ground__num" aria-hidden="true">5</span><p class="ground__text">Знайдіть поглядом 5 речей довкола.</p></div>
+          <div class="ground__step" data-step="2" hidden><span class="ground__num" aria-hidden="true">4</span><p class="ground__text">Торкніться 4 речей поруч. Які вони на дотик?</p></div>
+          <div class="ground__step" data-step="3" hidden><span class="ground__num" aria-hidden="true">3</span><p class="ground__text">Почуйте 3 звуки.</p></div>
+          <div class="ground__step" data-step="4" hidden><span class="ground__num" aria-hidden="true">2</span><p class="ground__text">Помітьте 2 запахи — або 2 відчуття в тілі.</p></div>
+          <div class="ground__step" data-step="5" hidden><span class="ground__num" aria-hidden="true">1</span><p class="ground__text">Назвіть одне, що ви відчуваєте просто зараз. Можна подумки.</p></div>
+          <div class="ground__step ground__step--end" data-step="6" hidden><p class="ground__text">Ви тут. Рухайтеся далі у своєму темпі.</p></div>
+        </div>
+        <div class="ground__nav">
+          <button class="button button--secondary" type="button" data-act="ground-back" data-el="ground-back" hidden>Назад</button>
+          <button class="button button--primary" type="button" data-act="ground-next" data-el="ground-next" data-focus>Далі</button>
+          <button class="button button--primary" type="button" data-act="close" data-el="ground-done" hidden>Готово</button>
+          <button class="button button--secondary" type="button" data-act="ground-again" data-el="ground-again" hidden>Ще раз</button>
+        </div>
+        <p class="small" data-el="ground-safety">Якщо зараз повітряна небезпека — спершу в укриття. Вправу можна зробити там.</p>
+        <p class="small">Можна зупинитися будь-коли.</p>
+      </div>
+    </dialog>
+
+    <dialog class="sheet sheet--tool mood" id="mood-dialog" aria-labelledby="mood-title" data-dialog="mood">
+      <div class="sheet__head">
+        <p class="sheet__kicker">Лише на цій сторінці</p>
+        <button class="sheet__close" type="button" data-act="close">Пропустити</button>
+      </div>
+      <!-- The head stays put; what is under it scrolls on a short screen. -->
+      <div class="tool__body">
+        <h2 class="sheet__title" id="mood-title" data-el="mood-title">Як ви зараз?</h2>
+        <p id="mood-hint">Оберіть, що ближче.</p>
+        <!-- Energy × pleasantness: the top row has more energy, the right column is pleasant. Each cell
+             says it in words, not by colour alone. -->
+        <div class="mood__grid" role="group" aria-labelledby="mood-title" aria-describedby="mood-hint">
+          <button class="mood__cell" type="button" aria-pressed="false" data-act="mood-quadrant" data-quadrant="high-unpleasant" data-focus>Багато сил, неприємно</button>
+          <button class="mood__cell" type="button" aria-pressed="false" data-act="mood-quadrant" data-quadrant="high-pleasant">Багато сил, приємно</button>
+          <button class="mood__cell" type="button" aria-pressed="false" data-act="mood-quadrant" data-quadrant="low-unpleasant">Мало сил, неприємно</button>
+          <button class="mood__cell" type="button" aria-pressed="false" data-act="mood-quadrant" data-quadrant="low-pleasant">Мало сил, приємно</button>
+        </div>
+        <!-- The words of each cell come from the core's dictionary (src/chat/core/selfhelp.ts), put here
+             once when the page starts. -->
+        <div class="mood__words" data-el="mood-words"></div>
+        <div class="mood__actions" data-el="mood-actions" hidden>
+          <button class="button button--primary" type="button" data-act="mood-done">Готово</button>
+          <button class="button button--secondary" type="button" data-act="mood-add" data-el="mood-add">Додати до розмови</button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- «В укритті»: a quiet minute in a shelter — dark whatever the theme, no sound, large controls. Only
+         the person opens it; it knows nothing about where they are. -->
+    <dialog class="sheet sheet--shelter" id="shelter-dialog" aria-labelledby="shelter-title" aria-describedby="shelter-first" data-dialog="shelter">
+      <div class="sheet__head">
+        <p class="sheet__kicker">В укритті</p>
+        <button class="sheet__close" type="button" data-act="close">Закрити</button>
+      </div>
+      <!-- The head stays put; what is under it scrolls on a short screen. -->
+      <div class="tool__body">
+        <h2 class="sheet__title" id="shelter-title">Спершу — безпека</h2>
+        <p class="shelter__first" id="shelter-first">Якщо ви ще не в укритті — ідіть туди. Ця сторінка зачекає.</p>
+        <div class="shelter__tools">
+          <button class="shelter__button" type="button" data-act="tool" data-tool="breathe" aria-haspopup="dialog">Подихати хвилину</button>
+          <button class="shelter__button" type="button" data-act="tool" data-tool="ground" aria-haspopup="dialog">Заземлення 5-4-3-2-1</button>
+        </div>
+        <ul class="help help--shelter" role="list">
+          <li class="help__item">
+            <a class="help__number" href="tel:112" aria-label="Зателефонувати 112">112</a>
+            <p><strong>Екстрені служби.</strong></p>
+          </li>
+          <li class="help__item">
+            <a class="help__number" href="tel:103" aria-label="Зателефонувати 103">103</a>
+            <p><strong>Швидка медична допомога.</strong></p>
+          </li>
+        </ul>
+        <a class="help__link" href="https://howareu.com/hot-lines" target="_blank" rel="noopener noreferrer">
+          Гарячі лінії «Ти як?»
+          <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M7 5h8v8M15 5 5.5 14.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" fill="none" /></svg>
+          <span class="visually-hidden">(відкриється в новій вкладці)</span>
+        </a>
+      </div>
     </dialog>
 
     <dialog class="sheet sheet--side" id="account-dialog" aria-labelledby="account-dialog-title" data-dialog="account">

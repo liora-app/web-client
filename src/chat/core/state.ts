@@ -9,11 +9,14 @@
 //   I6 a new screen closes every overlay; I7 leaveGuard(); I9 turnBody()/summarizeBody() in api.ts.
 // The diary page (`journal`, spec §7.7) is a screen of its own here: it keeps the conversation it
 // was opened from and gives it back, and its requests are stamped with ctx.seq like every other.
+// The self-help tools (spec §3.13) are overlays like the others: a new screen — the crisis above
+// all — closes them in the same step. What «Як ви зараз?» records stays in ctx.mood, never sent.
 
 import { GOOGLE_START, grantBody, summarizeBody, turnBody } from './api'
 import { DEFAULT_BUSY_RETRY_MS, outcomeUnknown, toUiError, uiError, type ApiError, type UiError } from './errors'
 import { FALLBACK, PAUSED_LINE_NOTE_SHORT, maskPausedLineShort, type SafeHelplines } from './helplines'
 import { FALLBACK_TZ, formOf, patchOf, searchQuery, shiftDay, type EntryForm, type PatchSent } from './journal'
+import { NO_MOOD, isMoodWord, isToolKind, type MoodLog, type ToolKind } from './selfhelp'
 import {
   MAX_BULLET,
   MAX_BULLETS,
@@ -317,6 +320,9 @@ export type Ctx = Readonly<{
   /** The page navigates away on the person's word («Піти», «Увійти»): at pagehide nothing of the
    *  conversation may stay behind for the bfcache (§5.6). */
   leaving: boolean
+  /** «Як ви зараз?» of this conversation: the first word and the one at its end, in this tab only
+   *  (spec §3.13). A new conversation, the crisis and a signed-out page start without them. */
+  mood: MoodLog
 }>
 
 export type ConfirmKind =
@@ -346,10 +352,22 @@ export type PickOverlay = Readonly<{
   revertTo: ScenarioId | null
 }>
 
+/** «Як ви зараз?» at the start or in the middle (`before`), «А зараз?» on the theses, «Збережено»
+ *  and «Розмову завершено» (`after`). */
+export type MoodWhen = 'before' | 'after'
+
+/** The self-help tools (spec §3.13). */
+export type ToolOverlay =
+  | Readonly<{ o: 'breathe' }>
+  | Readonly<{ o: 'ground' }>
+  | Readonly<{ o: 'mood'; when: MoodWhen }>
+  | Readonly<{ o: 'shelter' }>
+
 export type Overlay =
   | Readonly<{ o: 'account' }>
   | Readonly<{ o: 'help' }>
   | PickOverlay
+  | ToolOverlay
   | Readonly<{
       o: 'confirm'
       kind: ConfirmKind
@@ -380,6 +398,7 @@ export const INITIAL_CTX: Ctx = Object.freeze<Ctx>({
   cooldown: null,
   maybeSaved: false,
   leaving: false,
+  mood: NO_MOOD,
 })
 
 export const INITIAL_MODEL: Model = Object.freeze<Model>({ state: { s: 'booting' }, ctx: INITIAL_CTX, overlay: [] })
@@ -451,7 +470,11 @@ export type Action =
   | Readonly<{ type: 'save/check'; id: number; list: SummaryList; date: string | null }>
   | Readonly<{ type: 'save/check-fail'; id: number; error: ApiError }>
   // overlays and the account
-  | Readonly<{ type: 'overlay/open'; overlay: 'account' | 'help' }>
+  /** A tool opens over «Якщо важко» and over «В укритті», over nothing else. `when` only for mood. */
+  | Readonly<{ type: 'overlay/open'; overlay: 'account' | 'help' | ToolKind; when?: MoodWhen }>
+  /** «Готово» / «Додати до розмови» in «Як ви зараз?»: a word of the dictionary, recorded in
+   *  ctx.mood; the check-in closes. Esc and «Пропустити» record nothing. */
+  | Readonly<{ type: 'mood/pick'; word: string }>
   | Readonly<{ type: 'confirm/open'; kind: ConfirmKind; revoke?: ConsentKind; leaveTo?: 'home' | 'reload'; summary?: string }>
   | Readonly<{ type: 'confirm/switch'; kind: 'end' | 'end-no-theses' }>
   | Readonly<{ type: 'confirm/accept'; choice?: 'summarize' }>
@@ -694,6 +717,7 @@ function startChat(model: Model, init: Readonly<{ afterCrisis?: boolean; wipe?: 
     afterCrisis: init.afterCrisis ?? model.ctx.afterCrisis,
     cooldown: null,
     maybeSaved: false,
+    mood: NO_MOOD,
   }
   const state = chat(freshSession(ctx, 'free', false))
   return [{ ...model, ctx, state }, init.wipe === true ? [{ type: 'announcer/clear' }] : NONE]
@@ -751,7 +775,9 @@ function beginSave(model: Model, review: ReviewState): Step {
 
 function enterCrisis(model: Model, helplines: SafeHelplines, stale: readonly Msg[]): Step {
   return [
-    { ...model, ctx: { ...model.ctx, helplines: loaded(helplines) }, state: { s: 'crisis', helplines, stale: freezeMessages(stale) } },
+    // What «Як ви зараз?» recorded goes with the conversation (selfhelp §5: a tool the crisis
+    // interrupts keeps nothing).
+    { ...model, ctx: { ...model.ctx, helplines: loaded(helplines), mood: NO_MOOD }, state: { s: 'crisis', helplines, stale: freezeMessages(stale) } },
     [{ type: 'abort', target: 'all' }, { type: 'announcer/clear' }],
   ]
 }
@@ -778,6 +804,7 @@ function signedOut(model: Model, variant: 'fresh' | 'logged-out', notice: AuthNo
     deleteAttempt: 'none',
     afterCrisis: false,
     op: null,
+    mood: NO_MOOD,
   }
   return [
     { ...model, ctx, state: { s: 'signed-out', variant, notice } },
@@ -786,7 +813,17 @@ function signedOut(model: Model, variant: 'fresh' | 'logged-out', notice: AuthNo
 }
 
 function accountDeleted(model: Model, variant: 'confirmed' | 'presumed'): Step {
-  const ctx: Ctx = { ...model.ctx, me: null, consents: null, diary: EMPTY_DIARY, authNotice: null, wantChat: false, deleteAttempt: 'none', op: null }
+  const ctx: Ctx = {
+    ...model.ctx,
+    me: null,
+    consents: null,
+    diary: EMPTY_DIARY,
+    authNotice: null,
+    wantChat: false,
+    deleteAttempt: 'none',
+    op: null,
+    mood: NO_MOOD,
+  }
   return [
     { ...model, ctx, state: { s: 'account-deleted', variant } },
     [{ type: 'abort', target: 'all' }, { type: 'announcer/clear' }],
@@ -1204,6 +1241,32 @@ function onConfirmAccept(model: Model, choice: 'summarize' | undefined): Step {
   }
 }
 
+/** The screens with «А зараз?»: the conversation is over or about to be (spec §3.13). */
+const AFTER_SCREENS: ReadonlySet<State['s']> = new Set(['review', 'saved', 'ended'])
+
+/** A self-help tool (spec §3.13). Never in the crisis — there are no dialogs and no timers there,
+ *  the contacts come first (§6.7) — nor while the page boots. Over «Якщо важко» it stacks, so Esc
+ *  gives the contacts back; over «В укритті» breathing and grounding stack the same way. Anywhere
+ *  else it replaces whatever is open. No request: the tools need nothing from the server. */
+function openTool(model: Model, kind: ToolKind, when: MoodWhen | undefined): Step {
+  const { state, ctx } = model
+  if (state.s === 'crisis' || state.s === 'booting') return [model, NONE]
+  const after = kind === 'mood' && when === 'after'
+  // «А зараз?» compares with a word from the start: without one there is nothing to ask after.
+  if (after && (ctx.mood.before === null || !AFTER_SCREENS.has(state.s))) return [model, NONE]
+  const overlay: ToolOverlay = kind === 'mood' ? { o: 'mood', when: after ? 'after' : 'before' } : { o: kind }
+  const top = topOverlay(model)
+  if (top !== undefined && top.o === overlay.o) return [model, NONE]
+  const stacks = top !== undefined && (top.o === 'help' || (top.o === 'shelter' && (kind === 'breathe' || kind === 'ground')))
+  return [{ ...model, overlay: stacks ? [...model.overlay, overlay] : [overlay] }, NONE]
+}
+
+/** The tool open on top, if any. */
+export function topTool(model: Model): ToolOverlay | null {
+  const top = topOverlay(model)
+  return top !== undefined && (top.o === 'breathe' || top.o === 'ground' || top.o === 'mood' || top.o === 'shelter') ? top : null
+}
+
 function onOverlayClose(model: Model): Step {
   const top = topOverlay(model)
   if (top === undefined) return [model, NONE]
@@ -1399,7 +1462,7 @@ function startRevisit(model: Model, item: SummaryOut, wipe: boolean): Step {
       : // Not loaded yet (or failed): the record alone. A first page still on its way is dropped — it
         // would replace the diary without this record; the picker loads its own first page.
         loaded({ items: [item], nextCursor: null })
-  const next: Ctx = { ...ctx, wantChat: false, cooldown: null, maybeSaved: false, diary }
+  const next: Ctx = { ...ctx, wantChat: false, cooldown: null, maybeSaved: false, diary, mood: NO_MOOD }
   const session: Session = { ...freshSession(next, 'revisit', false), revisitIds: Object.freeze([item.id]) }
   const effects: readonly Effect[] = wipe ? [{ type: 'composer/clear' }, { type: 'announcer/clear' }] : NONE
   return [{ ...model, ctx: next, state: chat(session, { revertTo: 'free' }) }, effects]
@@ -1970,6 +2033,7 @@ function step(model: Model, action: Action): Step {
 
     // ── overlays and the account ──
     case 'overlay/open': {
+      if (isToolKind(action.overlay)) return openTool(model, action.overlay, action.when)
       if (action.overlay === 'account') return accountReachable(model) ? [{ ...model, overlay: [{ o: 'account' }] }, NONE] : [model, NONE]
       const opened: Model = { ...model, overlay: [{ o: 'help' }] }
       if (ctx.helplines.status !== 'idle') return [opened, NONE]
@@ -2002,6 +2066,16 @@ function step(model: Model, action: Action): Step {
       return onConfirmAccept(model, action.choice)
     case 'overlay/close':
       return onOverlayClose(model)
+    case 'mood/pick': {
+      const top = topOverlay(model)
+      if (top === undefined || top.o !== 'mood' || !isMoodWord(action.word)) return [model, NONE]
+      const { mood } = ctx
+      // The first word of the conversation stays its «спершу»; a later check-in in the middle
+      // records nothing new (it names the feeling, or goes into the field). «А зараз?» is the end.
+      const next: MoodLog =
+        top.when === 'after' ? { ...mood, after: action.word } : mood.before === null ? { ...mood, before: action.word } : mood
+      return [{ ...model, overlay: model.overlay.slice(0, -1), ctx: next === mood ? ctx : { ...ctx, mood: next } }, NONE]
+    }
     case 'account/logout':
       if (!accountReachable(model) || ctx.op?.busy === true) return [model, NONE]
       if (leaveGuard(state)) return step(model, { type: 'confirm/open', kind: 'logout' })

@@ -30,6 +30,7 @@ import {
   type Screen,
 } from './screens/text'
 import { reviewScreen, summarizingScreen, type ReviewScreen } from './screens/theses'
+import { createTools, type Tools } from './tools'
 
 export type View = Readonly<{
   render(model: Model, prev: Model | null): void
@@ -38,6 +39,7 @@ export type View = Readonly<{
   review: ReviewScreen
   journal: JournalScreen
   dialogs: Dialogs
+  tools: Tools
 }>
 
 const WIDE = window.matchMedia('(min-width: 64em)')
@@ -60,7 +62,10 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky,
   )
 
   const presence: PresenceView = createPresence(presenceRoot, gl, sound)
-  const dialogs = createDialogs(dispatch)
+  // The self-help tools (§3.13) put a mood sentence into the field: the chat screen's composer,
+  // created just below.
+  const tools = createTools(dispatch, () => chat.composer)
+  const dialogs = createDialogs(dispatch, tools)
   const chat = chatScreen(dispatch, () => presence.pulse(), () => presence.listen())
   const consent = consentScreen()
   const review = reviewScreen(dispatch)
@@ -173,6 +178,7 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky,
 
     screens[s].render(model, changed)
     dialogs.sync(model, changed)
+    tools.sync(model)
     presence.sync(model, dialogs.helpOpen())
     syncSlot(model)
 
@@ -189,5 +195,5 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky,
     }
   }
 
-  return { render, chat, consent, review, journal, dialogs }
+  return { render, chat, consent, review, journal, dialogs, tools }
 }
