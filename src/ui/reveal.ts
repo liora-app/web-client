@@ -20,7 +20,13 @@ export function initReveal(): void {
         const onScreen = box.bottom > 0 && box.top < window.innerHeight
         if (entry.isIntersecting || (first && onScreen)) show(entry.target)
       }
-      if (first) root.classList.add('js-reveal')
+      if (first) {
+        // The start state in one frame, transitions off (components.css): what waits below the fold
+        // does not fade out on its way there. The forced style flush makes it final before they return.
+        root.classList.add('js-reveal-start', 'js-reveal')
+        void root.offsetHeight
+        root.classList.remove('js-reveal-start')
+      }
     },
     { rootMargin: '0px 0px -12% 0px', threshold: 0.08 },
   )

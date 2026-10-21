@@ -228,6 +228,11 @@ html.js-reveal[data-motion='on'] :is(.display, .display-2)[data-reveal]:not(.is-
   transform: translate3d(0, 0.45em, 0);
 }
 
+/* The start state comes in one frame (src/ui/reveal.ts): nothing fades out on its way to it. */
+html.js-reveal.js-reveal-start[data-motion='on'] [data-reveal] {
+  transition: none;
+}
+
 /* Keyboard focus never lands in a hidden or still fading block (src/ui/reveal.ts shows it at once). */
 html.js-reveal[data-motion='on'] [data-reveal]:focus-within {
   transition: none;

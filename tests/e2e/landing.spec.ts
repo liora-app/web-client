@@ -287,14 +287,29 @@ test.describe('navigation and keyboard', () => {
     expect(waiting).toEqual([])
   })
 
-  test('once the observer answers, what is below the fold waits for the scroll and then comes in', async ({ page }) => {
+  test('once the observer answers, what is below the fold waits for the scroll (without fading out to it) and then comes in', async ({ page }) => {
     await page.addInitScript(NO_WEBGL2)
+    // Every transition a reveal block starts: none before a scroll — the start state comes in one frame.
+    await page.addInitScript(() => {
+      const runs: string[] = []
+      ;(window as unknown as { __runs: string[] }).__runs = runs
+      document.addEventListener(
+        'transitionrun',
+        (event) => {
+          if (event.target instanceof Element && event.target.matches('[data-reveal]')) runs.push(`${event.target.id || event.target.className}:${event.propertyName}`)
+        },
+        true,
+      )
+    })
     await page.goto('/')
     await expect(page.locator('html')).toHaveAttribute('data-motion', 'on')
     await expect(page.locator('html')).toHaveClass(/\bjs-reveal\b/)
+    await expect(page.locator('html')).not.toHaveClass(/js-reveal-start/)
     const title = page.locator('#faq-title')
     await expect(title).not.toHaveClass(/is-visible/)
     await expect(title).toHaveCSS('opacity', '0')
+    await page.waitForTimeout(300)
+    expect(await page.evaluate(() => (window as unknown as { __runs: string[] }).__runs)).toEqual([])
     await title.scrollIntoViewIfNeeded()
     await expect(title).toHaveClass(/is-visible/)
     await expect(title).toHaveCSS('opacity', '1')
