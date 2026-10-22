@@ -5760,10 +5760,11 @@ test.describe('what the theme and motion review found', () => {
     expect(await heard()).toEqual(['dark', 'dark', 'dark'])
   })
 
-  test('#130 «Увімкнути анімацію» stored and the system reducing motion: the JS stays still as the CSS does — no cross-fade, no glide, no smooth scroll', async ({ page }, testInfo) => {
+  test('#130 «Увімкнути анімацію» stored and the system reducing motion: the JS stays still as the CSS does — no cross-fade, no glide, no smooth scroll, no word fade', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'one engine is enough')
     // What the page's scripts ask to move: a View Transition, Element.animate() on the transcript,
-    // the behaviour of the send anchor's scroll.
+    // the behaviour of the send anchor's scroll; the stream's words come in through a held turn.
+    const stream = await streamTurns(page)
     await page.addInitScript(() => {
       const moves: string[] = []
       ;(window as unknown as { __moves: string[] }).__moves = moves
@@ -5791,14 +5792,26 @@ test.describe('what the theme and motion review found', () => {
       await themeItem(page, name).click()
       await expect(themeMenu(page)).toBeHidden()
     }
+    /** The first message and its answer: how many of the streamed words fade in (span.w, §5.7). */
+    const firstAnswer = async (): Promise<number> => {
+      await send(page, 'Синтетичне повідомлення про робочий тиждень.')
+      await stream.requests(1)
+      await stream.write(meta() + token('Одне ') + token('слово за ') + token('словом.'))
+      const live = page.locator('[data-el="talk"] > li[aria-busy="true"]')
+      await expect(live).toContainText('словом.')
+      const fading = await live.locator('.w').count()
+      await stream.write(done())
+      await answered(page, 1)
+      return fading
+    }
 
-    // With motion, all three move: the control the rest of the test is measured against.
+    // With motion, all of it moves: the control the rest of the test is measured against.
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     await openChat(page)
     await expect(html(page)).toHaveAttribute('data-motion', 'on')
     await choose('Світла')
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
-    await exchange(page)
+    expect(await firstAnswer()).toBeGreaterThan(0)
     expect(await moves()).toEqual(expect.arrayContaining(['view-transition', 'animate talk', 'scroll smooth']))
 
     // The system reduces motion; the visitor presses «Увімкнути анімацію» (liora:motion = on).
@@ -5814,7 +5827,8 @@ test.describe('what the theme and motion review found', () => {
     await choose('Темна')
     await expect(html(page)).toHaveAttribute('data-theme', 'dark')
     await expect(html(page)).toHaveCSS('background-color', LAMP)
-    await exchange(page)
+    // The words come as text, every 300 ms (§5.7), not as spans that fade.
+    expect(await firstAnswer()).toBe(0)
     const still = await moves()
     expect(still.filter((m) => m === 'view-transition' || m === 'animate talk' || m === 'scroll smooth')).toEqual([])
     expect(still).toContain('scroll instant')
