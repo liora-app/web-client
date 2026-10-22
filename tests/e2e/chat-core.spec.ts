@@ -69,6 +69,7 @@ import {
   PAUSE_AFTER_REPLIES,
   authErrorFrom,
   canOpenJournal,
+  canSendNow,
   editUnsaved,
   journalBusy,
   leaveGuard,
@@ -2991,6 +2992,58 @@ test.describe('state: the diary', () => {
     const taken = run(early.model, { type: 'journal/list-ok', req: listFx(early.effects).req, diary: { items: [later], nextCursor: null } }, { type: 'journal/revisit', id: 's-9' })
     expect(names(taken.model)).toEqual(['s-9'])
     expect(names(run(taken.model, { type: 'diary/ok', diary: DIARY }).model)).toEqual(['s-9'])
+  })
+
+  test('the record a revisit goes back to leaves the diary: under way, «До розмови» brings the block «Записів… уже немає»; not begun, the record is no longer chosen', () => {
+    /** A revisit with s-1 chosen, from a page whose diary is `items`; the diary opened over it. */
+    const revisitWith = (items: readonly SummaryOut[], begun: boolean) => {
+      const base = booted()
+      const page: Model = { ...base, ctx: { ...base.ctx, diary: { status: 'ok', value: { items, nextCursor: null } } } }
+      const chosen = run(
+        page,
+        { type: 'chat/scenario', id: 'revisit' },
+        { type: 'revisit/open' },
+        { type: 'revisit/list-ok', purpose: 'pick', q: '', cursor: null, diary: { items, nextCursor: null } },
+        { type: 'revisit/toggle', id: 's-1' },
+        { type: 'revisit/confirm' },
+      ).model
+      const talk = begun ? answered(chosen, 'Повертаюся до теми.') : chosen
+      const open = run(talk, { type: 'journal/open', tz: TZ })
+      return run(open.model, { type: 'journal/list-ok', req: listFx(open.effects).req, diary: { items, nextCursor: null } }).model
+    }
+    const remove = (m: Model, id: string) => run(m, { type: 'confirm/open', kind: 'delete-summary', summary: id }, { type: 'confirm/accept' }, { type: 'journal/delete-ok', id }).model
+
+    // Under way, the only record deleted: the block, not a page without a field.
+    const emptied = run(remove(revisitWith([SUMMARY], true), 's-1'), { type: 'journal/back' }).model
+    expect(emptied.ctx.diary).toEqual({ status: 'ok', value: { items: [], nextCursor: null } })
+    expect(chatOf(emptied).notice).toEqual({ kind: 'revisit-gone' })
+    expect(canSendNow(chatOf(emptied))).toBe(false)
+    // The same when a PATCH finds it gone (404), and when its DELETE answers 404.
+    const editing = run(revisitWith([SUMMARY], true), { type: 'journal/edit', id: 's-1' })
+    const form = journalOf(editing.model).edit!.form
+    const save = run(editing.model, { type: 'journal/edit-update', form: { ...form, title: 'Інша назва' } }, { type: 'journal/edit-save' })
+    const patch404 = run(save.model, { type: 'journal/patch-fail', req: patchFx(save.effects).req, error: apiError(404, 'not_found') }, { type: 'journal/back' }).model
+    expect(chatOf(patch404).notice).toEqual({ kind: 'revisit-gone' })
+    const delete404 = run(
+      revisitWith([SUMMARY], true),
+      { type: 'confirm/open', kind: 'delete-summary', summary: 's-1' },
+      { type: 'confirm/accept' },
+      { type: 'journal/delete-fail', id: 's-1', error: apiError(404, 'not_found') },
+      { type: 'journal/back' },
+    ).model
+    expect(chatOf(delete404).notice).toEqual({ kind: 'revisit-gone' })
+    // Under way with records left: the conversation as it was (the next turn's 404 opens the picker).
+    const left = run(remove(revisitWith(DIARY.items, true), 's-1'), { type: 'journal/back' }).model
+    expect(chatOf(left)).toMatchObject({ notice: null, session: { revisitIds: ['s-1'] } })
+
+    // Not begun: the deleted record is no longer chosen, and no block covers the head that explains.
+    const notBegun = run(remove(revisitWith(DIARY.items, false), 's-1'), { type: 'journal/back' }).model
+    expect(chatOf(notBegun)).toMatchObject({ notice: null, session: { scenario: 'revisit', revisitIds: [] } })
+    const notBegunEmpty = run(remove(revisitWith([SUMMARY], false), 's-1'), { type: 'journal/back' }).model
+    expect(chatOf(notBegunEmpty)).toMatchObject({ notice: null, session: { scenario: 'revisit', revisitIds: [] } })
+    // Another record deleted: the chosen one stays chosen.
+    const other = run(remove(revisitWith(DIARY.items, false), 's-2'), { type: 'journal/back' }).model
+    expect(chatOf(other).session.revisitIds).toEqual(['s-1'])
   })
 
   test('a late first page of the record picker changes nothing once the picker is closed: a chosen name stays, a deleted record stays gone', () => {

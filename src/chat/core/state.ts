@@ -1556,12 +1556,23 @@ function keepChosen(page: Diary, ids: readonly string[], from: readonly SummaryO
   return extra.length === 0 ? page : { items: [...page.items, ...extra], nextCursor: page.nextCursor }
 }
 
-/** A record left the diary (deleted, or gone meanwhile): off the list, its edit closed. A page it
- *  leaves empty while more records stand behind it is asked for again from the top: «Тут
- *  зʼявляться тези…» over a diary that has them would be untrue. */
+/** A record that left the diary leaves the revisit conversation waiting under it too, while that
+ *  has no message yet: «Ви повертаєтеся до:» must not name a record that is gone, nor its first
+ *  turn go with it. Once the conversation runs, its ids stay as they went out (journal/back). */
+function backWithout(back: JournalBack | null, id: string): JournalBack | null {
+  if (back === null || back.session.scenario !== 'revisit' || hasUserMessage(back.session, back.pending)) return back
+  if (!back.session.revisitIds.includes(id)) return back
+  return { ...back, session: { ...back.session, revisitIds: Object.freeze(back.session.revisitIds.filter((x) => x !== id)) } }
+}
+
+/** A record left the diary (deleted, or gone meanwhile): off the list, its edit closed, out of the
+ *  records a revisit not yet begun under the diary would go back to. A page it leaves empty while
+ *  more records stand behind it is asked for again from the top: «Тут зʼявляться тези…» over a
+ *  diary that has them would be untrue. */
 function dropRecord(model: Model, state: JournalState, id: string, notice: JournalNotice): Step {
   const journal: JournalState = {
     ...state,
+    back: backWithout(state.back, id),
     list: without(state.list, id),
     edit: state.edit?.form.id === id ? null : state.edit,
     deleting: state.deleting === id ? null : state.deleting,
@@ -1622,7 +1633,12 @@ function journalStep(model: Model, state: JournalState, action: Action): Step | 
       {
         const { session, pending, revertTo, gone } = state.back
         const back = backToChat(ctx, session, pending)
-        return withState(model, { ...back, revertTo, notice: gone ? { kind: 'revisit-gone' } : back.notice })
+        // The records a conversation under way went back to may have left the diary here (deleted,
+        // or gone on a PATCH). With the page's diary empty now there is none to go on with: the
+        // block «Записів… уже немає» says so, as after a 404 — not a screen without a field and
+        // without a word (§3.6). With records left, the next turn's 404 opens the picker again.
+        const emptied = session.scenario === 'revisit' && hasUserMessage(session, pending) && ctx.diary.status === 'ok' && ctx.diary.value.items.length === 0
+        return withState(model, { ...back, revertTo, notice: gone || emptied ? { kind: 'revisit-gone' } : back.notice })
       }
     case 'journal/search': {
       const q = searchQuery(action.q)
