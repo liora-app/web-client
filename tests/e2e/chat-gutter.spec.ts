@@ -1,9 +1,12 @@
 // /chat/ with a classic scrollbar, against the same mocked API as chat.spec.ts (chat-fixtures.ts: no
-// WebGL, the page keeps its static light; the same audit after every test). A headless Chromium hides
-// its scrollbars (Playwright's --hide-scrollbars); without that flag it draws a classic one on Windows
-// and Linux, and the page keeps its gutter (scrollbar-gutter: stable) — what a desktop browser in a
-// half-screen window or at a 200 % zoom shows. A launch option forces a worker of its own, so it lives
-// in a file of its own (Playwright allows it only at the top level).
+// WebGL, the page keeps its static light; the same audit after every test). The page keeps its gutter
+// (scrollbar-gutter: stable) — what a desktop browser in a half-screen window or at a 200 % zoom shows.
+// Playwright starts a headless Chromium with --hide-scrollbars, yet Chromium 153 draws a classic
+// scrollbar all the same: on Windows (probed, 15 px) and on CI's Linux (html[data-gutter] in a failed
+// run's log), so chat.spec.ts's desktop tests take this branch too. This file leaves the flag out
+// anyway: it stays a page with a gutter should a later Chromium honour the flag again. A launch option
+// forces a worker of its own, so it lives in a file of its own (Playwright allows it only at the top
+// level).
 
 import type { Locator, Page, TestInfo } from '@playwright/test'
 import { confirmDialog, expect, openChat, test } from './chat-fixtures'
