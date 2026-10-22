@@ -19,11 +19,11 @@ import { initThemePicker } from '../../ui/theme-picker'
 import { initTips } from '../../ui/tips'
 import { createApi } from '../core/api'
 import { maskPausedLine } from '../core/helplines'
-import { MAX_MARKS, draftOf, editUnsaved, leaveGuard, pendingOf, sessionOf, type Action, type Model } from '../core/state'
+import { MAX_MARKS, draftOf, editUnsaved, leaveGuard, llmInFlight, pendingOf, sessionOf, type Action, type Model } from '../core/state'
 import type { ConsentKind } from '../core/types'
 import { createAnnouncer } from './announcer'
 import { conversationText, copyText, entryMarkdown, thesesText } from './clipboard'
-import { COPIED, COPY_FAILED_LABEL, copyFailed, sayMarked, sayMarksFull, sayUnmarked } from './copy'
+import { COPIED, COPY_FAILED_LABEL, copyFailed, journalLater, sayMarked, sayMarksFull, sayUnmarked } from './copy'
 import { createEffects } from './effects'
 import { initKeyboard } from './keyboard'
 import { createLeaveGuard } from './leave-guard'
@@ -150,7 +150,10 @@ async function copy(button: HTMLElement, kind: 'talk' | 'theses' | 'reply' | 'en
 function act(name: string, target: HTMLElement, event: Event): void {
   const model = store.model()
   const { state } = model
-  if (target.getAttribute('aria-disabled') === 'true' && name !== 'send') return
+  if (target.getAttribute('aria-disabled') === 'true' && name !== 'send') {
+    if (name === 'journal-open') announcer.say(journalLater(llmInFlight(state)))
+    return
+  }
   // The account operation (or the save) is on its way: a second press sends nothing.
   if (target.getAttribute('aria-busy') === 'true') return
   if (view.review.act(name, target)) return

@@ -10,7 +10,7 @@ import type { SkyControl } from '../../ui/sky'
 import type { SoundControl } from '../../ui/sound'
 import { skipThemeTransition } from '../../ui/theme'
 import type { ThemePicker } from '../../ui/theme-picker'
-import { hasUserMessage, sessionOf, type Action, type Model, type State } from '../core/state'
+import { canOpenJournal, hasUserMessage, sessionOf, type Action, type Model, type State } from '../core/state'
 import { createDialogs, type Dialogs } from './dialogs'
 import { finePointer, headingOf, setAttr, show } from './dom'
 import { createPresence, type PresenceView } from './presence'
@@ -58,6 +58,7 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky,
   const html = document.documentElement
   const main = document.querySelector<HTMLElement>('main')!
   const account = document.querySelector<HTMLElement>('.account-toggle')!
+  const journalToggle = document.querySelector<HTMLElement>('[data-el="journal-toggle"]')!
   const help = document.querySelector<HTMLElement>('.help-link')!
   const presenceRoot = document.querySelector<HTMLElement>('.presence')!
   const sections = new Map<string, HTMLElement>(
@@ -177,6 +178,10 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky,
     // «Акаунт» only with a live session: not after a 401 either (§8.1).
     const signedIn = model.ctx.me !== null && s !== 'signed-out' && s !== 'account-deleted' && s !== 'booting' && s !== 'session-expired'
     show(account, signedIn)
+    // «Щоденник» beside it: there while «Акаунт» is, aria-disabled while the diary cannot open (the AI
+    // writes, the theses are open…); pressed then, it says why (main.ts).
+    show(journalToggle, signedIn)
+    setAttr(journalToggle, 'aria-disabled', canOpenJournal(model.state) ? null : 'true')
     setAttr(help, 'aria-current', s === 'crisis' ? 'true' : null)
 
     screens[s].render(model, changed)

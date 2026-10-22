@@ -19,7 +19,7 @@
 
 import { maskPausedLineInline } from '../../core/helplines'
 import type { Action, ChatState, Model } from '../../core/state'
-import { canSendNow, hasReply, hasUserMessage, pauseAt, scenariosOf } from '../../core/state'
+import { MAX_MARKS, canSendNow, hasReply, hasUserMessage, pauseAt, scenariosOf } from '../../core/state'
 import { LONG_CONVERSATION_MESSAGES, SERVER_TRIM_CODE_POINTS, canSend, totalCodePoints } from '../../core/limits'
 import type { ScenarioOut } from '../../core/types'
 import {
@@ -33,6 +33,7 @@ import {
   SERVER_TRIM,
   TOO_LARGE_BLOCK,
   UNSENT,
+  marksCounter,
   placeholder,
   scenarioAbout,
   starters,
@@ -285,6 +286,8 @@ export function chatScreen(
       show(session, started)
       setText(el('session-title'), scenario.title)
       show(el('session-nosave'), s.noSave)
+      setText(el('session-marks'), marksCounter(s.marks.length, MAX_MARKS))
+      setAttr(el('session-marks-row'), 'data-marks', String(s.marks.length))
       const idle = state.turn.p === 'idle' || state.turn.p === 'cooldown'
       show(el('session-end'), hasReply(s) && idle)
 

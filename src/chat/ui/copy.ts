@@ -566,6 +566,12 @@ export const replyWhich = (n: number, time: string | null): string => (time === 
 export const sayMarked = (n: number, max: number): string => `Додано до тез · ${n} з ${max}`
 export const sayUnmarked = (n: number, max: number): string => `Прибрано з тез · ${n} з ${max}`
 export const sayMarksFull = (max: number): string => `У тезах уже ${max} з ${max}. Щоб додати цю, приберіть іншу.`
+/** The session row's counter of marked replies (ADR-013): a number, not words of the conversation. */
+export const marksCounter = (n: number, max: number): string => `У тезах ${n} з ${max}`
+
+/** «Щоденник» in the header while the diary cannot open: said where the focus is, instead of nothing. */
+export const journalLater = (answering: boolean): string =>
+  answering ? 'Щоденник відкриється, щойно AI відповість.' : 'Щоденник відкривається з розмови або після неї.'
 /** The theses screen: the candidate is full of theses already. */
 export const MARKS_FULL = 'Тез уже пʼять — щоб додати цю, приберіть одну з них.'
 

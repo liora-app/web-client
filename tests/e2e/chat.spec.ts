@@ -2414,17 +2414,55 @@ test.describe('layout', () => {
     await expect(composer(page)).toBeFocused()
   })
 
-  test('#43b the /chat/ header fits at 320 px: wordmark, «Якщо важко», motion and sound, «Вигляд», «Акаунт»', async ({ page }, testInfo) => {
+  // ADR-013: the phone's header is two rows in one capsule — the mark and «Якщо важко», then the tiles
+  // «Щоденник», «Пауза», «Звук», «Вигляд», «Акаунт» (and «Персонаж»): every one inside 320 px, none
+  // over another.
+  test('#43b the /chat/ header fits at 320 px: wordmark, «Якщо важко», «Щоденник», motion and sound, «Вигляд», «Акаунт», none over another', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile', 'one engine is enough for the fit')
     await page.setViewportSize({ width: 320, height: 640 })
     await openChat(page)
+    await exchange(page)
     await page.evaluate(() => document.fonts.ready)
     await expect(accountToggle(page)).toBeVisible()
-    for (const selector of ['.brand', '.help-link', '.media', '.theme-toggle', '.account-toggle']) {
+    const selectors = ['.brand', '.help-link', '.journal-toggle', '.motion-toggle', '.sound-toggle', '.theme-toggle', '.account-toggle']
+    const boxes: { x: number; y: number; width: number; height: number }[] = []
+    for (const selector of selectors) {
       const box = await page.locator(`.site-header ${selector}`).boundingBox()
       expect(box, selector).not.toBeNull()
       expect(box!.x + box!.width, selector).toBeLessThanOrEqual(320)
       expect(box!.x, selector).toBeGreaterThanOrEqual(0)
+      boxes.push(box!)
+    }
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const [a, b] = [boxes[i]!, boxes[j]!]
+        const apart = a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5
+        expect(apart, `${selectors[i]} and ${selectors[j]}`).toBe(true)
+      }
+    }
+  })
+
+  test('#140 the /chat/ header at 1024 and 1440 px: nothing cut off, left to right without overlaps', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'the wide header')
+    for (const width of [1024, 1440]) {
+      await page.setViewportSize({ width, height: 800 })
+      await openChat(page)
+      await exchange(page)
+      await page.evaluate(() => document.fonts.ready)
+      expect(await cutOffAtEdges(page), `${width} px`).toEqual([])
+      const boxes = await page
+        .locator('.chat-header :is(.brand, .ai-chip--header, .help-link, .journal-toggle, .media, .theme-toggle, .character-toggle, .account-toggle):visible')
+        .evaluateAll((items) => items.map((item) => item.getBoundingClientRect()).map(({ left, right }) => ({ left, right })))
+      expect(boxes.length, `${width} px`).toBeGreaterThanOrEqual(7)
+      for (let i = 1; i < boxes.length; i++) expect(boxes[i]!.left, `${width} px: item ${i}`).toBeGreaterThanOrEqual(boxes[i - 1]!.right)
+      // Inside the capsule, not only the window.
+      const capsule = await page.evaluate(() => {
+        const header = document.querySelector('.chat-header')!
+        const style = getComputedStyle(header, '::after')
+        return { left: parseFloat(style.left), right: header.getBoundingClientRect().width - parseFloat(style.right) }
+      })
+      expect(boxes[0]!.left, `${width} px`).toBeGreaterThanOrEqual(capsule.left)
+      expect(boxes[boxes.length - 1]!.right, `${width} px`).toBeLessThanOrEqual(capsule.right)
     }
   })
 
@@ -3298,6 +3336,15 @@ test.describe('diary', () => {
     await openChat(page)
     await send(page, USER)
     await stream.requests(1)
+    // ADR-013: «Щоденник» in the header is there, aria-disabled, and says why instead of opening.
+    const journalToggle = page.locator('.chat-header .journal-toggle')
+    await expect(journalToggle).toBeVisible()
+    await expect(journalToggle).toHaveAttribute('aria-disabled', 'true')
+    // An aria-disabled button stays focusable and pressable (Playwright's click() waits for «enabled»).
+    await journalToggle.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('[data-announcer]')).toContainText('Щоденник відкриється, щойно AI відповість.')
+    await onScreen(page, 'chat')
     await accountToggle(page).click()
     await expect(accountSheet(page)).toBeVisible()
     await expect(accountSheet(page).locator('[data-el="account-journal"]')).toBeHidden()
@@ -3305,6 +3352,7 @@ test.describe('diary', () => {
     await stream.write(reply())
     await stream.close()
     await answered(page, 1)
+    await expect(journalToggle).not.toHaveAttribute('aria-disabled', /.*/)
 
     await endWithoutTheses(page)
     await page.locator('section[data-screen="ended"]').getByRole('button', { name: 'Відкрити щоденник' }).click()
@@ -4693,6 +4741,9 @@ test.describe('highlights, the reminder to pause, the soft end', () => {
     await keepOf(first).click()
     await keepOf(second).click()
     await expect(announcer(page)).toHaveText('Додано до тез · 2 з 5')
+    // ADR-013: the session row counts them — five dots by data-marks, and the number in words.
+    await expect(page.locator('[data-el="session-marks"]')).toHaveText('У тезах 2 з 5')
+    await expect(page.locator('[data-el="session-marks-row"]')).toHaveAttribute('data-marks', '2')
     // Nothing of it goes to the server with a turn.
     for (const body of turnBodies(api.bodies('POST /chat/turn'))) expect(Object.keys(body).sort()).toEqual(['messages', 'scenario'])
 
@@ -5060,17 +5111,21 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     expect(placed).toBe(0)
   })
 
-  test('#94 the session row says «AI, не людина» only where its small light is the light (the phone); the desktop has the big light’s label and the line under the field', async ({ page }, testInfo) => {
+  test('#94 the session row says «AI, не людина» only where its small light is the light (the phone); the chip «AI · не людина» stands at both widths, with the line under the field', async ({ page }, testInfo) => {
     await openChat(page)
     await exchange(page, USER)
     const row = page.locator('[data-el="session"] .session__ai')
     await expect(page.locator('.composer__ai')).toBeVisible()
     await expect(page.locator('.composer__ai')).toHaveText('AI, не людина · може помилятися · не терапія')
     await expect(aiMessages(page).nth(1).locator('.said__who')).toHaveText('AI')
+    // ADR-013: one chip at any width (the header's from 64em, the sheet's below), never both.
+    const chip = page.locator('.ai-chip:visible')
+    await expect(chip).toHaveCount(1)
+    await expect(chip).toHaveText('AI · не людина')
+    await expect(page.locator(isDesktop(testInfo) ? '.ai-chip--header' : '.ai-chip--sheet')).toBeVisible()
+    await expect(page.locator('.presence__ai')).toHaveCount(0)
     if (isDesktop(testInfo)) {
       await expect(row).toBeHidden()
-      await expect(page.locator('.presence__ai')).toBeVisible()
-      await expect(page.locator('.presence__ai')).toHaveText('AI · не людина')
       await expect(page.locator('[data-el="session"] .session__label')).toHaveText('Вільна розмова', { useInnerText: true })
     } else {
       await expect(row).toBeVisible()
