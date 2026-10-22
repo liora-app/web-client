@@ -16,7 +16,7 @@
 
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test as base, type Page, type Request, type Route } from '@playwright/test'
-import { NO_WEBGL2 } from './helpers'
+import { NO_WEBGL2, animationsDone, throttle } from './helpers'
 
 /** Kept in two halves so that no single literal in this file is the number itself. */
 export const PAUSED = '73' + '33'
@@ -583,6 +583,7 @@ export const test = base.extend<ChatFixtures>({
       const problems: string[] = []
       const foreign = new Set<string>()
       const own = new URL(baseURL ?? 'http://localhost:4173').origin
+      await throttle(page)
       if (!webgl) await page.addInitScript(NO_WEBGL2)
       await page.addInitScript(probes)
       page.on('console', (message) => {
@@ -678,18 +679,10 @@ export const confirmDialog = (page: Page) => page.locator('#confirm-dialog')
 export async function axe(page: Page, label: string): Promise<void> {
   // The screen and the messages rise in for a few hundred ms (spec §3.1): measuring contrast in the
   // middle of a fade would read a colour the text never rests on. Endless loops (the orb's breath)
-  // are left alone — they never move the text's colour.
-  await page.evaluate(() =>
-    Promise.race([
-      Promise.all(
-        document
-          .getAnimations()
-          .filter((a) => Number.isFinite(Number(a.effect?.getComputedTiming().endTime)))
-          .map((a) => a.finished.catch(() => undefined)),
-      ),
-      new Promise((resolve) => setTimeout(resolve, 2500)),
-    ]),
-  )
+  // are left alone — they never move the text's colour — and so is the breathing circle's scale:
+  // it follows the breath for a minute (4–6 s a step, retargeted each step) and moves no colour, so
+  // waiting on it only spent the cap. The cap (2.5 s) goes on past anything slower.
+  await animationsDone(page, { except: '.breathe__circle', cap: 2500 })
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze()
   const summary = results.violations.map((v) => `${v.id} (${v.impact}): ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
   expect(summary, `axe: ${label}`).toEqual([])
