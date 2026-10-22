@@ -173,6 +173,23 @@ export function createDialogs(dispatch: (action: Action) => void, tools: Tools):
     for (const button of Array.from(confirmBody.querySelectorAll<HTMLButtonElement>('[data-act="accept"]'))) {
       setAttr(button, 'aria-busy', busy ? 'true' : null)
     }
+    describeConfirm()
+  }
+
+  /** The confirm's sentences are its description: the focus lands on a button («Залишити»,
+   *  «Скасувати»), past them, and «Повернути його не вийде.» went unsaid. Only the paragraphs shown
+   *  now — a hidden node named in aria-describedby is still read (accname 1.2, step 2A), so the ids
+   *  are given here, after data-if, and again on every refresh. Not the error line (role=alert says
+   *  itself) and not the request id. */
+  function describeConfirm(): void {
+    const ids: string[] = []
+    for (const node of Array.from(confirmBody.querySelectorAll<HTMLElement>(':scope > p'))) {
+      const said = !node.hidden && !node.matches('[data-op-error], [data-op-id]')
+      const id = said ? `confirm-desc-${ids.length + 1}` : null
+      setAttr(node, 'id', id)
+      if (id !== null) ids.push(id)
+    }
+    setAttr(elements.confirm, 'aria-describedby', ids.length > 0 ? ids.join(' ') : null)
   }
 
   function refreshAccount(m: Model): void {
