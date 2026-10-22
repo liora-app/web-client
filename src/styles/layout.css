@@ -37,10 +37,10 @@
   z-index: -1;
   background: linear-gradient(
     180deg,
-    rgb(4 7 8 / 0.97) 0%,
-    rgb(4 7 8 / 0.9) 55%,
-    rgb(4 7 8 / 0.45) 78%,
-    rgb(4 7 8 / 0) 100%
+    var(--color-band-top) 0%,
+    var(--color-band-mid) 55%,
+    var(--color-band-tail) 78%,
+    var(--color-fade-0) 100%
   );
   pointer-events: none;
 }
@@ -68,10 +68,10 @@
   width: 1.15rem;
   height: 1.15rem;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 58%, #fff4e2 0 18%, #ffc58f 34%, rgb(255 170 100 / 0.15) 62%, transparent 70%);
+  background: radial-gradient(circle at 50% 58%, var(--brand-core) 0 18%, var(--brand-warm) 34%, var(--brand-halo) 62%, transparent 70%);
   box-shadow:
-    inset 0 0 0 1px rgb(200 240 236 / 0.45),
-    0 0 14px rgb(255 190 120 / 0.35);
+    inset 0 0 0 1px var(--brand-ring),
+    0 0 14px var(--brand-glow);
 }
 
 .site-nav {
@@ -124,10 +124,10 @@
   align-items: center;
   min-height: 2.5rem;
   padding: 0 1rem;
-  border: 1px solid rgb(255 197 143 / 0.45);
+  border: 1px solid var(--color-accent-line);
   border-radius: 999px;
   /* Opaque enough that no blur is needed: no backdrop-filter re-rendered over the WebGL layer. */
-  background: rgb(4 8 9 / 0.82);
+  background: var(--color-surface);
   font-family: var(--font-body);
   font-size: 0.875rem;
   font-weight: 500;
@@ -138,16 +138,16 @@
 
 .help-link:hover {
   background:
-    linear-gradient(rgb(255 197 143 / 0.12), rgb(255 197 143 / 0.12)),
-    rgb(4 8 9 / 0.82);
+    linear-gradient(var(--color-accent-tint), var(--color-accent-tint)),
+    var(--color-surface);
 }
 
 /* The crisis chapter is on screen: the link is marked like the current nav item, not like hover. */
 .help-link[aria-current] {
   border-color: var(--color-light);
   background:
-    linear-gradient(rgb(255 197 143 / 0.14), rgb(255 197 143 / 0.14)),
-    rgb(4 8 9 / 0.82);
+    linear-gradient(var(--color-accent-tint-strong), var(--color-accent-tint-strong)),
+    var(--color-surface);
 }
 
 /* «Розмова з AI →»: the one filled action, the way into /chat/ (the chat's primary button, smaller).
@@ -162,18 +162,18 @@
   padding: 0 1.1rem;
   border: 1px solid transparent;
   border-radius: 999px;
-  background: var(--color-light);
+  background: var(--color-accent);
   font-family: var(--font-body);
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--color-bg);
+  color: var(--color-on-accent);
   text-decoration: none;
   white-space: nowrap;
   transition: background-color var(--dur-fast) ease;
 }
 
 .cta:hover {
-  background: var(--color-light-strong);
+  background: var(--color-accent-strong);
 }
 
 .site-header__cta {
@@ -188,7 +188,7 @@
   padding: 2px;
   border: 1px solid var(--color-line-strong);
   border-radius: 999px;
-  background: rgb(4 8 9 / 0.82);
+  background: var(--color-surface);
 }
 
 .media:has(> .media__button:not([hidden])) {
@@ -221,13 +221,13 @@
 .media__button:hover,
 .menu-toggle:hover {
   color: var(--color-text);
-  background: rgb(238 242 238 / 0.08);
+  background: var(--color-hover);
 }
 
 /* Pressed: paused, or sound on. */
 .media__button[aria-pressed='true'] {
   color: var(--color-text);
-  background: rgb(238 242 238 / 0.14);
+  background: var(--color-pressed);
 }
 
 .media__icon {
@@ -317,7 +317,10 @@ html[data-sound='on'][data-motion='on'] .sound-toggle__wave span:nth-child(4) {
   }
 }
 
-/* A small label under the icon on hover and keyboard focus. The accessible name is aria-label. */
+/* A small label under the icon on hover and keyboard focus. The accessible name is aria-label.
+   WCAG 1.4.13 (src/ui/tips.ts): Esc hides it (data-tip="off") until the pointer and the focus have
+   left; while it is shown on a device that hovers, it takes the pointer (below), so the pointer can
+   move onto it. Hidden, it takes no tap or click. */
 .media__button::after {
   position: absolute;
   top: calc(100% + 0.6rem);
@@ -351,9 +354,207 @@ html[data-sound='on'][data-motion='on'] .sound-toggle__wave span:nth-child(4) {
   content: 'Вимкнути звук';
 }
 
-.media__button:hover::after,
-.media__button:focus-visible::after {
+.media__button:is(:hover, :focus-visible):not([data-tip='off'])::after {
   opacity: 1;
+}
+
+/* ---------- «Вигляд»: the theme's menu button (src/ui/theme-picker.ts) ---------- */
+
+/* A round icon button beside «Пауза» and «Звук», outside their group. It shows the choice: half a
+   disc «як у системі», a sun «світла», a moon «темна». The menu drops under it, right-aligned. */
+.theme-pick {
+  position: relative;
+  display: inline-flex;
+}
+
+.theme-pick[hidden] {
+  display: none;
+}
+
+.theme-toggle {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-text-soft);
+  cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease-standard),
+    background-color var(--dur-1) var(--ease-standard);
+}
+
+.theme-toggle:hover,
+.theme-toggle[aria-expanded='true'] {
+  color: var(--color-text);
+  background:
+    linear-gradient(var(--color-hover), var(--color-hover)),
+    var(--color-surface);
+}
+
+.theme-toggle__icon {
+  display: none;
+  grid-area: 1 / 1;
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.theme-toggle__half {
+  fill: currentColor;
+  stroke: none;
+}
+
+.theme-toggle[data-choice='system'] .theme-toggle__auto,
+.theme-toggle[data-choice='light'] .theme-toggle__sun,
+.theme-toggle[data-choice='dark'] .theme-toggle__moon {
+  display: block;
+}
+
+/* The same small label as «Пауза» and «Звук», not while the menu itself is open. */
+.theme-toggle::after {
+  content: 'Вигляд';
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  left: 50%;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 0.5rem;
+  background: var(--color-bg);
+  font-size: 0.8125rem;
+  color: var(--color-text);
+  white-space: nowrap;
+  translate: -50% 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) ease;
+}
+
+.theme-toggle:is(:hover, :focus-visible):not([aria-expanded='true'], [data-tip='off'])::after {
+  opacity: 1;
+}
+
+/* Hoverable (WCAG 1.4.13): a label shown under the pointer takes the pointer, and so does the
+   0.6rem between it and the button — crossing that gap the pointer stays on the button and the label
+   stays. Only where the pointer hovers: a tap's lingering :hover on a phone must not leave a box
+   that catches the next tap meant for the page under it. Never while the menu is open. */
+@media (hover: hover) {
+  .media__button:hover:not([data-tip='off'])::after,
+  .theme-toggle:hover:not([aria-expanded='true'], [data-tip='off'])::after {
+    pointer-events: auto;
+  }
+
+  .media__button:hover:not([data-tip='off'])::before,
+  .theme-toggle:hover:not([aria-expanded='true'], [data-tip='off'])::before {
+    content: '';
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    height: 0.6rem;
+  }
+}
+
+.theme-menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 1;
+  display: grid;
+  gap: 2px;
+  min-width: 12.5rem;
+  padding: 0.375rem;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 1rem;
+  background: var(--color-surface);
+  box-shadow: 0 0.75rem 2rem var(--color-shadow);
+}
+
+.theme-menu[hidden] {
+  display: none;
+}
+
+.theme-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+  padding: 0 0.875rem;
+  border: 0;
+  border-radius: 0.625rem;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  color: var(--color-text-soft);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* The choice is marked by shape, not only by colour: a ring, filled for the chosen item. */
+.theme-menu__item::before {
+  content: '';
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  border: 1.5px solid var(--color-field-border);
+  border-radius: 50%;
+}
+
+.theme-menu__item[aria-checked='true'] {
+  color: var(--color-text);
+}
+
+.theme-menu__item[aria-checked='true']::before {
+  border-color: var(--color-accent);
+  background: radial-gradient(circle, var(--color-accent) 0 38%, transparent 42%);
+}
+
+.theme-menu__item:hover {
+  color: var(--color-text);
+  background: var(--color-hover);
+}
+
+.theme-menu__item:focus-visible {
+  outline-offset: -2px;
+  border-radius: 0.625rem;
+}
+
+/* Opens with a short drop (the scale of tokens.css); closes at once. */
+html[data-motion='on'] .theme-menu {
+  transition:
+    opacity var(--dur-3) var(--ease-decelerate),
+    translate var(--dur-3) var(--ease-decelerate);
+}
+
+@starting-style {
+  html[data-motion='on'] .theme-menu {
+    opacity: 0;
+    translate: 0 -0.25rem;
+  }
+}
+
+@media (forced-colors: active) {
+  .theme-toggle,
+  .theme-menu {
+    border: 1px solid CanvasText;
+  }
+
+  .theme-menu__item::before {
+    border-color: CanvasText;
+  }
+
+  .theme-menu__item[aria-checked='true']::before {
+    background: radial-gradient(circle, Highlight 0 38%, transparent 42%);
+    forced-color-adjust: none;
+  }
 }
 
 /* «Меню»: a round icon button, below the width where the sections fit in the header. */
@@ -361,7 +562,7 @@ html[data-sound='on'][data-motion='on'] .sound-toggle__wave span:nth-child(4) {
   width: 2.5rem;
   height: 2.5rem;
   border: 1px solid var(--color-line-strong);
-  background: rgb(4 8 9 / 0.82);
+  background: var(--color-surface);
 }
 
 .menu-toggle__lines {
@@ -444,8 +645,10 @@ html:has(.site-menu[open]) {
   gap: 2rem;
 }
 
+/* ::backdrop inherits custom properties only in newer engines (Chrome 122, Safari 17.4): older ones
+   get the literal, the landing's very value. */
 .site-menu::backdrop {
-  background: rgb(4 7 8 / 0.6);
+  background: var(--color-scrim, rgb(4 7 8 / 0.6));
 }
 
 .site-menu__head {
@@ -568,7 +771,7 @@ html:has(.site-menu[open]) {
   z-index: var(--z-text);
   padding: 3.5rem 0 calc(3rem + env(safe-area-inset-bottom));
   border-top: 1px solid var(--color-line);
-  background: linear-gradient(180deg, rgb(3 5 5 / 0.4), rgb(3 5 5 / 0.85));
+  /* Its background is the page's own (landing.css --landing-footer: the night, or deeper paper). */
   font-size: var(--step--1);
   color: var(--color-text-muted);
 }

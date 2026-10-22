@@ -1,10 +1,11 @@
 // Mono labels "decode" into place once, when they come into view: random glyphs settle into the
 // real text from left to right. Screen readers get the real text from a visually hidden copy; the
-// animated parts are aria-hidden, so nobody hears the noise. Skipped entirely when motion is off.
+// animated parts are aria-hidden, so nobody hears the noise. Skipped entirely when motion is off, and
+// under prefers-reduced-motion even with a stored «on» (decorativeMotion: a flicker the CSS cannot still).
 // Calm noise: only letters flicker, and only into Cyrillic letters. Digits (chapter numbers),
 // spaces and punctuation stay put.
 
-import { motionAllowed } from './motion'
+import { decorativeMotion } from './motion'
 
 const GLYPHS = 'АБВГДЕЄЖЗИІЇКЛМНОПРСТУФХЦЧШЮЯ'
 const LETTER = /\p{L}/u // no g flag: test() keeps no state between calls
@@ -80,7 +81,7 @@ function prepare(element: HTMLElement): Text[] {
 }
 
 export function initDecode(): void {
-  if (!motionAllowed() || !('IntersectionObserver' in window)) return
+  if (!decorativeMotion() || !('IntersectionObserver' in window)) return
   const items = Array.from(document.querySelectorAll<HTMLElement>('[data-decode]'))
   if (items.length === 0) return
 
@@ -89,7 +90,7 @@ export function initDecode(): void {
       for (const entry of entries) {
         if (!entry.isIntersecting) continue
         observer.unobserve(entry.target)
-        if (!motionAllowed()) continue
+        if (!decorativeMotion()) continue
         const nodes = prepare(entry.target as HTMLElement)
         void play(
           nodes,
@@ -104,7 +105,7 @@ export function initDecode(): void {
 
 /** Replaces an aria-hidden label's text with a short decode (used by the chapter HUD). */
 export function decodeTo(element: HTMLElement, text: string): void {
-  if (!motionAllowed()) {
+  if (!decorativeMotion()) {
     element.textContent = text
     return
   }

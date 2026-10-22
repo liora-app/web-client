@@ -4,19 +4,23 @@
 // else the screen's h1 (I6). A new screen closes every dialog without that return: focus goes to
 // the new screen's h1 instead (render.ts).
 //
-// The stack is at most two deep, and only as account → confirm(logout | delete-account | revoke):
-// closing the confirm leaves the account sheet open with the focus on the button that opened it.
+// The stack is account → confirm(logout | delete-account | revoke), help → a tool, and help →
+// shelter → breathing or grounding (spec §3.13): closing the top leaves the one under it open with
+// the focus on the button that opened the top. A tool's own life (its clock, its step) is
+// tools.ts's: told here, synchronously, when its dialog opens and when it closes — a dialog's
+// `close` event comes a task later, after the crisis has already shown.
 //
 // The page's live region moves into the dialog on top: showModal() makes the rest of the document
 // inert, and an inert region is not read — an answer that arrives under «Якщо важко» would go
 // unheard (§3.11, §5.7, WCAG 4.1.3). With no dialog open it is back in its place.
 
 import type { Action, Model, Overlay, PickOverlay } from '../core/state'
-import { hasReply, hasUserMessage, leaveGuard, pendingOf, sessionOf } from '../core/state'
-import { maskPausedLine, type SafeLine } from '../core/helplines'
+import { canOpenJournal, editUnsaved, hasReply, hasUserMessage, leaveGuard, pendingOf, sessionOf } from '../core/state'
+import { maskPausedLineInline, type SafeLine } from '../core/helplines'
 import { accountOpError, dayMonth, requestIdLine, shortDate } from './copy'
 import { byEl, fromTemplate, headingOf, setAttr, setText, show } from './dom'
 import { fillProvider } from './screens/consent'
+import type { Tools } from './tools'
 
 type Kind = Overlay['o']
 
@@ -41,6 +45,9 @@ const SEARCH_DEBOUNCE_MS = 300
 /** The confirms of an account operation (core/state.ts: one at a time). */
 const ACCOUNT_CONFIRMS: ReadonlySet<string> = new Set(['logout', 'delete-account', 'revoke'])
 
+const TOOLS: ReadonlySet<Kind> = new Set<Kind>(['breathe', 'ground', 'mood', 'shelter'])
+const isTool = (kind: Kind): kind is 'breathe' | 'ground' | 'mood' | 'shelter' => TOOLS.has(kind)
+
 export function fillLines(list: HTMLElement, block: HTMLElement, lines: readonly SafeLine[]): void {
   list.replaceChildren()
   for (const line of lines) {
@@ -63,12 +70,17 @@ function hasTalk(model: Model): boolean {
   return hasUserMessage(sessionOf(model.state), pendingOf(model.state))
 }
 
-export function createDialogs(dispatch: (action: Action) => void): Dialogs {
+export function createDialogs(dispatch: (action: Action) => void, tools: Tools): Dialogs {
+  const dialog = (kind: Kind): HTMLDialogElement => document.querySelector<HTMLDialogElement>(`[data-dialog="${kind}"]`)!
   const elements: Record<Kind, HTMLDialogElement> = {
-    account: document.querySelector<HTMLDialogElement>('[data-dialog="account"]')!,
-    help: document.querySelector<HTMLDialogElement>('[data-dialog="help"]')!,
-    'revisit-pick': document.querySelector<HTMLDialogElement>('[data-dialog="revisit-pick"]')!,
-    confirm: document.querySelector<HTMLDialogElement>('[data-dialog="confirm"]')!,
+    account: dialog('account'),
+    help: dialog('help'),
+    'revisit-pick': dialog('revisit-pick'),
+    confirm: dialog('confirm'),
+    breathe: dialog('breathe'),
+    ground: dialog('ground'),
+    mood: dialog('mood'),
+    shelter: dialog('shelter'),
   }
   const confirmBody = byEl('confirm-body')
   const pickRoot = elements['revisit-pick']
@@ -129,6 +141,8 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
       nosave: session?.noSave === true,
       // «Поточна розмова теж зникне» / «…закриється»: there is something to lose (I7).
       talk: leaveGuard(state),
+      // «Незбережені зміни в записі зникнуть»: a diary record is being edited and not saved.
+      edit: editUnsaved(state),
       // «Хочете залишити тези — спершу підсумуйте» only where «Підсумувати» is offered beside it;
       // on the theses the way to keep them is the save (§3.12). Neither in «не зберігати».
       'can-summarize': state.s === 'chat' && hasReply(state.session) && !state.session.noSave,
@@ -159,12 +173,31 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
     for (const button of Array.from(confirmBody.querySelectorAll<HTMLButtonElement>('[data-act="accept"]'))) {
       setAttr(button, 'aria-busy', busy ? 'true' : null)
     }
+    describeConfirm()
+  }
+
+  /** The confirm's sentences are its description: the focus lands on a button («Залишити»,
+   *  «Скасувати»), past them, and «Повернути його не вийде.» went unsaid. Only the paragraphs shown
+   *  now — a hidden node named in aria-describedby is still read (accname 1.2, step 2A), so the ids
+   *  are given here, after data-if, and again on every refresh. Not the error line (role=alert says
+   *  itself) and not the request id. */
+  function describeConfirm(): void {
+    const ids: string[] = []
+    for (const node of Array.from(confirmBody.querySelectorAll<HTMLElement>(':scope > p'))) {
+      const said = !node.hidden && !node.matches('[data-op-error], [data-op-id]')
+      const id = said ? `confirm-desc-${ids.length + 1}` : null
+      setAttr(node, 'id', id)
+      if (id !== null) ids.push(id)
+    }
+    setAttr(elements.confirm, 'aria-describedby', ids.length > 0 ? ids.join(' ') : null)
   }
 
   function refreshAccount(m: Model): void {
     const { ctx } = m
     const root = elements.account
     setText(byEl('account-email', root), ctx.me?.email ?? '')
+    // «Відкрити щоденник» where the diary can open: not while the AI works, not on the theses.
+    show(byEl('account-journal', root), canOpenJournal(m.state))
     fillProvider(m, root)
     for (const node of Array.from(root.querySelectorAll<HTMLElement>('[data-grant-date]'))) {
       const granted = ctx.consents?.granted.find((g) => g.kind === node.dataset.grantDate)
@@ -240,10 +273,10 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
         input.dataset.act = 'revisit-toggle'
         input.dataset.id = item.id
         // Records the AI drafted: the paused number masked, as everywhere the AI's text is shown.
-        setText(li.querySelector('.pick__title')!, maskPausedLine(item.title))
-        const tags = item.tags.map((t) => `#${maskPausedLine(t.name)}`).join(' ')
+        setText(li.querySelector('.pick__title')!, maskPausedLineInline(item.title))
+        const tags = item.tags.map((t) => `#${maskPausedLineInline(t.name)}`).join(' ')
         setText(li.querySelector('.pick__meta')!, [dayMonth(item.created_at), tags].filter((x) => x !== '').join(' · '))
-        setText(li.querySelector('.pick__first')!, maskPausedLine(item.bullets[0] ?? ''))
+        setText(li.querySelector('.pick__first')!, maskPausedLineInline(item.bullets[0] ?? ''))
         list.append(li)
       }
     }
@@ -304,10 +337,23 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
     }
   }
 
+  /** An item of a menu (a popover) that has closed cannot take the focus back: its button can. */
+  function reachable(node: HTMLElement): HTMLElement {
+    const menu = node.closest<HTMLElement>('[popover]')
+    if (menu === null || menu.id === '') return node
+    let open = false
+    try {
+      open = menu.matches(':popover-open')
+    } catch {
+      open = false
+    }
+    return open ? node : (document.querySelector<HTMLElement>(`[popovertarget="${menu.id}"]`) ?? node)
+  }
+
   function openerNow(): HTMLElement | null {
     const active = document.activeElement
-    if (active instanceof HTMLElement && active !== document.body) return active
-    return noted !== null && noted.isConnected ? noted : null
+    if (active instanceof HTMLElement && active !== document.body) return reachable(active)
+    return noted !== null && noted.isConnected ? reachable(noted) : null
   }
 
   return {
@@ -335,6 +381,7 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
         const top = stack.pop()!
         if (top.el.open) top.el.close()
         if (top.kind === 'revisit-pick') clearPick()
+        if (isTool(top.kind)) tools.close(top.kind)
         if (!screenChanged) returnFocus(top.opener)
       }
       if (wanted.every((o) => o.o !== 'revisit-pick')) pickTried = false
@@ -351,6 +398,9 @@ export function createDialogs(dispatch: (action: Action) => void): Dialogs {
         if (overlay.o === 'account') refreshAccount(next)
         if (overlay.o === 'help') refreshHelp(next)
         if (overlay.o === 'revisit-pick') refreshPick(next)
+        if (overlay.o === 'breathe' || overlay.o === 'ground' || overlay.o === 'mood' || overlay.o === 'shelter') {
+          tools.open(overlay, next, stack.slice(0, -1).some((o) => o.kind === 'shelter'))
+        }
         if (!el.open) el.showModal()
         initialFocus(el)
       }

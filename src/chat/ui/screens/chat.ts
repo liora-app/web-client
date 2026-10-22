@@ -11,15 +11,21 @@
 // The lines above the composer are live regions that stay rendered while empty (visually hidden
 // by CSS, never [hidden]): a region that appears together with its text is not reliably read
 // (§5.7).
+//
+// The reminder to pause (§3.7.7) is one line in the composer: its 40 minutes are one timer armed
+// here for the time left (the core has no clock), between answers only, cleared on every way out
+// of the screen — the crisis above all — and armed again on the way back. 60 replies need no
+// timer: the core looks at each answer.
 
-import { maskPausedLine } from '../../core/helplines'
+import { maskPausedLineInline } from '../../core/helplines'
 import type { Action, ChatState, Model } from '../../core/state'
-import { canSendNow, hasReply, hasUserMessage, scenariosOf } from '../../core/state'
+import { canSendNow, hasReply, hasUserMessage, pauseAt, scenariosOf } from '../../core/state'
 import { LONG_CONVERSATION_MESSAGES, SERVER_TRIM_CODE_POINTS, canSend, totalCodePoints } from '../../core/limits'
 import type { ScenarioOut } from '../../core/types'
 import {
   LIMIT_BLOCK,
   NEED_RECORDS,
+  PAUSE_LINE,
   REVISIT_EMPTY,
   REVISIT_FAILED,
   REVISIT_GONE_BLOCK,
@@ -29,9 +35,11 @@ import {
   UNSENT,
   placeholder,
   scenarioAbout,
+  starters,
   tooLong,
 } from '../copy'
 import { byEl, fromTemplate, headingOf, screenOf, setAttr, setText, show } from '../dom'
+import { decorativeMotion, onMotionChange } from '../../../ui/motion'
 import { REPEAT_GAP_MS } from '../announcer'
 import { createComposer, type Composer } from '../composer'
 import { createScrollAnchor } from '../scroll-anchor'
@@ -46,6 +54,8 @@ export type ChatScreen = Screen &
     /** After «Надіслати»: the field empties once the reducer took the message. */
     afterSend(model: Model, text: string): void
     jumpToEnd(): void
+    /** A starter chip: its words go into the field (never sent by themselves). */
+    start(index: number): void
   }>
 
 /** A node that leaves the DOM and comes back to the same place (a comment marks the spot). */
@@ -61,7 +71,29 @@ function detachable(node: HTMLElement): Readonly<{ detach(): void; attach(): voi
   }
 }
 
-export function chatScreen(dispatch: (action: Action) => void, onPulse: () => void): ChatScreen {
+/** A toggletip or the tools menu left open in a part that goes away (the head after the first
+ *  message, a field replaced by a block, the screen itself — the crisis above all) closes with it:
+ *  hidden, it would still be open and come back open with that part. */
+function closePopovers(scope: HTMLElement): void {
+  for (const node of Array.from(scope.querySelectorAll<HTMLElement>('[popover]'))) {
+    try {
+      if (node.matches(':popover-open')) node.hidePopover()
+    } catch {
+      // An engine without popovers: nothing there is open.
+    }
+  }
+}
+
+/** The first «Надіслати» takes the new conversation's head away; the transcript glides up into its
+ *  place instead of jumping (a FLIP on the list, spec §3.6). Only with motion. */
+const COLLAPSE_MS = 240
+
+export function chatScreen(
+  dispatch: (action: Action) => void,
+  onPulse: () => void,
+  onType: () => void = () => {},
+  say: (text: string) => void = () => {},
+): ChatScreen {
   const root = screenOf('chat')
   const el = <T extends HTMLElement = HTMLElement>(name: string): T => byEl<T>(name, root)
   const session = el('session')
@@ -72,10 +104,45 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
   const block = el('chat-block')
   const status = el('composer-status')
   const talk = el<HTMLOListElement>('talk')
+  const starterBox = el('starters')
+  /** «Як ви зараз?» (§3.13): after the starters, in the same row; it opens the check-in. */
+  const checkin = el('checkin')
   let scenarioKey = ''
+  let starterKey = ''
+  /** The last render showed a conversation already under way (the head gone). */
+  let wasStarted = false
+  /** The glide in flight: «Пауза» or leaving the screen ends it where it is going. */
+  let glide: Animation | null = null
+  onMotionChange((allowed) => {
+    if (!allowed) glide?.finish()
+  })
   let lastModel: Model | null = null
   let shownNotice: ChatState['notice'] = null
   let repeatTimer = 0
+  /** The reminder's timer, and the moment it is armed for: one timer, never one per render. It
+   *  stands only between answers (the core takes the reminder only then): while an answer comes it
+   *  is taken off, and when the turn ends — `done`, «Зупинити», an error, a 429 — it is armed again,
+   *  firing at once if the moment passed meanwhile. `done` brings the reminder itself (the core
+   *  checks it there), and then nothing is armed. */
+  let pauseTimer = 0
+  let pauseFor: number | null = null
+  const disarmPause = (): void => {
+    window.clearTimeout(pauseTimer)
+    pauseTimer = 0
+    pauseFor = null
+  }
+  const armPause = (at: number | null): void => {
+    if (at === pauseFor) return
+    window.clearTimeout(pauseTimer)
+    pauseTimer = 0
+    pauseFor = at
+    if (at === null) return
+    // setTimeout holds at most 2^31 − 1 ms; 40 minutes are far below it.
+    pauseTimer = window.setTimeout(() => {
+      pauseTimer = 0
+      dispatch({ type: 'chat/pause-due', now: Date.now() })
+    }, Math.max(0, at - Date.now()))
+  }
 
   const anchor = createScrollAnchor({
     header: document.querySelector<HTMLElement>('[data-header]')!,
@@ -97,10 +164,12 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
     el('composer'),
     () => {
       const text = composer.value()
-      dispatch({ type: 'chat/send', text })
+      dispatch({ type: 'chat/send', text, now: Date.now() })
       if (lastModel) screen.afterSend(lastModel, text)
     },
     () => dispatch({ type: 'chat/stop' }),
+    onType,
+    say,
   )
 
   const renderScenarios = (items: readonly ScenarioOut[], chosen: string): void => {
@@ -124,6 +193,24 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
     }
   }
 
+  const renderStarters = (scenario: string, visible: boolean): void => {
+    const lines = starters(scenario)
+    if (scenario !== starterKey) {
+      starterKey = scenario
+      starterBox.replaceChildren()
+      for (const [i, line] of lines.entries()) {
+        const chip = fromTemplate<HTMLButtonElement>('starter')
+        chip.dataset.i = String(i)
+        setText(chip, line)
+        starterBox.append(chip)
+      }
+      starterBox.append(checkin)
+    }
+    // «Як ви зараз?» is always there before the first message, a scenario without starters of its
+    // own (one the server added later) included.
+    show(starterBox, visible)
+  }
+
   const streamOf = (state: ChatState): StreamView | null => {
     const t = state.turn
     if (t.p === 'waiting') return { id: t.id, phase: 'waiting', stage: t.stage, partial: '', until: null }
@@ -142,10 +229,20 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
     jumpToEnd() {
       anchor.jumpToEnd()
     },
+    start(index) {
+      const state = lastModel?.state
+      if (state?.s !== 'chat' || hasUserMessage(state.session, state.pending)) return
+      const line = starters(state.session.scenario)[index]
+      if (line !== undefined) composer.insert(line)
+    },
     leave() {
       // On a phone the field may hold the keyboard open: let it close before the field goes.
       const active = document.activeElement
       if (active instanceof HTMLElement && root.contains(active)) active.blur()
+      closePopovers(root)
+      disarmPause()
+      glide?.finish()
+      glide = null
       transcript.reset()
       anchor.reset()
       sessionSlot.detach()
@@ -155,6 +252,7 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       setText(el('revisit-names'), '')
       clearBanner(el('chat-auth'), el('chat-auth-text'))
       lastModel = null
+      wasStarted = false
     },
     render(model, entered) {
       lastModel = model
@@ -169,7 +267,13 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
         composerSlot.attach()
         transcript.reset()
         anchor.reset()
+        wasStarted = started
       }
+      // The first message: where the list stood before the head goes (the glide's start). Not under
+      // prefers-reduced-motion, even with a stored «on» (decorativeMotion, ADR-012 §3).
+      const collapsing = started && !wasStarted && decorativeMotion() && !document.hidden
+      const fromTop = collapsing ? talk.getBoundingClientRect().top : 0
+      wasStarted = started
 
       fillProvider(model, root)
       // «Новий вхід не відбувся…» stays over the new conversation it led to (§3.3).
@@ -197,32 +301,45 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       const emptyDiary = revisit && diary.status === 'ok' && diary.value.items.length === 0
       const diaryFailed = revisit && diary.status === 'failed'
       setText(el('scenario-text'), emptyDiary ? REVISIT_EMPTY : diaryFailed ? REVISIT_FAILED : scenarioAbout(scenario))
-      show(el('scenario-flow'), s.scenario === 'situation')
       const chosenNames =
         revisit && diary.status === 'ok'
           ? s.revisitIds.map((id) => diary.value.items.find((item) => item.id === id)?.title).filter((t): t is string => t !== undefined)
           : []
       show(el('revisit-chosen'), revisit && s.revisitIds.length > 0)
-      setText(el('revisit-names'), chosenNames.map(maskPausedLine).join(', '))
+      setText(el('revisit-names'), chosenNames.map(maskPausedLineInline).join(', '))
       show(el('revisit-actions'), revisit)
       show(el('revisit-open'), revisit && diary.status === 'ok' && diary.value.items.length > 0)
       setText(el('revisit-open'), s.revisitIds.length > 0 ? 'Змінити' : 'Обрати записи')
       show(el('diary-retry'), diaryFailed)
       show(el('revisit-free'), emptyDiary)
 
+      // The glide: measured once the head is gone and the session row is in, before the send anchor
+      // scrolls (it reads the list where it ends up, not where it is drawn).
+      const shift = collapsing ? fromTop - talk.getBoundingClientRect().top : 0
+
       // Transcript (§3.7.2).
       transcript.sync({
         messages: s.messages,
+        times: s.times,
         cut: s.cut,
         pending: state.pending,
         stream: streamOf(state),
         csrfFailures: ctx.csrfFailures,
         cooldownUntil: state.turn.p === 'cooldown' ? state.turn.until : null,
         revisit,
+        marks: s.marks,
       })
+
+      if (shift > 1) {
+        glide = talk.animate([{ transform: `translate3d(0, ${Math.round(shift)}px, 0)` }, { transform: 'none' }], {
+          duration: COLLAPSE_MS,
+          easing: 'cubic-bezier(0.2, 0, 0, 1)',
+        })
+      }
 
       // «Не зберігати» (§3.6): until the first message.
       show(nosave, !started)
+      if (started) closePopovers(nosave)
       const toggle = nosave.querySelector<HTMLElement>('[role="switch"]')!
       setAttr(toggle, 'aria-checked', String(s.noSave))
       setText(el('nosave-state'), s.noSave ? 'Увімкнено' : 'Вимкнено')
@@ -247,7 +364,29 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       // on the screen: the line under the field goes with the field (§3.7.1).
       const composerShown = blockText === '' && !emptyDiary
       show(composer.element, composerShown)
+      if (!composerShown) closePopovers(composer.element)
       show(el('chat-ai'), !composerShown)
+      // The reminder to pause (§3.7.7): with the field, never instead of it. «Зібрати тези» waits
+      // while an answer comes (the confirm opens between answers only). The timer too: one that
+      // fired mid-answer would be refused, and an answer that ends without `done` (stopped, failed,
+      // a 429) would never bring the line.
+      armPause(idle ? pauseAt(s) : null)
+      const pause = s.pause === 'time' || s.pause === 'count' ? s.pause : null
+      const pauseText = el('pause-text')
+      const pauseLine = pause !== null && composerShown ? PAUSE_LINE[pause] : ''
+      const putPause = (): void => {
+        setText(pauseText, pauseLine)
+        show(el('pause-actions'), pauseLine !== '')
+      }
+      // It grows the sticky composer upward: coming, it must not cover the end of the reply it
+      // came with (a phone at 320 × 640 had the reply's last line and «↓ До кінця» under it).
+      if (pauseLine !== '' && pauseText.textContent === '') anchor.hold(putPause)
+      else putPause()
+      const answering = state.turn.p === 'waiting' || state.turn.p === 'streaming' || state.turn.p === 'busy-wait'
+      setAttr(el('pause-collect'), 'aria-disabled', answering ? 'true' : null)
+
+      // Starters: a new conversation with the field there to take them (§3.6).
+      renderStarters(s.scenario, !started && composerShown)
       composer.setPlaceholder(placeholder(s.scenario, !hasUserMessage(s, null)))
       const inFlight = state.turn.p === 'waiting' || state.turn.p === 'streaming' || state.turn.p === 'busy-wait'
       const blocked = !inFlight && !canSendNow(state) && state.pending === null && !(revisit && s.revisitIds.length === 0)

@@ -8,6 +8,7 @@ uniform float uRimPower;
 uniform float uBody;
 uniform float uSpecular;
 uniform vec3 uWarm;
+uniform vec3 uTint; // the rim's colour: cool glass at night, a teal-grey line on paper (palette.ts)
 
 varying vec3 vNormal;
 varying vec3 vView;
@@ -25,7 +26,7 @@ void main() {
   float rim = pow(1.0 - ndv, uRimPower);
 
   vec3 film = thinFilm(rim * 1.35 + vObject.y * 0.22 + uTime * 0.015);
-  vec3 tint = mix(mix(vec3(0.82, 0.93, 0.96), uWarm, 0.15), film, 0.15);
+  vec3 tint = mix(mix(uTint, uWarm, 0.15), film, 0.15);
 
   vec3 keyLight = normalize(vec3(-0.5, 0.7, 0.55));
   float spec = pow(max(dot(reflect(-keyLight, n), v), 0.0), 90.0) * uSpecular;

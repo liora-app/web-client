@@ -20,11 +20,84 @@
    heights are measured (src/chat/ui/scroll-anchor.ts); --kb is the on-screen keyboard the composer
    stands on in iOS Safari (src/chat/ui/keyboard.ts). */
 html {
-  scroll-padding-top: calc(var(--header-h) + var(--session-h) + 0.5rem);
-  scroll-padding-bottom: calc(var(--composer-h) + var(--kb, 0px) + 0.5rem);
+  scroll-padding-top: calc(var(--header-h) + var(--session-h) + var(--header-tail, 0rem) + max(0.5rem, var(--fade-top, 0rem) - 0.5rem));
+  scroll-padding-bottom: calc(var(--composer-h) + var(--kb, 0px) + max(0.5rem, var(--fade-bottom, 2rem) - 0.5rem));
   /* A dialog stops the page's scrolling (below): the scrollbar's place stays, so the header, the
      text and the light do not jump sideways under the backdrop. Overlay scrollbars: no effect. */
   scrollbar-gutter: stable;
+  /* The gutter shows the page's own background, not a grey strip: a thumb on no track. The thumb is
+     the scrollbar's only shape, so it takes the fields' border colour (≥ 3:1, WCAG 1.4.11), not
+     --color-line-strong. */
+  scrollbar-color: var(--color-field-border) transparent;
+}
+
+/* No band, no seam (brief §2). The header, the session row and the composer stand on bands of
+   --color-bg from edge to edge; the sky is not that colour (its haze, glows and vignette tint it),
+   so a band's fade would meet it at a visible edge. Instead the sky itself eases into --color-bg
+   where the bands are — under them it is their very colour, and their fades fall on it unseen:
+   at the top under the header and the session row, at the bottom under the composer (the chat
+   screen only), at the right into a classic scrollbar's gutter (html[data-gutter], measured in
+   src/chat/ui/scroll-anchor.ts: the gutter shows only the root's background — fixed layers stop
+   where it begins; with overlay scrollbars — phones, macOS — the sky runs to the edge). Long and
+   eased at both ends (a smoothstep over 10rem, 8rem at the side): the eye finds no line where the
+   sky comes back. The layers lie on the vignette, the highest decoration under the text. */
+.chat-page .vignette {
+  --edge-top-at: calc(var(--header-h) + var(--session-h) + max(var(--fade-top), 2rem));
+  --edge-top: linear-gradient(
+    180deg,
+    var(--color-bg) var(--edge-top-at),
+    color-mix(in srgb, var(--color-bg) 84%, transparent) calc(var(--edge-top-at) + 2.5rem),
+    color-mix(in srgb, var(--color-bg) 50%, transparent) calc(var(--edge-top-at) + 5rem),
+    color-mix(in srgb, var(--color-bg) 16%, transparent) calc(var(--edge-top-at) + 7.5rem),
+    var(--color-fade-0) calc(var(--edge-top-at) + 10rem)
+  );
+  --edge-bottom: linear-gradient(var(--color-fade-0), var(--color-fade-0));
+  --edge-right: linear-gradient(var(--color-fade-0), var(--color-fade-0));
+  background:
+    var(--edge-top),
+    var(--edge-bottom),
+    var(--edge-right),
+    radial-gradient(130% 110% at 50% 42%, var(--color-vignette-0) 52%, var(--color-vignette) 100%);
+}
+
+html[data-screen='chat'] .chat-page .vignette {
+  --edge-bottom-at: calc(var(--composer-h) + var(--kb, 0px) + var(--fade-bottom));
+  --edge-bottom: linear-gradient(
+    0deg,
+    var(--color-bg) var(--edge-bottom-at),
+    color-mix(in srgb, var(--color-bg) 84%, transparent) calc(var(--edge-bottom-at) + 2.5rem),
+    color-mix(in srgb, var(--color-bg) 50%, transparent) calc(var(--edge-bottom-at) + 5rem),
+    color-mix(in srgb, var(--color-bg) 16%, transparent) calc(var(--edge-bottom-at) + 7.5rem),
+    var(--color-fade-0) calc(var(--edge-bottom-at) + 10rem)
+  );
+}
+
+html[data-gutter] .chat-page .vignette {
+  --edge-right: linear-gradient(
+    270deg,
+    var(--color-bg) 0,
+    color-mix(in srgb, var(--color-bg) 84%, transparent) 2rem,
+    color-mix(in srgb, var(--color-bg) 50%, transparent) 4rem,
+    color-mix(in srgb, var(--color-bg) 16%, transparent) 6rem,
+    var(--color-fade-0) 8rem
+  );
+}
+
+/* The same right edge on the sky itself (under the haze's own layer and the grain). */
+html[data-gutter] .chat-page .stage::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 8rem;
+  background: linear-gradient(
+    270deg,
+    var(--color-bg) 0,
+    color-mix(in srgb, var(--color-bg) 84%, transparent) 2rem,
+    color-mix(in srgb, var(--color-bg) 50%, transparent) 4rem,
+    color-mix(in srgb, var(--color-bg) 16%, transparent) 6rem,
+    var(--color-fade-0) 8rem
+  );
+  pointer-events: none;
 }
 
 /* `hidden` wins over every display rule on this page (screens, buttons, banners). */
@@ -32,9 +105,33 @@ html {
   display: none !important;
 }
 
-/* An open modal keeps the page inert; it should not scroll under the dialog either. */
+/* An open modal keeps the page inert; it should not scroll under the dialog either. The gutter of a
+   classic scrollbar is painted by the root's background alone, which no ::backdrop covers: where the
+   scrim is in view beside it, the gutter takes the scrim's colour over the page's, not a light strip.
+   Only where there is such a gutter (html[data-gutter]); a phone's bar follows the root's colour
+   (src/ui/theme.ts). An image layer would not do — the gutter shows the root's colour alone (probed
+   in Chromium). The bar is read again whenever the open dialogs change (src/chat/ui/tools.ts). */
 html:has(dialog[open]) {
   overflow: hidden;
+}
+
+/* The scrim is in view only around a dialog that leaves some of the window to it:
+   - the confirm, at any width (a bottom sheet below 48em, centred from there), over the page or over
+     a sheet;
+   - from 48em, the centred sheets: «Якщо важко», the record picker, a tool.
+   Below 48em every sheet covers the window and its scrim is out of sight: the gutter keeps the
+   page's colour beside it (a strip of the scrim's colour ran down the right edge of a window under
+   48em — half a screen, a 200 % zoom). So it does beside «Акаунт» at any width, a sheet the height of
+   the window flush with the gutter. «В укритті» keeps its own dark one (below; it comes later, with
+   the same specificity, and wins). */
+html[data-gutter]:has(dialog.confirm[open]) {
+  background-color: var(--color-bg-under-scrim);
+}
+
+@media (min-width: 48em) {
+  html[data-gutter]:has(dialog:is(.sheet--help, .sheet--pick, .sheet--tool)[open]) {
+    background-color: var(--color-bg-under-scrim);
+  }
 }
 
 /* ---------- Header: the landing's, with «Акаунт» in place of «Меню» ---------- */
@@ -43,6 +140,81 @@ html:has(dialog[open]) {
   .chat-header {
     min-height: 3.5rem;
     padding-block: 0.5rem;
+  }
+}
+
+/* Every chat screen but a running conversation — the diary and its edit form, the theses, «Збережено»,
+   a new conversation — scrolls its text under the header with no session row below it: the band is
+   solid --color-bg as far as the header goes, so no line of a record shows through between the
+   wordmark and «Якщо важко» (the landing's translucent band let 10–55 % of it through), then a short
+   eased tail (--header-tail) instead of a cut. The sky under the header and well below it is
+   --color-bg itself (the vignette's --edge-top), so neither the band nor its tail has an edge. What
+   the page scrolls to stops below the tail too (scroll-padding-top, above). */
+html {
+  --header-tail: 0.75rem;
+}
+
+.chat-page .site-header::before {
+  bottom: calc(-1 * var(--header-tail));
+  background: linear-gradient(
+    180deg,
+    var(--color-bg) calc(100% - var(--header-tail)),
+    color-mix(in srgb, var(--color-bg) 62%, transparent) calc(100% - var(--header-tail) * 0.6),
+    color-mix(in srgb, var(--color-bg) 22%, transparent) calc(100% - var(--header-tail) * 0.25),
+    var(--color-fade-0) 100%
+  );
+}
+
+/* In a running conversation the session row's band carries on from the header's and fades out
+   long (below): the header's own soft tail would lie over the row and wash it out, so it ends flat
+   where the header ends. */
+html[data-talk='on'] {
+  --header-tail: 0rem;
+}
+
+html[data-talk='on'] .chat-page .site-header::before {
+  bottom: 0;
+  background: var(--color-band-top);
+}
+
+/* How far the bands fade into the conversation: long while it runs, short in a new conversation
+   (whose «Не зберігати» sits just above the field). What the page scrolls to — a sent message, a
+   focused control, the end of an answer — stops clear of the fades, not under them (SC 2.4.11). */
+html {
+  --fade-top: 0rem;
+  --fade-bottom: 2rem;
+}
+
+/* The top fade is as tall as the gap above a sent message (1.75rem, .said--ai + .said--you): the
+   send anchor puts the message just under it, so the reply above rests wholly under the band —
+   never a time or a line half-faded at rest. */
+html[data-talk='on'] {
+  --fade-top: 1.75rem;
+  --fade-bottom: 4rem;
+}
+
+@media (max-width: 63.99em) {
+  html[data-talk='on'] {
+    --fade-bottom: 3rem;
+  }
+}
+
+/* A phone held upright: 44 px controls (tap targets), still in one row with «Якщо важко». Below
+   384 px they keep 40 px (and at 320 px shrink to 36, below): the row has to fit. */
+@media (min-width: 24em) and (max-width: 63.99em) {
+  .chat-header .media {
+    padding: 0;
+  }
+
+  .chat-header .media__button,
+  .chat-header .theme-toggle,
+  .chat-header .account-toggle {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .chat-header .help-link {
+    min-height: 2.75rem;
   }
 }
 
@@ -56,7 +228,7 @@ html:has(dialog[open]) {
   padding: 0;
   border: 1px solid var(--color-line-strong);
   border-radius: 999px;
-  background: rgb(4 8 9 / 0.82);
+  background: var(--color-surface);
   color: var(--color-text-soft);
   font-family: var(--font-body);
   font-size: 0.875rem;
@@ -93,6 +265,29 @@ html:has(dialog[open]) {
   }
 }
 
+/* 320 px with a session: wordmark, «Якщо важко», motion and sound, «Вигляд» and «Акаунт» in one
+   row — a narrower edge and gaps, 36 px round buttons (still over the 24 px target size). */
+@media (max-width: 22.5em) {
+  .chat-header {
+    gap: 0.75rem;
+    padding-inline: 1rem;
+  }
+
+  .chat-header .site-header__actions {
+    gap: 0.25rem;
+  }
+
+  .chat-header .help-link {
+    padding: 0 0.7rem;
+  }
+
+  .chat-header .theme-toggle,
+  .chat-header .account-toggle {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+}
+
 /* ---------- Frame: the text column and the scene column ---------- */
 
 .chat {
@@ -103,8 +298,10 @@ html:has(dialog[open]) {
   padding-top: var(--header-h);
   /* The session and composer bands run past the column to the viewport edges. Clip them here:
      overflow on body reaches the viewport, and a mobile browser widens its layout viewport to fit
-     the overhang anyway. `clip` is not a scroll container, so the sticky rows keep working. */
-  overflow-x: clip;
+     the overhang anyway. `clip` is not a scroll container, so the sticky rows keep working. Both
+     axes: a screen rising in from 8 px lower (§3.1) would otherwise make a page that fits one
+     screen scrollable for the length of the animation. */
+  overflow: clip;
 }
 
 .chat:focus {
@@ -170,14 +367,16 @@ html[data-gl='on'] .presence__canvas {
   inset: 22%;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 50% 54%, rgb(255 244 226 / 0.95) 0 5%, rgb(255 197 143 / 0.6) 14%, rgb(255 170 100 / 0.16) 34%, rgb(255 170 100 / 0) 56%),
-    radial-gradient(circle at 34% 28%, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0) 26%),
-    radial-gradient(circle, rgb(10 22 24 / 0) 60%, rgb(143 227 212 / 0.1) 69%, rgb(143 227 212 / 0) 71%);
+    radial-gradient(circle at 50% 54%, var(--orb-core) 0 5%, var(--orb-warm) 14%, var(--orb-halo) 34%, var(--orb-halo-0) 56%),
+    radial-gradient(circle at 34% 28%, var(--orb-shine), var(--orb-shine-0) 26%),
+    radial-gradient(circle, transparent 60%, var(--orb-ring) 69%, var(--orb-ring-0) 71%),
+    radial-gradient(circle at 40% 34%, var(--orb-body) 0%, var(--orb-body-edge) 72%);
   box-shadow:
-    inset 0 0 0 1px rgb(200 240 236 / 0.16),
-    inset -14px -20px 46px rgb(140 120 255 / 0.12),
-    inset 12px 16px 46px rgb(80 220 200 / 0.1),
-    0 0 90px rgb(255 180 110 / 0.16);
+    inset 0 0 0 1px var(--orb-rim),
+    inset -14px -20px 46px var(--orb-violet),
+    inset 12px 16px 46px var(--orb-teal),
+    0 0 90px var(--orb-glow),
+    0 14px 36px var(--orb-shadow);
   transition: opacity var(--dur-slow) var(--ease-out);
 }
 
@@ -187,11 +386,41 @@ html[data-gl='on'] .presence__canvas {
   position: absolute;
   inset: 30%;
   border-radius: 50%;
-  background: radial-gradient(circle, rgb(255 228 196 / 0.55), rgb(255 197 143 / 0) 70%);
+  background: radial-gradient(circle, var(--orb-core-glow), var(--orb-core-glow-0) 70%);
   opacity: 0.6;
 }
 
-html[data-motion='on'] .presence:is([data-presence='thinking'], [data-presence='speaking']) .orb::after,
+/* The light's states (src/chat/ui/presence.ts sets data-presence; the WebGL scene reads the same):
+   idle — a slow breath, 7 s, about the pace of calm breathing; listening — the person types, the
+   light leans in a little; thinking — the core pulses; speaking — a quicker, brighter pulse. Only
+   the CSS orb moves here (with WebGL it is hidden and the scene does the same), only with motion. */
+html[data-motion='on'] .presence .orb {
+  transition:
+    opacity var(--dur-slow) var(--ease-out),
+    scale var(--dur-4) var(--ease-standard);
+}
+
+html[data-motion='on'] .presence[data-presence='idle'] .orb {
+  animation: orb-breathe var(--dur-breath) var(--ease-in-out) infinite;
+}
+
+/* Leaning in is a movement: only with motion. Without it the brighter core alone says «listening». */
+html[data-motion='on'] .presence[data-presence='listening'] .orb {
+  scale: 1.035;
+}
+
+.presence[data-presence='listening'] .orb::after {
+  opacity: 0.85;
+}
+
+html[data-motion='on'] .presence[data-presence='thinking'] .orb::after {
+  animation: core 1.6s var(--ease-in-out) infinite alternate;
+}
+
+html[data-motion='on'] .presence[data-presence='speaking'] .orb::after {
+  animation: core 0.9s var(--ease-in-out) infinite alternate;
+}
+
 html[data-motion='on'] .session .orb--mini::after {
   animation: core 2.4s var(--ease-in-out) infinite alternate;
 }
@@ -199,6 +428,17 @@ html[data-motion='on'] .session .orb--mini::after {
 @keyframes core {
   to {
     opacity: 1;
+  }
+}
+
+@keyframes orb-breathe {
+  0%,
+  100% {
+    transform: scale(0.975);
+  }
+  /* In for 4 s, out for 3. */
+  57% {
+    transform: scale(1.02);
   }
 }
 
@@ -223,17 +463,19 @@ html[data-slot='still'] .presence .orb {
   width: 2rem;
   height: 2rem;
   box-shadow:
-    inset 0 0 0 1px rgb(200 240 236 / 0.2),
-    0 0 18px rgb(255 180 110 / 0.18);
+    inset 0 0 0 1px var(--orb-rim-mini),
+    0 0 18px var(--orb-glow-mini),
+    0 4px 10px var(--orb-shadow);
 }
 
 .presence__ai {
   margin-top: 1rem;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: var(--step-label);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-teal);
+  color: var(--color-ai);
 }
 
 .presence__state {
@@ -255,13 +497,26 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   visibility: hidden;
 }
 
+/* The crisis keeps the person's theme and drops the decoration: no haze, no grain, no vignette
+   (src/chat/ui/render.ts takes the sky preset off). The help contacts stand on the plain sky. */
+html[data-screen='crisis'] .stage__haze,
+html[data-screen='crisis'] .stage__grain,
+html[data-screen='crisis'] .vignette {
+  display: none;
+}
+
 /* Phone: the light above the text — 160 px, in a new conversation too; gone in a running
    conversation (a 32 px CSS orb in the session row) and in the crisis (numbers first). A new
    conversation sits tighter (smaller slot, 12 px gaps) so «Не зберігати», which goes once the first
    message is sent, is in view above the composer at 412 × 839 without scrolling (§3.6). */
 @media (max-width: 63.99em) {
   html[data-screen='chat'] .chat__scene {
-    padding-top: 0.5rem;
+    --slot: 8rem;
+    padding-top: 0;
+  }
+
+  html[data-screen='chat'] .presence__ai {
+    margin-top: 0;
   }
 
   html[data-talk='on'] .chat__scene,
@@ -271,6 +526,16 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
 
   .presence__state {
     display: none;
+  }
+}
+
+/* A small phone (320 × 640, an SE's 375 × 667 — any phone under 45em tall): the light smaller
+   still (a 54 px orb in a 96 px slot), so the first question, the scenarios and their line start
+   higher and less of a new conversation waits under the field. Only the size changes: the slot and
+   the presence API stay. */
+@media (max-width: 63.99em) and (max-height: 45em), (max-width: 22.5em) {
+  html[data-screen='chat'] .chat__scene {
+    --slot: 6rem;
   }
 }
 
@@ -327,6 +592,55 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   align-content: start;
 }
 
+/* A screen comes in: 280 ms, a fade and an 8 px rise (spec §3.1 «Рух»). Unhiding a section restarts
+   the animation by itself — no script waits for it, and nothing leaves with an animation: the old
+   screen is hidden at once. Never the crisis, a lost connection or an ended session: those stand
+   in one frame (§6.2). */
+html[data-motion='on'] .chat-page .screen:not(.screen--crisis, [data-screen='booting'], [data-screen='fatal'], [data-screen='session-expired']) {
+  animation: rise-in var(--dur-screen) var(--ease-decelerate) backwards;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--rise, var(--rise-screen)), 0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Headings of the chat in the reading face, in sentence case (the landing's mono capitals stay
+   the landing's): calm, quick to read. The mono stays for the small labels. */
+.chat-page :is(.screen__title, .crisis__title, .row__title, .list-title, .confirm__title, .sheet__title, .scenarios__legend) {
+  font-family: var(--font-body);
+  font-stretch: normal;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.chat-page .screen__title {
+  max-width: 22ch;
+  font-size: clamp(1.75rem, 1.2rem + 1.9vw, 2.75rem);
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+
+.chat-page .row__title {
+  font-size: 1.125rem;
+  line-height: 1.35;
+}
+
+.chat-page :is(.confirm__title, .sheet__title) {
+  font-size: clamp(1.25rem, 1.1rem + 0.5vw, 1.5rem);
+  line-height: 1.25;
+}
+
 /* A variant of a screen (not-invited with or without a session, ended): its parts keep the
    screen's own rhythm. The variant not in use is [hidden]. */
 .screen__part {
@@ -352,12 +666,13 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   align-items: center;
 }
 
+/* A whole sentence (the sign-in screen's «Саморефлексія, а не терапія…»): the reading face in
+   sentence case — the mono capitals are for small labels only. */
 .note {
-  font-family: var(--font-mono);
-  font-size: max(0.875rem, var(--step--1));
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--color-teal);
+  font-family: var(--font-body);
+  font-size: var(--step-0);
+  font-weight: 500;
+  color: var(--color-ai);
 }
 
 .prose {
@@ -420,6 +735,7 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
 .status-line--quiet,
 .composer__status:empty,
 .chat-line:empty,
+.pause__text:empty,
 #review-tag-error:empty {
   position: absolute;
   display: block;
@@ -511,6 +827,67 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   color: var(--color-text);
 }
 
+/* «Детальніше»: what follows from a row's one sentence, closed until asked for (spec §3.5). Native
+   <details>: find-in-page and the keyboard open it; the marker is a small chevron that turns. */
+.more {
+  border-top: 1px solid var(--color-line);
+}
+
+.rows--stack .more {
+  margin-top: 0.25rem;
+}
+
+.more summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--color-text-soft);
+  list-style: none;
+  cursor: pointer;
+}
+
+.more summary::-webkit-details-marker {
+  display: none;
+}
+
+.more summary::after {
+  content: '';
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-top: -0.2rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  rotate: 45deg;
+}
+
+/* The chevron turns only with motion; without it, it simply points the other way. */
+html[data-motion='on'] .more summary::after {
+  transition: rotate var(--dur-2) var(--ease-standard), margin var(--dur-2) var(--ease-standard);
+}
+
+.more[open] summary::after {
+  margin-top: 0.2rem;
+  rotate: 225deg;
+}
+
+.more summary:hover {
+  color: var(--color-text);
+}
+
+.more__body {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.25rem 0 1rem;
+  color: var(--color-text-soft);
+}
+
+html[data-motion='on'] .more[open] .more__body {
+  animation: fade-in var(--dur-3) var(--ease-decelerate) backwards;
+}
+
 .dash {
   display: grid;
   gap: 0.5rem;
@@ -577,37 +954,37 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
 .button--primary {
   min-height: 3rem;
   padding: 0 1.5rem;
-  background: var(--color-light);
-  color: var(--color-bg);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
   font-weight: 600;
 }
 
 .button--primary:hover {
-  background: var(--color-light-strong);
+  background: var(--color-accent-strong);
 }
 
 .button--secondary {
   border-color: var(--color-line-strong);
-  background: rgb(4 8 9 / 0.82);
+  background: var(--color-surface);
   color: var(--color-text);
 }
 
 .button--secondary:hover {
   background:
-    linear-gradient(rgb(238 242 238 / 0.08), rgb(238 242 238 / 0.08)),
-    rgb(4 8 9 / 0.82);
+    linear-gradient(var(--color-hover), var(--color-hover)),
+    var(--color-surface);
 }
 
 .button--danger {
   border-color: var(--color-light);
-  background: rgb(4 8 9 / 0.82);
+  background: var(--color-surface);
   color: var(--color-light);
 }
 
 .button--danger:hover {
   background:
-    linear-gradient(rgb(255 197 143 / 0.12), rgb(255 197 143 / 0.12)),
-    rgb(4 8 9 / 0.82);
+    linear-gradient(var(--color-accent-tint), var(--color-accent-tint)),
+    var(--color-surface);
 }
 
 .button--small {
@@ -626,8 +1003,13 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   cursor: progress;
 }
 
+/* On the page's own surface, not on the sky: a translucent fill let the sky's darkest point take the
+   dim words under 4.5:1 («До розмови» while a change is on its way: 4.33 / 4.42). Over the surface
+   they are 5.4:1 light, 4.9:1 dark wherever the button stands. */
 .button[aria-disabled='true'] {
-  background: rgb(238 242 238 / 0.08);
+  background:
+    linear-gradient(var(--color-hover), var(--color-hover)),
+    var(--color-surface);
   border-color: var(--color-line-strong);
   color: var(--color-text-dim);
   cursor: not-allowed;
@@ -650,41 +1032,47 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   }
 }
 
-/* Tertiary actions: mono with an arrow of light, like the landing's links. */
-.arrows button {
+/* Tertiary actions: plain words in the reading face with a quiet underline — no mono capitals, no
+   «->» in front (the landing keeps its own). Still 44 px tall to press. */
+.arrows button,
+.chat-page .arrows a {
   display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
   min-height: 2.75rem;
   padding: 0;
   border: 0;
   background: none;
-  font-family: var(--font-mono);
-  font-size: var(--step--1);
-  letter-spacing: 0.1em;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  letter-spacing: 0;
   text-align: left;
-  text-transform: uppercase;
+  text-transform: none;
+  text-decoration: underline;
+  text-decoration-color: var(--color-line-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.3em;
   color: var(--color-text);
   cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease-standard),
+    text-decoration-color var(--dur-1) var(--ease-standard);
 }
 
-.arrows button::before {
-  content: '->';
-  content: '->' / '';
+.chat-page .arrows a::before {
+  content: none;
+}
+
+.arrows button:hover,
+.chat-page .arrows a:hover {
   color: var(--color-light);
-  transition: transform var(--dur-fast) var(--ease-out);
-}
-
-.arrows button:hover::before {
-  transform: translateX(0.3rem);
-}
-
-.arrows button:hover {
-  color: var(--color-light-strong);
+  text-decoration-color: currentColor;
 }
 
 .arrows button[aria-disabled='true'] {
   color: var(--color-text-dim);
+  text-decoration-color: transparent;
   cursor: not-allowed;
 }
 
@@ -741,7 +1129,7 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   width: 22px;
   height: 22px;
   margin: 0.15rem 0 0;
-  accent-color: var(--color-light);
+  accent-color: var(--color-accent);
   cursor: pointer;
 }
 
@@ -775,11 +1163,11 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   color: var(--color-light);
 }
 
-/* ---------- New conversation: the scenario switch and «Не зберігати» ---------- */
+/* ---------- New conversation: «З чого почнемо?», scenarios, starters, «Не зберігати» ---------- */
 
 .compose-head {
   display: grid;
-  gap: 1rem;
+  gap: 0.85rem;
 }
 
 .after-crisis {
@@ -793,15 +1181,12 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   border: 0;
 }
 
+/* The question the screen asks, as its visible heading (the h1 «Розмова з AI» is for screen readers). */
 .scenarios__legend {
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.9rem;
   padding: 0;
-  font-family: var(--font-mono);
-  font-size: var(--step-1);
-  font-weight: 350;
-  font-stretch: 87.5%;
-  letter-spacing: -0.01em;
-  text-transform: uppercase;
+  font-size: clamp(1.6rem, 1.25rem + 1.2vw, 2.25rem);
+  line-height: 1.15;
   color: var(--color-text);
 }
 
@@ -819,15 +1204,17 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   gap: 0.55rem;
   min-height: 2.5rem;
   padding: 0 1.05rem;
-  border: 1px solid var(--color-line-strong);
+  /* >= 3:1 on the page in both themes, like the starters under it (the fields' token). */
+  border: 1px solid var(--color-field-border);
   border-radius: 999px;
-  background: rgb(4 8 9 / 0.82);
+  background: var(--color-surface);
   font-size: 0.9375rem;
   color: var(--color-text-soft);
   cursor: pointer;
   transition:
-    color var(--dur-fast) ease,
-    border-color var(--dur-fast) ease;
+    color var(--dur-1) var(--ease-standard),
+    border-color var(--dur-1) var(--ease-standard),
+    background-color var(--dur-1) var(--ease-standard);
 }
 
 .pill:hover {
@@ -849,21 +1236,24 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   outline-offset: 2px;
 }
 
+/* The chosen scenario: a warm outline and tint, and a dot — not colour alone (SC 1.4.1). */
 .pill--on {
-  border-color: rgb(255 197 143 / 0.55);
+  border-color: var(--color-accent-line);
+  background:
+    linear-gradient(var(--color-accent-tint), var(--color-accent-tint)),
+    var(--color-surface);
   color: var(--color-text);
 }
 
 .pill--on .pill__text::before {
   content: '';
   display: inline-block;
-  width: 5px;
-  height: 5px;
-  margin-right: 0.55em;
+  width: 6px;
+  height: 6px;
+  margin-right: 0.5em;
   border-radius: 50%;
-  background: var(--color-light);
-  box-shadow: 0 0 8px var(--color-light);
-  vertical-align: 0.2em;
+  background: var(--color-accent);
+  vertical-align: 0.15em;
 }
 
 @media (max-width: 63.99em) {
@@ -874,14 +1264,13 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
     gap: 0.75rem;
   }
 
-  .scenarios__list {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .scenarios__legend {
+    margin-bottom: 0.65rem;
   }
 
   .pill {
     min-height: 2.75rem;
-    padding: 0.4rem 0.75rem;
+    padding: 0 0.95rem;
     text-align: center;
   }
 }
@@ -892,9 +1281,12 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   max-width: 40rem;
 }
 
+/* The chosen scenario in one line (it wraps on a narrow screen rather than being cut). */
 .scenario-about__text,
 .scenarios__failed {
+  font-size: 0.9375rem;
   color: var(--color-text-soft);
+  text-wrap: pretty;
 }
 
 /* The chosen records' titles (up to 120 characters, maybe without a space) wrap at 320 px. */
@@ -906,14 +1298,76 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   color: var(--color-text-dim);
 }
 
-.flow {
-  color: var(--color-teal);
+/* Starters: chips under the opening message. Each puts its words into the field, never sends. */
+.starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.15rem;
 }
 
-/* The bottom margin keeps the hint clear of the composer's 32 px fade at the end of the page. */
+.starter {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.5rem;
+  max-width: 100%;
+  padding: 0.35rem 0.95rem;
+  /* The chip's edge is what makes it a button: >= 3:1 on the page in both themes (the fields' token). */
+  border: 1px solid var(--color-field-border);
+  border-radius: 1.25rem;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  line-height: 1.35;
+  color: var(--color-text-soft);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease-standard),
+    background-color var(--dur-1) var(--ease-standard),
+    border-color var(--dur-1) var(--ease-standard);
+}
+
+.starter:hover {
+  border-color: var(--color-text-muted);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.starter:focus-visible {
+  outline-offset: 2px;
+  border-radius: 1.25rem;
+}
+
+@media (max-width: 63.99em) {
+  .starter {
+    min-height: 2.75rem;
+  }
+}
+
+html[data-motion='on'] .starters:not([hidden]) .starter {
+  animation: rise-in var(--dur-item) var(--ease-decelerate) backwards;
+  --rise: var(--rise-item);
+}
+
+html[data-motion='on'] .starters .starter:nth-child(2) {
+  animation-delay: 40ms;
+}
+
+html[data-motion='on'] .starters .starter:nth-child(3) {
+  animation-delay: 80ms;
+}
+
+html[data-motion='on'] .starters .starter:nth-child(4) {
+  animation-delay: 120ms;
+}
+
+/* The bottom margin keeps the switch clear of the composer's fade at the end of the page. */
 .nosave {
-  display: grid;
-  gap: 0.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
   margin-bottom: 1.5rem;
 }
 
@@ -921,7 +1375,6 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   display: inline-flex;
   align-items: center;
   gap: 0.75rem;
-  justify-self: start;
   min-height: 2.75rem;
   padding: 0;
   border: 0;
@@ -955,20 +1408,17 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
 }
 
 .switch[aria-checked='true'] .switch__track {
-  border-color: var(--color-light);
-  background: var(--color-light);
+  border-color: var(--color-accent);
+  background: var(--color-accent);
 }
 
 .switch[aria-checked='true'] .switch__thumb {
-  background: var(--color-bg);
+  background: var(--color-on-accent);
   translate: 20px 0;
 }
 
 .switch__state {
-  font-family: var(--font-mono);
-  font-size: var(--step-label);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 0.8125rem;
   color: var(--color-text-dim);
 }
 
@@ -976,10 +1426,117 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   color: var(--color-light);
 }
 
-.nosave__hint {
-  max-width: 40rem;
-  font-size: var(--step--1);
+/* ---------- ⓘ: a toggletip (a button and a popover, no hover-only text) ---------- */
+
+.tip__button {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin: -0.5rem -0.6rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
   color: var(--color-text-dim);
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease-standard);
+}
+
+.tip__button:hover,
+.tip__button:focus-visible {
+  color: var(--color-text);
+}
+
+.tip__button:focus-visible {
+  outline-offset: -6px;
+  border-radius: 50%;
+}
+
+.tip__icon {
+  width: 1.05rem;
+  height: 1.05rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.tip__dot {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* The panel: anchored above its button where the engine places popovers by anchor; otherwise a
+   sheet over the bottom of the screen (below). */
+.tip__panel,
+.composer__menu {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 1rem;
+  background: var(--color-surface);
+  box-shadow: 0 0.75rem 2rem var(--color-shadow);
+  color: var(--color-text-soft);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+.tip__panel {
+  width: min(22rem, calc(100vw - 2rem));
+}
+
+.tip__panel > p + p {
+  margin-top: 0.5rem;
+}
+
+#nosave-tip {
+  position-anchor: --nosave-tip;
+}
+
+.nosave .tip__button {
+  anchor-name: --nosave-tip;
+}
+
+.composer__meta .tip__button {
+  anchor-name: --composer-tip;
+}
+
+#composer-tip {
+  position-anchor: --composer-tip;
+}
+
+@supports (position-area: top) {
+  :is(#nosave-tip, #composer-tip):popover-open {
+    inset: auto;
+    position-area: top span-right;
+    position-try-fallbacks: flip-block, flip-inline;
+    margin: 0.25rem 0;
+  }
+}
+
+@supports not (position-area: top) {
+  .tip__panel:popover-open,
+  .composer__menu:popover-open {
+    inset: auto 1rem calc(1rem + env(safe-area-inset-bottom)) 1rem;
+    width: auto;
+    max-width: 30rem;
+    margin: 0 auto;
+  }
+}
+
+html[data-motion='on'] :is(.tip__panel, .composer__menu):popover-open {
+  transition:
+    opacity var(--dur-2) var(--ease-decelerate),
+    transform var(--dur-2) var(--ease-decelerate);
+}
+
+@starting-style {
+  html[data-motion='on'] :is(.tip__panel, .composer__menu):popover-open {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0);
+  }
 }
 
 /* ---------- The session row ---------- */
@@ -990,55 +1547,103 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   z-index: 6;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.65rem;
   min-height: 3.25rem;
   margin-top: -0.5rem;
-  padding: 0.4rem 0;
-  border-bottom: 1px solid var(--color-line);
+  padding: 0.35rem 0;
 }
 
-/* The header's backdrop continued down to the hairline: one opaque band across the viewport (a
-   translucent bar let the scrolled transcript show through), then the header's soft tail below.
-   .chat clips the horizontal overhang. */
+/* The header's band continued down under the row (a translucent bar would let the scrolled
+   transcript show through), then a long eased fade into the sky — no hairline, no edge. .chat clips
+   the horizontal overhang. */
 .session::before {
   content: '';
   position: absolute;
   z-index: -1;
   top: calc(-1 * var(--header-h) - 1rem);
-  bottom: -1.25rem;
+  bottom: calc(-1 * var(--fade-top));
   left: -100vmax;
   right: -100vmax;
-  background: linear-gradient(180deg, var(--color-bg) calc(100% - 1.25rem), rgb(4 7 8 / 0));
+  /* Eased: it lets go quickly at first, then slowly — the eye finds no line where it ends. */
+  background: linear-gradient(
+    180deg,
+    var(--color-bg) 0,
+    var(--color-bg) calc(100% - var(--fade-top)),
+    var(--color-band-mid) calc(100% - var(--fade-top) * 0.85),
+    var(--color-band-tail) calc(100% - var(--fade-top) * 0.6),
+    color-mix(in srgb, var(--color-bg) 12%, transparent) calc(100% - var(--fade-top) * 0.35),
+    var(--color-fade-0) calc(100% - var(--fade-top) * 0.15)
+  );
   pointer-events: none;
 }
 
-.session__who {
-  display: grid;
-  gap: 0.1rem;
-  flex: 1;
-  min-width: 0;
+html[data-motion='on'] .session:not([hidden]) {
+  animation: fade-in var(--dur-3) var(--ease-standard) backwards;
 }
 
-.session__label,
-.session__sub {
-  font-family: var(--font-mono);
-  font-size: var(--step-label);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.session__label {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9375rem;
+  line-height: 1.35;
+  color: var(--color-text-soft);
   text-wrap: balance;
 }
 
-/* The row breaks only at «·»: «не терапія» and «Не зберігати» never split into «не» and a lone word. */
+.session__title {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.session__sep {
+  color: var(--color-text-dim);
+}
+
+.session__ai {
+  color: var(--color-ai);
+}
+
+/* The row breaks only at «·»: «AI, не людина» and «Не зберігати» never split into pieces. */
 .session .keep {
   white-space: nowrap;
 }
 
-.session__label {
-  color: var(--color-teal);
+/* A desktop: the light's «AI · не людина» stands beside the conversation and the line under the
+   field says it too, so the row does not repeat it (G2: the light's label, the line under the field
+   and «AI» on every reply). On a phone the row's small light is the light: its words stay by it. */
+@media (min-width: 64em) {
+  .session__ai,
+  .session__label > .session__sep {
+    display: none;
+  }
 }
 
-.session__sub {
-  color: var(--color-text-dim);
+/* A phone: two short lines — the scenario, then «AI, не людина · Не зберігати» — beside the small
+   light and «Завершити». */
+@media (max-width: 63.99em) {
+  .session__label {
+    display: grid;
+    font-size: 0.875rem;
+    line-height: 1.3;
+  }
+
+  .session__label > .session__sep {
+    display: none;
+  }
+
+  .session__ai,
+  .session__nosave {
+    font-size: 0.8125rem;
+  }
+
+  .session__label:has(.session__nosave:not([hidden])) {
+    grid-template-columns: auto 1fr;
+    column-gap: 0;
+  }
+
+  .session__title {
+    grid-column: 1 / -1;
+  }
 }
 
 .session__end {
@@ -1054,24 +1659,113 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   list-style: none;
 }
 
+/* The transcript's geometry never transitions. Under prefers-reduced-motion base.css gives every
+   property a 0.01 ms transition (transition-property is `all` by default), so the talk's end and
+   the answer's room took their size a frame after «Надіслати» — after the send anchor had scrolled,
+   clamped short — and the reply above rested half under the top fade (#93, a phone's first
+   message). */
+.talk,
+.said {
+  transition-property: none;
+}
+
+/* A reply of the AI: a small light and «AI» above the text, the text across the column in the
+   page's own colour (the AI's voice is the label and the light, not teal paragraphs). */
 .said {
   display: grid;
-  grid-template-columns: 2.25rem minmax(0, 1fr);
-  column-gap: 0.9rem;
-  align-items: baseline;
+  grid-template-columns: 1.375rem minmax(0, 1fr);
+  grid-template-areas:
+    'mark who'
+    'body body';
+  column-gap: 0.5rem;
+  row-gap: 0.4rem;
+  align-items: center;
   scroll-margin-top: 0.5rem;
 }
 
-/* Phone: a narrower column for «AI» / «Ви», more room for the text (§3.7.2). */
-@media (max-width: 63.99em) {
-  .said {
-    grid-template-columns: 2rem minmax(0, 1fr);
-    column-gap: 0.625rem;
-  }
+.said__mark {
+  grid-area: mark;
+  position: relative;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 54%, var(--orb-core) 0 9%, var(--orb-warm) 24%, var(--orb-halo) 46%, var(--orb-halo-0) 64%),
+    radial-gradient(circle at 40% 34%, var(--orb-body) 0%, var(--orb-body-edge) 72%);
+  box-shadow:
+    inset 0 0 0 1px var(--orb-rim-mini),
+    0 0 10px var(--orb-glow-mini);
 }
 
+/* The light of the answer being written breathes while it waits. */
+.said__mark::after {
+  content: '';
+  position: absolute;
+  inset: 26%;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--orb-core-glow), var(--orb-core-glow-0) 70%);
+  opacity: 0.5;
+}
+
+html[data-motion='on'] .said--waiting .said__mark::after {
+  animation: core 1.2s var(--ease-in-out) infinite alternate;
+}
+
+.said__who {
+  grid-area: who;
+  color: var(--color-ai);
+}
+
+.said__body {
+  grid-area: body;
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+/* Between turns more air than inside one: the reply belongs to the message above it. */
 .said + .said {
-  margin-top: 1.25rem;
+  margin-top: 1rem;
+}
+
+.said--ai + .said--you {
+  margin-top: 1.75rem;
+}
+
+/* The person's message: a soft bubble on the right, its corner by the edge. «Ви» is said to a
+   screen reader, not shown (.visually-hidden, src/chat/ui/transcript.ts). */
+.said--you {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'body';
+  justify-items: end;
+}
+
+.said--you .said__mark {
+  display: none;
+}
+
+.said--you .said__body {
+  justify-items: end;
+  width: 100%;
+}
+
+.said--you .said__text {
+  max-width: min(34rem, 85%);
+  padding: 0.6rem 1rem 0.7rem;
+  /* A hairline holds the bubble's shape on the paper and the haze alike (decoration, not a
+     control: no 3:1 needed); the text inside stays ≥ 4.5:1 on its fill. */
+  border: 1px solid var(--color-bubble-line);
+  border-radius: 1.25rem 1.25rem 0.375rem 1.25rem;
+  background: var(--color-bubble-you);
+}
+
+.said--you .said__status {
+  justify-items: end;
+  text-align: right;
+}
+
+.said--you .said__actions {
+  justify-content: flex-end;
 }
 
 /* The send anchor (§3.7.6, src/chat/ui/scroll-anchor.ts): the answer under the message just sent
@@ -1079,29 +1773,19 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
    space: 100svh less the sticky layers, the gaps around the pair (scroll padding and margin, the
    gap between the two, the composer's margin) and the sent message (--sent-h). */
 .said--room {
-  min-height: max(0px, calc(100svh - var(--header-h) - var(--session-h) - var(--composer-h) - 2.75rem - var(--sent-h, 0px)));
+  align-content: start;
+  min-height: max(
+    0px,
+    calc(
+      100svh - var(--header-h) - var(--session-h) - var(--composer-h) - var(--sent-h, 0px) - 2.25rem -
+        max(0.5rem, var(--fade-top) - 0.5rem) - max(0px, var(--fade-bottom) - 0.5rem)
+    )
+  );
 }
 
-.said--ai + .said--you {
-  margin-top: 2.25rem;
-}
-
-.said__who {
-  font-family: var(--font-mono);
-  font-size: var(--step-label);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--color-text-soft);
-}
-
-.said--ai .said__who {
-  color: var(--color-teal);
-}
-
-.said__body {
-  display: grid;
-  gap: 0.5rem;
-  min-width: 0;
+/* While the conversation runs, its end rests above the composer's fade, not under it. */
+html[data-talk='on'] .screen--chat > .talk {
+  padding-bottom: max(0px, var(--fade-bottom) - 0.5rem);
 }
 
 .said__text {
@@ -1122,69 +1806,204 @@ html:not(:is([data-screen='booting'], [data-screen='chat'], [data-screen='summar
   color: var(--color-text);
 }
 
-/* The AI's voice: the humanist face in teal (spec §3.7.2); the mono stays for labels. */
-.said--ai .said__text p {
-  color: var(--color-teal);
+/* Words of the answer come in with a short fade (opacity ends at 1: a passage, never a resting
+   state). Without motion they simply stand there. */
+html[data-motion='on'] .said--streaming .said__text .w {
+  animation: fade-in var(--dur-2) var(--ease-standard) both;
 }
 
-/* The caret while the answer comes: a still bar, no blinking (WCAG 2.2.2). */
-.said--streaming .said__text p:last-child::after {
+/* The caret while the answer comes: a still bar, no blinking (WCAG 2.2.2); it fades in and, after
+   `done`, out in 200 ms. */
+.said--live .said__text p:last-child::after {
   content: '';
   display: inline-block;
   width: 2px;
   height: 1em;
   margin-left: 2px;
   vertical-align: -0.12em;
-  background: var(--color-teal);
+  background: var(--color-ai);
+  opacity: 0;
 }
 
-.said__wait,
-.said__flag,
-.said__cut,
-.said__id {
-  font-family: var(--font-mono);
-  font-size: var(--step-label);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.said--streaming .said__text p:last-child::after {
+  opacity: 1;
 }
 
+html[data-motion='on'] .said--live .said__text p:last-child::after {
+  transition: opacity 200ms var(--ease-standard);
+}
+
+/* «Думає»: three dots after 300 ms (a quick answer never flashes them), the label beside them. */
 .said__wait {
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
+  min-height: 1.6rem;
+  font-size: 0.875rem;
   color: var(--color-text-muted);
 }
 
-.said__wait::before {
-  content: '';
-  flex: none;
+.said__dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.said__dots i {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--color-teal);
-  box-shadow: 0 0 10px var(--color-teal);
+  background: var(--color-ai);
 }
 
-html[data-motion='on'] .said--waiting .said__wait::before {
-  animation: breathe 2.4s var(--ease-in-out) infinite alternate;
+html[data-motion='on'] .said--waiting .said__wait {
+  animation: fade-in var(--dur-2) var(--ease-standard) 300ms backwards;
 }
 
-@keyframes breathe {
-  from {
-    transform: scale(0.6);
+html[data-motion='on'] .said--waiting .said__dots i {
+  animation: dot 1.4s var(--ease-in-out) infinite;
+}
+
+html[data-motion='on'] .said--waiting .said__dots i:nth-child(2) {
+  animation-delay: 160ms;
+}
+
+html[data-motion='on'] .said--waiting .said__dots i:nth-child(3) {
+  animation-delay: 320ms;
+}
+
+@keyframes dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: none;
   }
-  to {
-    transform: scale(1.15);
+  30% {
+    opacity: 1;
+    transform: translate3d(0, -2px, 0);
   }
+}
+
+/* The time and, under a reply, «Копіювати» and «→ У тези». */
+.said__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  min-height: 1.5rem;
+}
+
+.said__time {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-dim);
+}
+
+/* Small word-buttons: identified by their words and an icon in the same colour (≥ 4.5:1), so no
+   outline is needed (WCAG 1.4.11). */
+.said__act {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2rem;
+  margin: -0.25rem -0.5rem;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease-standard),
+    background-color var(--dur-1) var(--ease-standard);
+}
+
+/* It fades in under the pointer only with motion; without it, it is simply there. */
+html[data-motion='on'] .said__act {
+  transition:
+    color var(--dur-1) var(--ease-standard),
+    background-color var(--dur-1) var(--ease-standard),
+    opacity var(--dur-2) var(--ease-standard);
+}
+
+.said__act svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.said__act:hover {
+  color: var(--color-text);
+  background: var(--color-hover);
+}
+
+/* «→ У тези»: an arrow into the list; marked, a tick in the AI's colour on a faint ground — the
+   state is in the icon too, and aria-pressed says it (not colour alone). */
+.said__keep-on {
+  display: none;
+}
+
+.said__keep[aria-pressed='true'] {
+  color: var(--color-ai);
+  background: var(--color-hover);
+}
+
+.said__keep[aria-pressed='true'] .said__keep-add {
+  display: none;
+}
+
+.said__keep[aria-pressed='true'] .said__keep-on {
+  display: block;
+}
+
+/* A mouse: the actions show on the reply under the pointer or with the keyboard focus in it (never
+   hidden from Tab); a marked reply keeps its mark in view. A touch screen: always there, small. */
+@media (hover: hover) and (pointer: fine) {
+  .said__act {
+    opacity: 0;
+  }
+
+  .said:is(:hover, :focus-within) .said__act,
+  .said__keep[aria-pressed='true'] {
+    opacity: 1;
+  }
+}
+
+@media (pointer: coarse) {
+  .said__act {
+    min-height: 2.75rem;
+    margin-block: -0.6rem;
+  }
+}
+
+/* A message comes in: 220 ms, a 4 px rise — the li, not its growing text. Only what came in live
+   (.said--in), never a list built again or a read-only copy. */
+html[data-motion='on'] .talk:not(.talk--stale) > .said--in {
+  --rise: var(--rise-item);
+  animation: rise-in var(--dur-item) var(--ease-decelerate) backwards;
+}
+
+.said__flag,
+.said__cut,
+.said__id {
+  font-size: 0.8125rem;
+}
+
+.said__flag {
+  font-weight: 600;
+  color: var(--color-light);
 }
 
 .said__status {
   display: grid;
   gap: 0.2rem;
-}
-
-.said__flag {
-  color: var(--color-light);
 }
 
 .said__why {
@@ -1216,10 +2035,8 @@ html[data-motion='on'] .said--waiting .said__wait::before {
   display: flex;
   align-items: center;
   min-height: 2.75rem;
-  font-family: var(--font-mono);
-  font-size: var(--step--1);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-size: 0.9375rem;
+  font-weight: 500;
   color: var(--color-text-soft);
   cursor: pointer;
 }
@@ -1266,29 +2083,39 @@ html[data-motion='on'] .said--waiting .said__wait::before {
   bottom: var(--kb, 0px);
   z-index: 6;
   margin-top: 0.5rem;
-  padding: 0.75rem 0 1.25rem;
+  padding: 0.75rem 0 1rem;
 }
 
-/* An opaque band under the field with 32 px of the header's gradient, upside down, above it: the
-   transcript fades out instead of showing through. Full width on the phone; on desktop it runs
-   from the left edge and fades out in the gap before the scene column. */
+/* The band under the field: the theme's background from the field's middle down, and above it a
+   long eased fade (4rem) — the transcript dissolves into the page instead of meeting an edge. Full
+   width on the phone; on a desktop it runs from the left edge and dissolves sideways into the
+   scene column, long before the light's label. */
 .composer::before {
   content: '';
   position: absolute;
   z-index: -1;
-  top: -2rem;
+  top: calc(-1 * var(--fade-bottom));
   bottom: 0;
   left: -100vmax;
   right: -100vmax;
-  background: linear-gradient(0deg, var(--color-bg) calc(100% - 2rem), rgb(4 7 8 / 0));
+  background: linear-gradient(
+    0deg,
+    var(--color-bg) 0,
+    var(--color-bg) calc(100% - var(--fade-bottom) - 2.25rem),
+    var(--color-band-top) calc(100% - var(--fade-bottom) - 1.5rem),
+    var(--color-band-mid) calc(100% - var(--fade-bottom)),
+    var(--color-band-tail) calc(100% - var(--fade-bottom) * 0.7),
+    color-mix(in srgb, var(--color-bg) 12%, transparent) calc(100% - var(--fade-bottom) * 0.4),
+    var(--color-fade-0) calc(100% - var(--fade-bottom) * 0.15)
+  );
   pointer-events: none;
 }
 
 @media (min-width: 64em) {
   .composer::before {
-    right: -2rem;
-    -webkit-mask-image: linear-gradient(270deg, transparent, #000 2rem);
-    mask-image: linear-gradient(270deg, transparent, #000 2rem);
+    right: -11rem;
+    -webkit-mask-image: linear-gradient(270deg, transparent, #000 10rem);
+    mask-image: linear-gradient(270deg, transparent, #000 10rem);
   }
 }
 
@@ -1309,27 +2136,36 @@ html[data-screen='chat'] .chat__text {
   margin-top: auto;
 }
 
+/* A pill: «Інструменти» on the left, «Надіслати» on the right, both inside the field. */
 .composer__field {
   position: relative;
-  border-radius: var(--radius-field);
+  border-radius: var(--radius-pill);
 }
 
-.composer__field:focus-within {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 2px;
+/* In focus: the pill's own border turns the focus colour and doubles (2 px, ≥ 3:1 on its surface) —
+   one calm line instead of a ring around a ring. The buttons inside keep their own ring. */
+.composer__input:focus-visible,
+.composer__input:focus {
+  outline: none;
+  border-color: var(--color-focus);
+  box-shadow:
+    0 0 0 1px var(--color-focus),
+    0 1px 2px var(--color-field-shadow),
+    0 0.5rem 1.5rem var(--color-field-shadow);
 }
 
-/* One line is 25.5 + 2 × 14 + 2 = 55.5 px: the field is held at 56 px so the 44 px button sits
+/* One line is 25.5 + 2 × 14 + 2 = 55.5 px: the field is held at 56 px so the 44 px buttons sit
    6 px from its top and its bottom (4 px on the phone: 52 px). */
 .composer__input {
   display: block;
   width: 100%;
   min-height: 56px;
   max-height: min(40svh, 15rem);
-  padding: 14px 60px 14px 18px;
-  border: 1px solid var(--color-text-dim);
-  border-radius: var(--radius-field);
-  background: rgb(4 8 9 / 0.82);
+  padding: 14px 60px 14px 58px;
+  border: 1px solid var(--color-field-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  box-shadow: 0 1px 2px var(--color-field-shadow), 0 0.5rem 1.5rem var(--color-field-shadow);
   font-family: var(--font-body);
   font-size: 1.0625rem;
   line-height: 1.5;
@@ -1337,20 +2173,16 @@ html[data-screen='chat'] .chat__text {
   resize: none;
   field-sizing: content;
   overflow-y: auto;
+  /* The focus border comes and goes at once: a focus indicator never lags behind the focus. */
 }
 
 .composer__input::placeholder {
   color: var(--color-text-dim);
 }
 
-.composer__input:focus {
-  outline: none;
-  border-color: rgb(255 197 143 / 0.55);
-}
-
-.composer__send {
+.composer__send,
+.composer__tools {
   position: absolute;
-  right: 6px;
   bottom: 6px;
   display: grid;
   place-items: center;
@@ -1359,26 +2191,71 @@ html[data-screen='chat'] .chat__text {
   padding: 0;
   border: 1px solid transparent;
   border-radius: 50%;
-  background: rgb(238 242 238 / 0.08);
-  color: var(--color-text-dim);
   cursor: pointer;
   transition:
-    background-color var(--dur-fast) ease,
-    color var(--dur-fast) ease;
+    background-color var(--dur-1) var(--ease-standard),
+    color var(--dur-1) var(--ease-standard),
+    scale var(--dur-1) var(--ease-standard);
+}
+
+.composer__send {
+  right: 6px;
+  background: var(--color-hover);
+  color: var(--color-text-dim);
+}
+
+.composer__tools {
+  left: 6px;
+  background: transparent;
+  color: var(--color-text-soft);
+}
+
+.composer__tools:hover,
+.composer__field:has(#composer-tools:popover-open) .composer__tools {
+  color: var(--color-text);
+  background: var(--color-hover);
+}
+
+.composer__tools:focus-visible,
+.composer__send:focus-visible {
+  outline-offset: -2px;
+  border-radius: 50%;
 }
 
 .composer__send[data-mode='ready'] {
-  background: var(--color-light);
-  color: var(--color-bg);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
 }
 
+.composer__send[data-mode='ready']:hover {
+  background: var(--color-accent-strong);
+}
+
+/* Ready, the button is filled with the accent — the focus colour itself — and its ring lay inside
+   the fill (offset -2px above), the accent on the accent: unseen. There the ring takes the colour of
+   the arrow on that fill (4.96:1 light, 11.46:1 dark; more on the hover fill) and sits 3 px in from
+   the edge, so the fill runs on both sides of it: a ring, not just a thinner disc. Outside, it would
+   run into the pill's border on a phone (4 px away). */
+.composer__send[data-mode='ready']:focus-visible {
+  outline-color: var(--color-on-accent);
+  outline-offset: -5px;
+}
+
+/* «Зупинити»: the same place, a square in the accent outline. */
 .composer__send[data-mode='stop'] {
-  border-color: var(--color-line-strong);
-  background: transparent;
-  color: var(--color-text);
+  border-color: var(--color-accent-line);
+  background:
+    linear-gradient(var(--color-accent-tint), var(--color-accent-tint)),
+    var(--color-surface);
+  color: var(--color-light);
 }
 
-.composer__send svg {
+html[data-motion='on'] :is(.composer__send, .composer__tools):active {
+  scale: 0.94;
+}
+
+.composer__send svg,
+.composer__tools svg {
   width: 20px;
   height: 20px;
   fill: none;
@@ -1402,23 +2279,138 @@ html[data-screen='chat'] .chat__text {
   display: block;
 }
 
-.composer__meta {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.25rem 1rem;
-  margin-top: 0.55rem;
+html[data-motion='on'] .composer__send svg {
+  animation: icon-in var(--dur-2) var(--ease-decelerate);
 }
 
-.composer__ai,
-.chat-ai,
-.composer__keys,
-.composer__count {
+@keyframes icon-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+/* «Інструменти»: a small menu over the field, at its left. */
+.composer__menu {
+  min-width: 15rem;
+  padding: 0.4rem;
+}
+
+.composer__tools {
+  anchor-name: --composer-tools;
+}
+
+#composer-tools {
+  position-anchor: --composer-tools;
+}
+
+@supports (position-area: top) {
+  #composer-tools:popover-open {
+    inset: auto;
+    position-area: top span-right;
+    position-try-fallbacks: flip-block;
+    margin: 0.5rem 0;
+  }
+}
+
+.composer__menu-title {
+  padding: 0.35rem 0.6rem 0.4rem;
   font-family: var(--font-mono);
   font-size: var(--step-label);
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.composer__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0 0.6rem;
+  border: 0;
+  border-radius: 0.65rem;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer__menu-item:hover {
+  background: var(--color-hover);
+}
+
+.composer__menu-item[aria-disabled='true'] {
   color: var(--color-text-dim);
+  cursor: default;
+}
+
+.composer__menu-item[aria-disabled='true']:hover {
+  background: transparent;
+}
+
+.composer__menu-item:focus-visible {
+  outline-offset: -2px;
+  border-radius: 0.65rem;
+}
+
+.composer__menu-item svg {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+/* Under the field: one line — «AI, не людина · може помилятися · не терапія» — and ⓘ. */
+.composer__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  margin-top: 0.55rem;
+  padding-inline: 0.75rem;
+}
+
+.composer__ai,
+.chat-ai,
+.composer__count {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--color-text-dim);
+}
+
+.composer__count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* At 320 px the line breaks at a «·» anyway: ⓘ stays beside it, not alone on a third line. The
+   empty field keeps one line too: its placeholder a size smaller and 4 px more room each side (the
+   buttons' circles leave air around their icons), or «Пишіть, як думаєте…» wraps beside a classic
+   scrollbar and the empty field opens two lines tall. What is typed keeps its 17 px. */
+@media (max-width: 22.5em) {
+  .composer__meta {
+    flex-wrap: nowrap;
+  }
+
+  .composer__ai {
+    min-width: 0;
+  }
+
+  /* (0,2,0): over the phone's padding further down. */
+  .composer__field .composer__input {
+    padding-inline: 52px;
+  }
+
+  .composer__input::placeholder {
+    font-size: 1rem;
+  }
 }
 
 /* The disclosure breaks only at «·»: «не терапія» never splits into «не» and a lone «терапія». */
@@ -1438,14 +2430,6 @@ html[data-screen='chat'] .chat__text {
   padding: 1.25rem 0;
 }
 
-.composer__keys {
-  visibility: hidden;
-}
-
-.composer:focus-within .composer__keys {
-  visibility: visible;
-}
-
 .composer__count:empty {
   display: none;
 }
@@ -1455,13 +2439,76 @@ html[data-screen='chat'] .chat__text {
 }
 
 .composer__note {
-  margin-top: 0.25rem;
+  color: var(--color-text-soft);
+}
+
+.composer__keys {
   font-size: 0.8125rem;
   color: var(--color-text-dim);
 }
 
+/* Before the first message, on a desktop, the storage sentence also stands under the line (it is
+   what to know before typing); ⓘ is not needed then. From the first message on it lives in ⓘ. */
+@media (min-width: 64em) {
+  html[data-talk='off'] .composer__tip:not(:popover-open) {
+    position: static;
+    display: block;
+    width: auto;
+    margin: 0.2rem 0 0;
+    padding: 0 0.75rem;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    overflow: visible;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+  }
+
+  html[data-talk='off'] .composer__tip:not(:popover-open) .composer__note {
+    color: var(--color-text-dim);
+  }
+
+  html[data-talk='off'] .composer__tip:not(:popover-open) .composer__keys,
+  html[data-talk='off'] .composer__meta .tip__button {
+    display: none;
+  }
+}
+
 .composer__status {
   margin-top: 0.5rem;
+  padding-inline: 0.75rem;
+}
+
+/* The reminder to pause (§3.7.7): one quiet line over the field with its two ways on — no box, no
+   colour that calls; empty, it takes no room (its sentence is a live line, visually hidden then). */
+.pause {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 1.25rem;
+  padding: 0 0.75rem 0.4rem;
+}
+
+.pause:has(.pause__text:empty) {
+  padding: 0;
+}
+
+.pause__text {
+  font-size: var(--step--1);
+  line-height: 1.45;
+  color: var(--color-text-soft);
+}
+
+.pause__actions {
+  gap: 0 1.25rem;
+}
+
+.pause__actions button {
+  font-size: 0.875rem;
+}
+
+html[data-motion='on'] .pause:has(.pause__text:not(:empty)) {
+  animation: fade-in var(--dur-3) var(--ease-standard) backwards;
 }
 
 /* «↓ Далі відповідь»: over the field, only while the end of the answer is out of view. */
@@ -1474,16 +2521,20 @@ html[data-screen='chat'] .chat__text {
   align-items: center;
   gap: 0.4rem;
   min-height: 2.25rem;
-  padding: 0 0.9rem;
+  padding: 0 0.95rem;
   border: 1px solid var(--color-line-strong);
   border-radius: 999px;
-  background: rgb(4 8 9 / 0.82);
-  font-family: var(--font-mono);
-  font-size: var(--step-label);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  background: var(--color-surface);
+  box-shadow: 0 0.35rem 1rem var(--color-field-shadow);
+  font-size: 0.8125rem;
+  font-weight: 500;
   color: var(--color-text);
   cursor: pointer;
+}
+
+html[data-motion='on'] .jump:not([hidden]) {
+  --rise: var(--rise-item);
+  animation: rise-in var(--dur-2) var(--ease-decelerate) backwards;
 }
 
 @media (max-width: 63.99em) {
@@ -1494,21 +2545,33 @@ html[data-screen='chat'] .chat__text {
   .composer__input {
     min-height: 52px;
     max-height: min(30svh, 140px);
-    padding: 12px 56px 12px 16px;
+    padding: 12px 56px 12px 54px;
+  }
+
+  .composer__send,
+  .composer__tools {
+    bottom: 4px;
   }
 
   .composer__send {
     right: 4px;
-    bottom: 4px;
+  }
+
+  .composer__tools {
+    left: 4px;
+  }
+
+  .composer__meta {
+    margin-top: 0.4rem;
   }
 }
 
 /* The on-screen keyboard is up (html[data-kb], src/chat/ui/keyboard.ts), or a phone lies on its
    side (max-height: 30em): little height is left, so the header and the session row scroll with
-   the page, under the field stays only the mono line, and the composer neither keeps the safe area
-   (over the keyboard it would be empty space) nor a long fade. The same rules twice: a media query
-   and an attribute cannot share one selector. The header keeps a positioned box (absolute, at the
-   top of the page) and the session row a relative one, for their ::before bands. */
+   the page, under the field stays only the disclosure line, and the composer neither keeps the safe
+   area (over the keyboard it would be empty space) nor a long fade. The same rules twice: a media
+   query and an attribute cannot share one selector. The header keeps a positioned box (absolute,
+   at the top of the page) and the session row a relative one, for their ::before bands. */
 html[data-kb] {
   scroll-padding-top: 0.5rem;
 }
@@ -1528,10 +2591,9 @@ html[data-kb] .composer {
 
 html[data-kb] .composer::before {
   top: -0.75rem;
-  background: linear-gradient(0deg, var(--color-bg) calc(100% - 0.75rem), rgb(4 7 8 / 0));
+  background: linear-gradient(0deg, var(--color-bg) calc(100% - 0.75rem), var(--color-fade-0));
 }
 
-html[data-kb] .composer__note,
 html[data-kb] .composer__keys {
   display: none;
 }
@@ -1556,10 +2618,9 @@ html[data-kb] .composer__keys {
 
   .composer::before {
     top: -0.75rem;
-    background: linear-gradient(0deg, var(--color-bg) calc(100% - 0.75rem), rgb(4 7 8 / 0));
+    background: linear-gradient(0deg, var(--color-bg) calc(100% - 0.75rem), var(--color-fade-0));
   }
 
-  .composer__note,
   .composer__keys {
     display: none;
   }
@@ -1775,9 +2836,9 @@ html[data-kb] .composer__keys {
 .field__input {
   width: 100%;
   padding: 0.75rem 1rem;
-  border: 1px solid var(--color-text-dim);
+  border: 1px solid var(--color-field-border);
   border-radius: var(--radius-field);
-  background: rgb(4 8 9 / 0.82);
+  background: var(--color-surface);
   font-family: var(--font-body);
   font-size: 1.0625rem;
   line-height: 1.5;
@@ -1790,12 +2851,42 @@ html[data-kb] .composer__keys {
 
 .field__input:focus {
   outline: none;
-  border-color: rgb(255 197 143 / 0.55);
+  border-color: var(--color-accent-line);
 }
 
 .field__input:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
+}
+
+/* The search fields' own «×» (the diary, the record picker): Blink and WebKit draw it in the
+   system's blue, a colour from nowhere on the paper. The page's ink instead — a mask over a token,
+   ≥ 3:1 on the field in both themes — and the browser keeps what it does (a press empties the field,
+   so does Esc). A file, not a data: URI (img-src 'self'). */
+.field__input[type='search']::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  margin-inline-start: 0.5rem;
+  background-color: var(--color-text-soft);
+  -webkit-mask: url('../assets/clear.svg') center / contain no-repeat;
+  mask: url('../assets/clear.svg') center / contain no-repeat;
+  cursor: pointer;
+}
+
+.field__input[type='search']::-webkit-search-cancel-button:hover {
+  background-color: var(--color-text);
+}
+
+/* Forced colours paint every background Canvas, the mask's ink included: the «×» was gone there (a
+   press still emptied the field, unseen). It keeps the system's text colour instead, hovered too. */
+@media (forced-colors: active) {
+  .field__input[type='search']::-webkit-search-cancel-button,
+  .field__input[type='search']::-webkit-search-cancel-button:hover {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
 }
 
 .field__input--title {
@@ -1989,6 +3080,73 @@ html[data-kb] .composer__keys {
   gap: 0.6rem;
 }
 
+/* «Позначене в розмові» (§7.2): the replies marked «→ У тези», each a quote in the AI's line with
+   «Додати до тез» and «Прибрати» under it — hairlines, no cards. */
+.candidates {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.candidates__list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--color-line);
+}
+
+.candidate {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.85rem 0 0.1rem;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.candidate__text {
+  max-width: 38rem;
+  padding-left: 0.85rem;
+  border-left: 2px solid var(--color-ai);
+  color: var(--color-text-soft);
+  overflow-wrap: anywhere;
+}
+
+.candidate__actions {
+  padding-left: 0.85rem;
+}
+
+/* The end of a conversation (§7.5, §7.6): one thought to take along, if the person marked one, and
+   one line about people — quiet, no praise. */
+.closing {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.closing__keep {
+  display: grid;
+  gap: 0.35rem;
+  max-width: 38rem;
+}
+
+.closing__label {
+  font-family: var(--font-mono);
+  font-size: var(--step-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-soft);
+}
+
+.closing__thought {
+  font-size: var(--step-1);
+  line-height: 1.5;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.closing__share {
+  color: var(--color-text-soft);
+}
+
 @media (max-width: 47.99em) {
   .review__actions {
     flex-direction: column;
@@ -2048,6 +3206,278 @@ html[data-kb] .composer__keys {
   color: var(--color-light);
 }
 
+/* ---------- The diary (spec §7.7): the week, a search and the themes, the records ---------- */
+
+/* Back to the conversation (or into a new one): a quiet button at the top, an arrow drawn, not typed. */
+.journal__back {
+  margin-bottom: -0.25rem;
+}
+
+.button__chevron {
+  width: 1rem;
+  height: 1rem;
+  margin-left: -0.3rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The week: one soft surface over the list — not a card among cards. A count of saved records and
+   the themes as words; nothing to score. */
+.week {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1rem 1.25rem 1.15rem;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-dialog);
+  background: var(--color-surface);
+}
+
+.week__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.chat-page .week__title {
+  min-width: 0;
+  font-family: var(--font-body);
+  font-size: var(--step-1);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+
+.week__nav {
+  display: flex;
+  flex: none;
+  gap: 0.375rem;
+  margin-right: -0.35rem;
+}
+
+/* Icon-only controls: the border is their outline, so it takes the fields' ≥ 3:1 token. */
+.week__step {
+  display: inline-grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 1px solid var(--color-field-border);
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-text-soft);
+  cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease-standard),
+    background-color var(--dur-1) var(--ease-standard);
+}
+
+.week__step:hover {
+  background:
+    linear-gradient(var(--color-hover), var(--color-hover)),
+    var(--color-surface);
+  color: var(--color-text);
+}
+
+.week__step:focus-visible {
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+
+.week__step[aria-disabled='true'] {
+  border-color: var(--color-line-strong);
+  background: var(--color-surface);
+  color: var(--color-text-dim);
+  cursor: not-allowed;
+}
+
+.week__step svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The count keeps its line while the next week loads: the block does not jump. */
+.week__count {
+  min-height: 1.6em;
+  font-size: 1.0625rem;
+  color: var(--color-text);
+}
+
+.week__themes {
+  color: var(--color-text-soft);
+  overflow-wrap: anywhere;
+}
+
+.journal__tools {
+  display: grid;
+  gap: 1rem;
+}
+
+.journal__search {
+  max-width: 28rem;
+}
+
+.journal__search .field__input {
+  appearance: none;
+}
+
+.journal__themes {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.journal__theme-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* A 40-character theme without a space wraps inside its pill at 320 px (SC 1.4.10). */
+.journal__theme-list .pill {
+  max-width: 100%;
+}
+
+.journal__theme-list .pill__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The records: hairlines between them, no boxes. */
+.entries {
+  display: grid;
+  border-top: 1px solid var(--color-line-strong);
+}
+
+.entries:empty {
+  display: none;
+}
+
+.entry {
+  padding: 1.25rem 0 1rem;
+  border-bottom: 1px solid var(--color-line);
+}
+
+.entry__view,
+.entry__edit {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.entry__meta {
+  font-family: var(--font-mono);
+  font-size: var(--step-label);
+  letter-spacing: 0.12em;
+  color: var(--color-text-dim);
+}
+
+.chat-page .entry__title {
+  font-family: var(--font-body);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+
+.entry__bullets {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.entry__bullets li {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr);
+  gap: 0.6rem;
+  color: var(--color-text-soft);
+  overflow-wrap: anywhere;
+}
+
+.entry__index {
+  padding-top: 0.15rem;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--color-light);
+}
+
+.entry__themes {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--color-text-soft);
+  overflow-wrap: anywhere;
+}
+
+.entry__actions {
+  gap: 0 1.5rem;
+}
+
+.entry__actions button[aria-busy='true'] {
+  cursor: progress;
+}
+
+.entry__theses {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.entry__fields {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.entry__field {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.entry__thesis-input {
+  min-height: 3.25rem;
+  resize: vertical;
+  field-sizing: content;
+}
+
+@supports (field-sizing: content) {
+  .entry__thesis-input {
+    resize: none;
+  }
+}
+
+.entry__save {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding-top: 0.25rem;
+}
+
+/* The form opens in place with the small rise of a message (220 ms, 4 px); only with motion. */
+html[data-motion='on'] .entry__edit:not([hidden]) {
+  --rise: var(--rise-item);
+  animation: rise-in var(--dur-item) var(--ease-decelerate) backwards;
+}
+
+/* «Відкрити щоденник» in the account sheet, above the downloads. */
+.sheet__open {
+  padding-bottom: 0.25rem;
+}
+
 /* ---------- Dialogs: opaque, no blur ---------- */
 
 .confirm,
@@ -2056,9 +3486,46 @@ html[data-kb] .composer__keys {
   background: var(--color-bg);
 }
 
+/* An engine whose ::backdrop does not inherit custom properties (Chrome < 122, Safari < 17.4) has
+   no light-dark() either, so it shows the dark theme: the fallback is the dark scrim. */
 .confirm::backdrop,
 .sheet::backdrop {
-  background: rgb(4 7 8 / 0.6);
+  background: var(--color-scrim, rgb(6 10 11 / 0.62));
+}
+
+/* Dialogs come in (spec §3.1 «Рух»): 320 ms, a fade and a short rise; the account sheet slides in
+   from its side. They leave at once — a dialog the crisis closes must not linger over it — and
+   «Якщо важко» opens at once: the contacts just stand there. */
+html[data-motion='on'] :is(.confirm, .sheet--pick)[open] {
+  transition:
+    opacity var(--dur-4) var(--ease-decelerate),
+    transform var(--dur-4) var(--ease-decelerate);
+}
+
+html[data-motion='on'] .sheet--side[open] {
+  transition:
+    opacity var(--dur-4) var(--ease-decelerate),
+    transform var(--dur-4) var(--ease-decelerate);
+}
+
+html[data-motion='on'] :is(.confirm, .sheet--side, .sheet--pick)[open]::backdrop {
+  transition: opacity var(--dur-4) var(--ease-standard);
+}
+
+@starting-style {
+  html[data-motion='on'] :is(.confirm, .sheet--pick)[open] {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+
+  html[data-motion='on'] .sheet--side[open] {
+    opacity: 0;
+    transform: translate3d(1.5rem, 0, 0);
+  }
+
+  html[data-motion='on'] :is(.confirm, .sheet--side, .sheet--pick)[open]::backdrop {
+    opacity: 0;
+  }
 }
 
 .confirm {
@@ -2237,6 +3704,46 @@ html[data-kb] .composer__keys {
   gap: 0.5rem;
 }
 
+/* At 320 px «Як у системі · Світла · Темна» fit one row with a little less air: not two and a lone
+   «Темна» under them. Still 40 px tall. */
+@media (max-width: 22.5em) {
+  .sky-pick__list {
+    gap: 0.375rem;
+  }
+
+  .sky-pick .pill {
+    padding-inline: 0.75rem;
+  }
+}
+
+/* The presets' names follow the theme: «Ніч · Сутінки · Світанок» on the evening lamp, «День ·
+   Вечір · Ранок» on the paper (stage.css: the light «night» is paper, its «dusk» warm sand, its
+   «dawn» a blue morning mist). The other name is display: none — out of the accessible name too.
+   An engine without light-dark() keeps the dark theme, and so the dark names. */
+.sky-name--light {
+  display: none;
+}
+
+@supports (color: light-dark(#000, #fff)) {
+  :root[data-theme='light']:not([data-theme-lock]) .sky-name--light {
+    display: inline;
+  }
+
+  :root[data-theme='light']:not([data-theme-lock]) .sky-name--dark {
+    display: none;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]):not([data-theme-lock]) .sky-name--light {
+      display: inline;
+    }
+
+    :root:not([data-theme]):not([data-theme-lock]) .sky-name--dark {
+      display: none;
+    }
+  }
+}
+
 .sheet__note {
   margin-top: auto;
   font-family: var(--font-mono);
@@ -2290,7 +3797,7 @@ html[data-kb] .composer__keys {
   width: 22px;
   height: 22px;
   margin: 0.15rem 0 0;
-  accent-color: var(--color-light);
+  accent-color: var(--color-accent);
 }
 
 .pick__text {
@@ -2342,6 +3849,13 @@ html[data-kb] .composer__keys {
     border-radius: var(--radius-dialog);
   }
 
+  /* «Якщо важко» is taller than most windows: centred in the whole height it rose over the header
+     and hid the pill that opened it. It stands under the header and scrolls inside itself. */
+  .sheet--help {
+    inset: var(--header-h) 0 0;
+    max-height: calc(100dvh - var(--header-h) - 1.5rem);
+  }
+
   .sheet--side {
     inset: 0 0 0 auto;
     width: min(26rem, 100%);
@@ -2353,6 +3867,453 @@ html[data-kb] .composer__keys {
 
 .help--dialog .help__number {
   font-size: clamp(3rem, 2.2rem + 3vw, 4.75rem);
+}
+
+/* ---------- The self-help tools (spec §3.13) ---------- */
+
+/* «Як ви зараз?» after the starters: the same chip with a small face, so it reads as its own kind. */
+.checkin {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.5rem;
+  max-width: 100%;
+  padding: 0.35rem 0.95rem 0.35rem 0.75rem;
+  border: 1px solid var(--color-field-border);
+  border-radius: 1.25rem;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  line-height: 1.35;
+  color: var(--color-text-soft);
+  cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease-standard),
+    background-color var(--dur-1) var(--ease-standard),
+    border-color var(--dur-1) var(--ease-standard);
+}
+
+.checkin:hover {
+  border-color: var(--color-text-muted);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.checkin:focus-visible {
+  outline-offset: 2px;
+  border-radius: 1.25rem;
+}
+
+.checkin svg {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+@media (max-width: 63.99em) {
+  .checkin {
+    min-height: 2.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-motion='on'] .starters:not([hidden]) .checkin {
+    animation: rise-in var(--dur-item) var(--ease-decelerate) 160ms backwards;
+    --rise: var(--rise-item);
+  }
+}
+
+/* The signed-out screen and «Якщо важко»: the tools as a quiet row of words. */
+.kit {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.kit__title {
+  font-size: var(--step--1);
+  color: var(--color-text-muted);
+}
+
+.help-tools {
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-line);
+}
+
+/* The theses, «Збережено», «Розмову завершено»: «Спершу — …, зараз — …» and «А зараз?». */
+.mood-after {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 1.25rem;
+}
+
+.mood-after__line {
+  color: var(--color-text-soft);
+}
+
+.mood-after__line:empty {
+  display: none;
+}
+
+/* The tools' dialogs: the whole screen on a phone (like «Якщо важко»), a centred sheet from 48em
+   that is as tall as what it holds. The head never scrolls away — «Стоп» and «Закрити» are always
+   in view, on a phone on its side too; only the body under it scrolls. */
+.sheet--tool,
+.sheet--shelter {
+  gap: 1rem;
+  overflow: hidden;
+}
+
+.tool__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1.1rem;
+  min-height: 0;
+  /* Room for the focus ring of what touches the edge. */
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tool__body > p {
+  color: var(--color-text-soft);
+}
+
+.sheet--tool .screen__actions {
+  margin: 0;
+}
+
+/* Anchored at the top, not centred: a tool's sheet changes height as it goes (the words of the
+   check-in appear, «Почати» turns into the circle, a step is longer), and a centred sheet would move
+   what the pointer just pressed. Its head stays where it opened; it grows downwards. */
+@media (min-width: 48em) {
+  .sheet--tool:not([data-shelter]) {
+    --tool-top: min(12dvh, 6rem);
+    inset: 0;
+    width: min(38rem, 100% - 2 * var(--gutter));
+    height: fit-content;
+    max-height: calc(100dvh - var(--tool-top) - 1.5rem);
+    margin: var(--tool-top) auto auto;
+    padding: 1.75rem;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-dialog);
+  }
+}
+
+/* A tool comes in like the record picker: a fade and a short rise, only with motion. It leaves at
+   once — the crisis closes it in the frame it comes. The shelter opens at once, like the contacts. */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-motion='on'] .sheet--tool:not([data-shelter])[open] {
+    transition:
+      opacity var(--dur-4) var(--ease-decelerate),
+      transform var(--dur-4) var(--ease-decelerate);
+  }
+
+  @starting-style {
+    html[data-motion='on'] .sheet--tool:not([data-shelter])[open] {
+      opacity: 0;
+      transform: translate3d(0, 12px, 0);
+    }
+  }
+}
+
+/* ── «Подихати хвилину» ── */
+
+.breathe__ready,
+.breathe__run,
+.breathe__done {
+  display: grid;
+  gap: 1rem;
+}
+
+.breathe__ready > p,
+.breathe__lines > p,
+.breathe__done > p {
+  color: var(--color-text-soft);
+}
+
+.breathe__stage {
+  position: relative;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.15rem;
+  width: min(16rem, 68vw, 42dvh);
+  aspect-ratio: 1;
+  margin: 0.5rem auto;
+}
+
+/* Decorative (aria-hidden): the step is in the words over it. */
+.breathe__circle {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--color-ai);
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--color-accent-tint-strong) 0%, var(--color-accent-tint) 55%, var(--color-fade-0) 72%);
+}
+
+.breathe__phase {
+  position: relative;
+  font-size: var(--step-2);
+  font-weight: 580;
+  color: var(--color-text);
+}
+
+/* Without motion the count is the guide: «Вдих · 4 3 2 1» in words and numbers. */
+.breathe__count {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: 2.25rem;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--color-text-soft);
+}
+
+.breathe__note {
+  text-align: center;
+}
+
+/* With motion the circle grows on the in-breath and settles on the out-breath, over the step's own
+   length (src/chat/ui/tools.ts sets --breath-ms to what is left of it); the count steps aside. */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-motion='on'] .breathe__circle {
+    scale: 0.62;
+    transition: scale var(--breath-ms, 4000ms) var(--ease-breath);
+  }
+
+  html[data-motion='on'] .breathe[data-phase='in'] .breathe__circle,
+  html[data-motion='on'] .breathe[data-phase='top'] .breathe__circle {
+    scale: 1;
+  }
+
+  html[data-motion='on'] .breathe[data-pattern='sigh'][data-phase='in'] .breathe__circle {
+    scale: 0.88;
+  }
+
+  html[data-motion='on'] .breathe__count {
+    display: none;
+  }
+}
+
+/* While the exercise is open the light holds still (no idle breath of its own: `idle` only): the
+   circle is the one pace on the screen. A second light breathing on its own clock beside it — out
+   of step with «Вдих» and «Видих» — would pull the other way. */
+
+/* ── «Заземлення 5-4-3-2-1» ── */
+
+.ground__progress {
+  font-size: var(--step--1);
+  color: var(--color-text-muted);
+}
+
+/* «Крок N з 6» keeps its line at the end too (hidden, not gone): nothing under it moves up. The one
+   exception to «hidden wins» on this page (.chat-page [hidden]): hidden here still means unseen,
+   unread and unfocusable — visibility: hidden — only the size stays. */
+.chat-page .ground__progress[hidden] {
+  display: block !important;
+  visibility: hidden;
+}
+
+/* Every step in the same cell: the hidden ones keep their size (not their place in the reading
+   order — visibility: hidden takes them out of it), so the box is as tall as the tallest step and
+   the buttons under it stay put from the first step to the end. */
+.ground__steps {
+  display: grid;
+  align-items: start;
+}
+
+.ground__step {
+  display: grid;
+  grid-area: 1 / 1;
+  gap: 0.4rem;
+  justify-items: start;
+}
+
+.chat-page .ground__step[hidden] {
+  display: grid !important;
+  visibility: hidden;
+}
+
+.ground__num {
+  font-family: var(--font-mono);
+  font-size: clamp(3rem, 2.4rem + 2.5vw, 4.25rem);
+  font-weight: 300;
+  font-stretch: 87.5%;
+  line-height: 1;
+  color: var(--color-ai);
+}
+
+.ground__text {
+  max-width: 30ch;
+  font-size: var(--step-2);
+  line-height: 1.35;
+  color: var(--color-text);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-motion='on'] .ground__step:not([hidden]) {
+    animation: rise-in var(--dur-item) var(--ease-decelerate) backwards;
+    --rise: var(--rise-item);
+  }
+}
+
+.ground__nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+/* ── «Як ви зараз?» ── */
+
+/* Energy × pleasantness. Every cell says it in words; the chosen one is filled and edged, not only
+   tinted. */
+.mood__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.mood__cell {
+  min-height: 4.25rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--color-field-border);
+  border-radius: var(--radius-field);
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  line-height: 1.35;
+  color: var(--color-text-soft);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease-standard),
+    background-color var(--dur-1) var(--ease-standard),
+    border-color var(--dur-1) var(--ease-standard);
+}
+
+.mood__cell:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.mood__cell[aria-checked='true'] {
+  border-color: var(--color-accent);
+  background: var(--color-accent-tint-strong);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+  color: var(--color-text);
+}
+
+.mood__words:empty {
+  display: none;
+}
+
+.mood__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.mood__word {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.35rem 0.95rem;
+  border: 1px solid var(--color-field-border);
+  border-radius: 1.25rem;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  color: var(--color-text-soft);
+  cursor: pointer;
+}
+
+.mood__word:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.mood__word[aria-checked='true'] {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.mood__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+/* ── «В укритті»: dark whatever the theme (its tokens are the dark theme's, tokens.css), no sound
+   (presence.ts), large controls, one column. Breathing and grounding opened from it keep the same
+   look. ── */
+
+.sheet--shelter,
+.sheet--tool[data-shelter] {
+  gap: 1.25rem;
+}
+
+.sheet--shelter > *,
+.sheet--tool[data-shelter] > * {
+  width: min(36rem, 100%);
+  margin-inline: auto;
+}
+
+.sheet--shelter .sheet__close,
+.sheet--tool[data-shelter] .sheet__close,
+.sheet--tool[data-shelter] .button {
+  min-height: 3.5rem;
+  font-size: var(--step-0);
+}
+
+/* The scrollbar's gutter shows the root's background: dark too while the shelter is open. */
+html:has(dialog[open]:is(.sheet--shelter, .sheet--tool[data-shelter])) {
+  background: var(--color-shelter-bg);
+}
+
+.shelter__first {
+  font-size: var(--step-1);
+  line-height: 1.5;
+}
+
+.tool__body > .shelter__first {
+  color: var(--color-text);
+}
+
+.shelter__tools {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.shelter__button {
+  display: flex;
+  align-items: center;
+  min-height: 4rem;
+  padding: 0 1.25rem;
+  border: 1px solid var(--color-field-border);
+  border-radius: var(--radius-field);
+  background: var(--color-surface);
+  font-family: var(--font-body);
+  font-size: var(--step-1);
+  font-weight: 560;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.shelter__button:hover {
+  border-color: var(--color-text-muted);
+}
+
+.help--shelter .help__number {
+  font-size: clamp(3rem, 2.4rem + 3vw, 4.5rem);
 }
 
 /* ---------- Windows High Contrast and similar ---------- */
@@ -2367,11 +4328,32 @@ html[data-kb] .composer__keys {
   .switch__track,
   .tagpill,
   .thesis__remove,
+  .week__step,
   .sheet__close,
   .jump,
   .confirm,
-  .sheet {
+  .sheet,
+  .checkin,
+  .mood__cell,
+  .mood__word,
+  .shelter__button,
+  .breathe__circle {
     border: 1px solid CanvasText;
+  }
+
+  /* The message field's focus is its doubled border and its shadow, and forced colours take both
+     away (the border turns CanvasText above, a shadow is not drawn): a Highlight ring instead, or
+     only the caret would say where the focus is. */
+  .composer__input:focus-visible,
+  .composer__input:focus {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  /* The chosen cell and word of «Як ви зараз?» (spec §3.13). */
+  .mood__cell[aria-checked='true'],
+  .mood__word[aria-checked='true'] {
+    outline: 2px solid Highlight;
   }
 
   /* After the group above: a wrong tag keeps its dashed 2 px border in forced colours too. */

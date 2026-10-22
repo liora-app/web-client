@@ -10,8 +10,10 @@
 // - The answer is not followed. Once its end is under the composer, the «↓» pill appears over the
 //   field: «Далі відповідь» while it streams, «До кінця» after; it goes as soon as the end is in
 //   view. If the person scrolled up, nothing moves.
+// - A line over the field that the person did not ask for (the reminder to pause) does not cover
+//   the end it lands on: with the end in view, the page moves up by the line's height (hold()).
 
-import { motionAllowed } from '../../ui/motion'
+import { decorativeMotion } from '../../ui/motion'
 import { setText, show } from './dom'
 
 export type AnchorContext = Readonly<{
@@ -30,6 +32,10 @@ export type ScrollAnchor = Readonly<{
   update(): void
   /** «↓ До кінця»: the end of the last message just above the composer. */
   jumpToEnd(): void
+  /** `change` makes the composer taller with something the person did not ask for (the reminder to
+   *  pause): if the end of the conversation was in view, the page moves up by as much, so the line
+   *  does not cover it. Scrolled up, nothing moves; the focus never does. */
+  hold(change: () => void): void
   /** A new conversation or another screen: no room kept, no pill. */
   reset(): void
 }>
@@ -60,11 +66,20 @@ export function createScrollAnchor(parts: AnchorParts): ScrollAnchor {
   let ctx: AnchorContext = { shown: false, streaming: false }
   let room: HTMLElement | null = null
   let frame = 0
+  /** Counts the sends (and the resets): a scroll queued for an earlier one does not run. */
+  let sends = 0
 
   const measure = (): void => {
     root.style.setProperty('--header-h', `${Math.round(shownHeight(header))}px`)
     root.style.setProperty('--session-h', `${Math.round(shownHeight(session))}px`)
     root.style.setProperty('--composer-h', `${Math.round(shownHeight(composer))}px`)
+    // A classic scrollbar keeps its gutter (scrollbar-gutter: stable) in the page's background
+    // colour; only then does the sky ease into that colour at the right edge (chat.css,
+    // html[data-gutter]). Overlay scrollbars — phones, macOS — have none, and the same fade there
+    // would be a dark band down the right edge. The root's box ends where the gutter begins
+    // (clientWidth does not: Chromium leaves a reserved but empty gutter out of it). The header
+    // spans that box, so its observer sees the gutter come and go.
+    root.toggleAttribute('data-gutter', window.innerWidth - root.getBoundingClientRect().width > 1)
   }
 
   /** The bottom of what the last message shows (its body, not the room under it). */
@@ -130,14 +145,25 @@ export function createScrollAnchor(parts: AnchorParts): ScrollAnchor {
         room.style.removeProperty('--sent-h')
       }
       room = answer
-      if (answer !== null) {
-        answer.style.setProperty('--sent-h', `${Math.round(message.getBoundingClientRect().height)}px`)
-        answer.classList.add(ROOM)
-      }
-      // The header and the session row are measured by now: scroll-padding-top is right.
-      measure()
-      message.scrollIntoView({ block: 'start', behavior: motionAllowed() ? 'smooth' : 'auto' })
-      update()
+      const turn = ++sends
+      // After the whole render, not in the middle of it: the first message also hides the phone's
+      // light slot, the starters and the composer's note in the same render, after the transcript.
+      // Measured and scrolled before that, the room was sized for the old composer, the page then got
+      // shorter and an instant scroll ended clamped short — the reply above rested half under the top
+      // fade. A microtask still comes before the frame is painted.
+      queueMicrotask(() => {
+        if (turn !== sends || !message.isConnected) return
+        if (answer !== null && answer.isConnected) {
+          answer.style.setProperty('--sent-h', `${Math.round(message.getBoundingClientRect().height)}px`)
+          answer.classList.add(ROOM)
+        }
+        // The header, the session row and the composer are measured now: scroll-padding-top and the
+        // room are right.
+        measure()
+        // An explicit behaviour wins over the CSS's scroll-behavior: smooth only as the CSS would be.
+        message.scrollIntoView({ block: 'start', behavior: decorativeMotion() ? 'smooth' : 'instant' })
+        update()
+      })
     },
     context(next) {
       // Renders come with every token: no layout read here (ResizeObserver tracks the sizes).
@@ -159,8 +185,28 @@ export function createScrollAnchor(parts: AnchorParts): ScrollAnchor {
       }
       check()
     },
+    hold(change) {
+      // Two layout reads, and only when such a line comes (once a conversation), never per token.
+      const before = ctx.shown && shownHeight(composer) > 0 ? lastBottom() : null
+      const top = composer.getBoundingClientRect().top
+      change()
+      if (before === null || before - 4 > top) return
+      const grown = top - composer.getBoundingClientRect().top
+      if (grown <= 0 || before - 4 <= top - grown) return
+      // The composer is sticky: it grew upward over the end. The room under the answer and the
+      // scroll padding follow the new height first, then the page moves by exactly that — at once,
+      // as the line comes, not a smooth scroll that shows the end covered first.
+      measure()
+      try {
+        window.scrollBy({ top: grown, behavior: 'instant' })
+      } catch {
+        window.scrollBy(0, grown)
+      }
+      update()
+    },
     reset() {
       room = null
+      sends++
       if (frame !== 0) window.cancelAnimationFrame(frame)
       frame = 0
       ctx = { shown: false, streaming: false }

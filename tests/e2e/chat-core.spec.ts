@@ -11,8 +11,11 @@ import { expect, test } from '@playwright/test'
 import {
   GOOGLE_START,
   createApi,
+  patchBody,
+  summariesPath,
   summarizeBody,
   turnBody,
+  weeklyPath,
   type FetchLike,
 } from '../../src/chat/core/api'
 import { countryName } from '../../src/chat/core/country'
@@ -25,7 +28,9 @@ import {
   PAUSED_LINE_NOTE,
   PAUSED_LINE_NOTE_SHORT,
   maskPausedLine,
+  maskPausedLineInline,
   noPausedLine,
+  oneLine,
   sanitizeHelplines,
 } from '../../src/chat/core/helplines'
 import {
@@ -41,20 +46,48 @@ import {
   validateDraft,
   type Draft,
 } from '../../src/chat/core/limits'
+import { formOf, patchOf, searchQuery, shiftDay, tagsFromText } from '../../src/chat/core/journal'
+import {
+  MOOD_QUADRANTS,
+  MOOD_WORDS,
+  NO_MOOD,
+  TOOL_KINDS,
+  breathAt,
+  breathCycleMs,
+  breathNextChangeMs,
+  breathTotalMs,
+  isMoodWord,
+  isToolKind,
+  type BreathPattern,
+} from '../../src/chat/core/selfhelp'
 import { MAX_FRAME_BUFFER, ProtocolError, chatEvents, readFrames, type TurnEvent } from '../../src/chat/core/sse'
 import {
   FALLBACK_SCENARIO,
   INITIAL_MODEL,
+  MAX_MARKS,
+  PAUSE_AFTER_MS,
+  PAUSE_AFTER_REPLIES,
   authErrorFrom,
+  canOpenJournal,
+  canSendNow,
+  editUnsaved,
+  journalBusy,
   leaveGuard,
   llmInFlight,
+  markCandidates,
+  markText,
   matchesSaved,
+  pauseAt,
+  pauseDue,
   reduce,
+  topTool,
   transferAskable,
   type Action,
   type ChatState,
   type Effect,
+  type JournalState,
   type Model,
+  type ReviewState,
   type State,
 } from '../../src/chat/core/state'
 import {
@@ -67,12 +100,13 @@ import {
   type TurnOutcome,
   type TurnProgress,
 } from '../../src/chat/core/turn'
-import type { ConsentState, ScenarioOut, SummaryCreate, SummaryList, SummaryOut, TurnRequest } from '../../src/chat/core/types'
+import type { ConsentState, ScenarioOut, SummaryCreate, SummaryList, SummaryOut, SummaryPatch, TurnRequest, WeeklyReviewOut } from '../../src/chat/core/types'
 // UI modules whose logic needs no DOM to load: what they decide is tested here, the page in CI.
 import { CLEAR_AFTER_MS, createAnnouncer, type Region } from '../../src/chat/ui/announcer'
-import { conversationText, thesesText } from '../../src/chat/ui/clipboard'
-import { sayAnswer, sayRetry } from '../../src/chat/ui/copy'
+import { conversationText, entryMarkdown, thesesText } from '../../src/chat/ui/clipboard'
+import { moodLine, moodSentence, sayAnswer, sayRetry } from '../../src/chat/ui/copy'
 import { KEYBOARD_DROP, keyboardInset, keyboardShown } from '../../src/chat/ui/keyboard'
+import { presenceOf } from '../../src/chat/ui/presence'
 import { SKY_KEY, parseSky, skyAttribute } from '../../src/ui/sky'
 
 test.beforeEach(({}, testInfo) => {
@@ -1467,6 +1501,28 @@ test.describe('state: chat', () => {
     expect(c.session.cut).toEqual([2])
   })
 
+  test('times run beside the history: none for the opening, the press for the message, `done` for the answer', () => {
+    const DONE = { kind: 'done', text: 'Синтетична відповідь.', finishReason: 'stop', requestId: 'r' } as const
+    const sent = run(booted(), { type: 'chat/send', text: 'Привіт', now: NOW - 5000 })
+    expect(chatOf(sent.model).pending).toMatchObject({ at: NOW - 5000 })
+    expect(chatOf(sent.model).session.times).toEqual([null])
+    const first = run(sent.model, { type: 'turn/outcome', id: turnEffect(sent.effects).id, now: NOW, outcome: DONE })
+    expect(chatOf(first.model).session.times).toEqual([null, NOW - 5000, NOW])
+    // The second turn keeps the first one's times; a failed send and its «Надіслати ще раз» keep
+    // the moment of the press, not of the repeat.
+    const next = run(first.model, { type: 'chat/send', text: 'Ще одне', now: NOW + 1000 })
+    const failed = run(next.model, { type: 'turn/outcome', id: turnEffect(next.effects).id, now: NOW + 2000, outcome: { kind: 'network' } }).model
+    const again = run(failed, { type: 'chat/resend' })
+    const second = run(again.model, { type: 'turn/outcome', id: turnEffect(again.effects).id, now: NOW + 9000, outcome: DONE })
+    const c = chatOf(second.model)
+    expect(c.session.times).toEqual([null, NOW - 5000, NOW, NOW + 1000, NOW + 9000])
+    expect(c.session.times).toHaveLength(c.session.messages.length)
+    // A send without a time (no clock in the caller): the message takes the answer's.
+    const plain = run(booted(), { type: 'chat/send', text: 'Привіт' })
+    const answered = run(plain.model, { type: 'turn/outcome', id: turnEffect(plain.effects).id, now: NOW, outcome: DONE })
+    expect(chatOf(answered.model).session.times).toEqual([null, NOW, NOW])
+  })
+
   test('an answer over 4000 code points joins the history cut to 4000; an empty one joins nothing', () => {
     const sent = run(booted(), { type: 'chat/send', text: 'Привіт' })
     const { id } = turnEffect(sent.effects)
@@ -1801,6 +1857,28 @@ test.describe('state: theses', () => {
     expect(JSON.stringify(body)).not.toContain(PAUSED)
   })
 
+  test('a number the AI broke over two lines is masked too: every screen draws a thesis on one line', () => {
+    const { model, effects } = summarizing()
+    const { id } = summarizeFx(effects)
+    const split = `${PAUSED.slice(0, 2)}\n${PAUSED.slice(2)}`
+    const review = run(model, {
+      type: 'summarize/ok',
+      id,
+      draft: { title: `Лінія ${split}`, bullets: [`Номер ${split} мовчить.`, 'Перше.\nДруге.'], tags: [split, 'день'] },
+    }).model
+    const draft = (review.state as Extract<State, { s: 'review' }>).draft
+    expect(draft.title).toBe(`Лінія ${PAUSED_LINE_NOTE_SHORT}`)
+    // A field with nothing to mask stays as the AI wrote it.
+    expect(draft.bullets.map((b) => b.text)).toEqual([`Номер ${PAUSED_LINE_NOTE_SHORT} мовчить.`, 'Перше.\nДруге.'])
+    expect(draft.tags.map((t) => t.name)).toEqual(['день'])
+    const body = (run(review, { type: 'review/save' }).effects.find((e) => e.type === 'save') as Extract<Effect, { type: 'save' }>).body
+    for (const text of [body.title, ...body.bullets]) expect(noPausedLine(oneLine(text)), text).toBe(true)
+    // The copy of the theses: one line per field.
+    const copied = thesesText({ title: `Лінія ${split}`, bullets: [{ id: 'b0', text: `Теза ${split}`, removed: false }], tags: [] })
+    expect(copied).not.toContain(split)
+    expect(copied).toContain(`01 — Теза ${PAUSED_LINE_NOTE}`)
+  })
+
   test('masked theses still fit: a long title or thesis with the number saves without a length error the person did not make', () => {
     const { model, effects } = summarizing()
     const { id } = summarizeFx(effects)
@@ -2084,6 +2162,990 @@ test.describe('state: theses', () => {
   })
 })
 
+// ── The diary (§7.7): the wrappers, the helpers, the screen's steps ──────────────────────────
+
+// ── «→ У тези», the reminder to pause, the end (spec §3.7.2, §3.7.7, §7.2, §7.5) ─────────────
+
+test.describe('state: «→ У тези», the reminder to pause, the soft end', () => {
+  /** A conversation of `turns` exchanges; message n (from 0) sent at `start + n·step`. */
+  function talk(turns: number, opts: Readonly<{ start?: number; step?: number; reply?: (n: number) => string }> = {}): Model {
+    const start = opts.start ?? NOW
+    const step = opts.step ?? 1000
+    let m = booted()
+    for (let n = 0; n < turns; n++) {
+      const at = start + n * step
+      const sent = run(m, { type: 'chat/send', text: `Синтетичне повідомлення ${n + 1}.`, now: at })
+      const text = opts.reply?.(n) ?? `Синтетична відповідь ${n + 1}.`
+      m = run(sent.model, { type: 'turn/outcome', id: turnEffect(sent.effects).id, now: at + 500, outcome: { kind: 'done', text, finishReason: 'stop', requestId: 'r' } }).model
+    }
+    return m
+  }
+  const toReview = (m: Model, bullets: readonly string[] = ['перша', 'друга', 'третя']): Model => {
+    const s = run(m, { type: 'chat/summarize' })
+    const fx = s.effects.find((e): e is Extract<Effect, { type: 'summarize' }> => e.type === 'summarize')!
+    return run(s.model, { type: 'summarize/ok', id: fx.id, draft: { title: 'Розмова про день', bullets: [...bullets], tags: ['день'] } }).model
+  }
+  const reviewOf = (m: Model): ReviewState => {
+    expect(m.state.s).toBe('review')
+    return m.state as ReviewState
+  }
+
+  test('a reply is marked and unmarked; only the AI’s replies, never the opening one; five at most; the turn and the theses bodies never carry a mark', () => {
+    const m = talk(7)
+    // Replies sit at 2, 4, 6…; 0 is the opening message, odd indices are the person's.
+    const marked = run(m, { type: 'chat/mark', index: 2 }, { type: 'chat/mark', index: 4 }).model
+    expect(chatOf(marked).session.marks).toEqual([2, 4])
+    expect(chatOf(run(marked, { type: 'chat/mark', index: 2 }).model).session.marks).toEqual([4])
+    for (const index of [0, 1, 3, 99, -2, 2.5, Number.NaN]) {
+      expect(run(m, { type: 'chat/mark', index }).model, `index ${index}`).toBe(m)
+    }
+    const full = run(m, ...[2, 4, 6, 8, 10].map((index): Action => ({ type: 'chat/mark', index }))).model
+    expect(chatOf(full).session.marks).toHaveLength(MAX_MARKS)
+    expect(run(full, { type: 'chat/mark', index: 12 }).model).toBe(full)
+    // Taking one off makes room again.
+    expect(chatOf(run(full, { type: 'chat/mark', index: 6 }, { type: 'chat/mark', index: 12 }).model).session.marks).toEqual([2, 4, 8, 10, 12])
+
+    const sent = run(full, { type: 'chat/send', text: 'Ще одне.', now: NOW + 99_000 })
+    expect(Object.keys(turnEffect(sent.effects).body).sort()).toEqual(['messages', 'scenario'])
+    const sum = run(full, { type: 'chat/summarize' })
+    const fx = sum.effects.find((e): e is Extract<Effect, { type: 'summarize' }> => e.type === 'summarize')!
+    expect(Object.keys(fx.body).sort()).toEqual(['messages', 'scenario'])
+    expect(JSON.stringify(fx.body)).not.toContain('marks')
+  })
+
+  test('marks live with the conversation: the theses and back keep them; a new conversation and the crisis have none; no mark is set outside the conversation', () => {
+    const m = run(talk(2), { type: 'chat/mark', index: 2 }).model
+    const back = run(toReview(m), { type: 'review/back' }).model
+    expect(chatOf(back).session.marks).toEqual([2])
+    const review = toReview(m)
+    expect(run(review, { type: 'chat/mark', index: 4 }).model).toBe(review)
+    const sent = run(m, { type: 'chat/send', text: 'Синтетичне повідомлення.', now: NOW + 9000 })
+    const crisis = run(sent.model, { type: 'turn/outcome', id: turnEffect(sent.effects).id, now: NOW, outcome: { kind: 'crisis', source: 'keyword', helplines: FALLBACK } }).model
+    expect(crisis.state.s).toBe('crisis')
+    expect(run(crisis, { type: 'chat/mark', index: 2 }).model).toBe(crisis)
+    expect(chatOf(run(booted(), { type: 'chat/scenario', id: 'day' }).model).session.marks).toEqual([])
+  })
+
+  test('on the theses the marked replies wait as candidates: «Додати до тез» makes one a thesis (never a sixth), «Прибрати» takes its mark off; not while saving', () => {
+    const m = run(talk(4), { type: 'chat/mark', index: 4 }, { type: 'chat/mark', index: 2 }).model
+    const review = toReview(m)
+    expect(markCandidates(reviewOf(review))).toEqual([
+      { index: 4, text: 'Синтетична відповідь 2.' },
+      { index: 2, text: 'Синтетична відповідь 1.' },
+    ])
+    const taken = run(review, { type: 'review/take', index: 2 }).model
+    expect(reviewOf(taken).draft.bullets.map((b) => [b.id, b.text])).toEqual([
+      ['b0', 'перша'],
+      ['b1', 'друга'],
+      ['b2', 'третя'],
+      ['m2', 'Синтетична відповідь 1.'],
+    ])
+    expect(markCandidates(reviewOf(taken)).map((c) => c.index)).toEqual([4])
+    // A taken thesis is a thesis: removed, it does not come back as a candidate (it has «Повернути»).
+    const removed = run(taken, {
+      type: 'review/update',
+      draft: { ...reviewOf(taken).draft, bullets: reviewOf(taken).draft.bullets.map((b) => (b.id === 'm2' ? { ...b, removed: true } : b)) },
+    }).model
+    expect(markCandidates(reviewOf(removed)).map((c) => c.index)).toEqual([4])
+    // Five theses: the candidate waits.
+    const five = toReview(m, ['1', '2', '3', '4', '5'])
+    expect(run(five, { type: 'review/take', index: 2 }).model).toBe(five)
+    // «Прибрати»: off the candidates and off the conversation.
+    const dropped = run(review, { type: 'review/unmark', index: 4 }).model
+    expect(markCandidates(reviewOf(dropped)).map((c) => c.index)).toEqual([2])
+    expect(chatOf(run(dropped, { type: 'review/back' }).model).session.marks).toEqual([2])
+    // While the save is on its way the draft is read-only.
+    const saving = run(review, { type: 'review/save' }).model
+    expect(reviewOf(saving).saving).toBe('saving')
+    expect(run(saving, { type: 'review/take', index: 2 }).model).toBe(saving)
+    expect(run(saving, { type: 'review/unmark', index: 2 }).model).toBe(saving)
+    // «Скласти заново»: a new draft, the candidates again.
+    const again = run(taken, { type: 'confirm/open', kind: 'regenerate' }, { type: 'confirm/accept' })
+    const fx = again.effects.find((e): e is Extract<Effect, { type: 'summarize' }> => e.type === 'summarize')!
+    const fresh = run(again.model, { type: 'summarize/ok', id: fx.id, draft: { title: 'Інша', bullets: ['одна'], tags: [] } }).model
+    expect(markCandidates(reviewOf(fresh)).map((c) => c.index)).toEqual([4, 2])
+  })
+
+  test('a marked reply becomes one line of at most 500 code points, the paused number masked with the short note and never cut', () => {
+    const spaced = PAUSED.slice(0, 1) + ' ' + PAUSED.slice(1)
+    expect(markText('Перше.\n\nДруге   речення.')).toBe('Перше. Друге речення.')
+    const masked = markText(`Можна подзвонити на ${spaced}, це безкоштовно.`)
+    expect(masked).toContain(PAUSED_LINE_NOTE_SHORT)
+    expect(masked).not.toMatch(/\p{N}/u)
+    const long = markText(`${'слово '.repeat(120)}${spaced} кінець`)
+    expect(codePoints(long)).toBeLessThanOrEqual(500)
+    expect(long.endsWith('…')).toBe(true)
+    expect(long).not.toMatch(/\p{N}/u)
+    // Near the end the note goes whole or not at all.
+    for (let pad = 470; pad <= 500; pad += 3) {
+      const text = markText(`${'а'.repeat(pad)} ${spaced} хвіст`)
+      expect(codePoints(text), `pad ${pad}`).toBeLessThanOrEqual(500)
+      if (text.includes(PAUSED_LINE_NOTE_SHORT.slice(0, 3))) expect(text, `pad ${pad}`).toContain(PAUSED_LINE_NOTE_SHORT)
+      expect(text, `pad ${pad}`).not.toMatch(/\p{N}/u)
+    }
+    // The candidate on the theses screen is that text.
+    const m = run(talk(1, { reply: () => `Номер ${spaced} не відповідає.` }), { type: 'chat/mark', index: 2 }).model
+    expect(markCandidates(reviewOf(toReview(m)))[0]!.text).toBe(`Номер ${PAUSED_LINE_NOTE_SHORT} не відповідає.`)
+    // A number the reply broke over lines is one number on the thesis's one line: the reply is
+    // put on one line first, masked after.
+    for (const split of [
+      `${PAUSED.slice(0, 2)}\n${PAUSED.slice(2)}`,
+      `${PAUSED.slice(0, 1)}\r\n${PAUSED.slice(1)}`,
+      `${PAUSED.slice(0, 2)}\u2028${PAUSED.slice(2)}`,
+      `${PAUSED.slice(0, 2)}\n\n${PAUSED.slice(2)}`,
+      [...PAUSED].join('\n'),
+    ]) {
+      const text = markText(`Лінія: ${split}`)
+      expect(text, JSON.stringify(split)).toBe(`Лінія: ${PAUSED_LINE_NOTE_SHORT}`)
+      expect(noPausedLine(text)).toBe(true)
+    }
+    const broken = run(talk(1, { reply: () => `Подзвоніть на ${PAUSED.slice(0, 2)}\n${PAUSED.slice(2)}.` }), { type: 'chat/mark', index: 2 }).model
+    expect(markCandidates(reviewOf(toReview(broken)))[0]!.text).toBe(`Подзвоніть на ${PAUSED_LINE_NOTE_SHORT}.`)
+    // The bidi controls the mask takes out leave no two spaces side by side.
+    expect(markText(`а \u200E б ${PAUSED}`)).toBe(`а б ${PAUSED_LINE_NOTE_SHORT}`)
+  })
+
+  test('«Збережено» keeps one thought to take along: the first saved thesis that came from a mark — none without one', () => {
+    const m = run(talk(2), { type: 'chat/mark', index: 4 }).model
+    const review = run(toReview(m), { type: 'review/take', index: 4 }).model
+    const save = run(review, { type: 'review/save' })
+    const fx = save.effects[0] as Extract<Effect, { type: 'save' }>
+    expect(fx.body.bullets).toEqual(['перша', 'друга', 'третя', 'Синтетична відповідь 2.'])
+    const stored: SummaryOut = { ...SUMMARY, bullets: ['перша', 'друга', 'третя', 'Синтетична відповідь 2 (як зберіг сервер).'] }
+    expect(run(save.model, { type: 'save/ok', id: fx.id, summary: stored }).model.state).toEqual({ s: 'saved', summary: stored, keep: 'Синтетична відповідь 2 (як зберіг сервер).' })
+    // Not taken: nothing to take along (the shape of `saved` stays as it was).
+    const plain = run(toReview(m), { type: 'review/save' })
+    const pfx = plain.effects[0] as Extract<Effect, { type: 'save' }>
+    expect(run(plain.model, { type: 'save/ok', id: pfx.id, summary: SUMMARY }).model.state).toEqual({ s: 'saved', summary: SUMMARY })
+    // A save confirmed by the newest record after an unknown result keeps it too.
+    const unknown = run(review, { type: 'review/save' })
+    const ufx = unknown.effects[0] as Extract<Effect, { type: 'save' }>
+    const lost = run(unknown.model, { type: 'save/fail', id: ufx.id, error: apiError(0, 'network') }).model
+    const retry = run(lost, { type: 'review/save' })
+    const check = retry.effects[0] as Extract<Effect, { type: 'save-check' }>
+    expect(check.type).toBe('save-check')
+    const newest: SummaryOut = { ...SUMMARY, scenario: 'free', title: 'Розмова про день', bullets: ['перша', 'друга', 'третя', 'Синтетична відповідь 2.'], tags: [{ id: 't', name: 'день', source: 'ai' }] }
+    const matched = run(retry.model, { type: 'save/check', id: check.id, list: { items: [newest], next_cursor: null }, date: null }).model
+    expect(matched.state).toMatchObject({ s: 'saved', keep: 'Синтетична відповідь 2.' })
+  })
+
+  test('the reminder to pause: after 60 replies with the answer that makes them, or 40 minutes after the first message — once, never mid-answer', () => {
+    expect(PAUSE_AFTER_MS).toBe(40 * 60_000)
+    expect(PAUSE_AFTER_REPLIES).toBe(60)
+    // 29 exchanges = 58 replies: nothing; the 30th answer brings it, as `count`.
+    const almost = talk(29)
+    expect(chatOf(almost).session.pause).toBe('none')
+    expect(pauseDue(chatOf(almost).session, NOW + 60_000)).toBeNull()
+    const sixty = run(almost, { type: 'chat/send', text: 'Ще.', now: NOW + 60_000 })
+    const counted = run(sixty.model, { type: 'turn/outcome', id: turnEffect(sixty.effects).id, now: NOW + 61_000, outcome: { kind: 'done', text: 'Відповідь.', finishReason: 'stop', requestId: 'r' } }).model
+    expect(chatOf(counted).session.messages.length - 1).toBe(60)
+    expect(chatOf(counted).session.pause).toBe('count')
+
+    // Time: the first message's press starts the 40 minutes; the page's timer asks.
+    const m = talk(2, { start: NOW })
+    expect(pauseAt(chatOf(m).session)).toBe(NOW + PAUSE_AFTER_MS)
+    expect(run(m, { type: 'chat/pause-due', now: NOW + PAUSE_AFTER_MS - 1 }).model).toBe(m)
+    const due = run(m, { type: 'chat/pause-due', now: NOW + PAUSE_AFTER_MS }).model
+    expect(chatOf(due).session.pause).toBe('time')
+    expect(pauseAt(chatOf(due).session)).toBeNull()
+    // Once: «Сховати», and it never comes back — not with the timer, not with an answer.
+    const hidden = run(due, { type: 'chat/pause-hide' }).model
+    expect(chatOf(hidden).session.pause).toBe('hidden')
+    expect(run(hidden, { type: 'chat/pause-due', now: NOW + 10 * PAUSE_AFTER_MS }).model).toBe(hidden)
+    const later = run(hidden, { type: 'chat/send', text: 'Ще.', now: NOW + 3 * PAUSE_AFTER_MS })
+    const after = run(later.model, { type: 'turn/outcome', id: turnEffect(later.effects).id, now: NOW + 3 * PAUSE_AFTER_MS, outcome: { kind: 'done', text: 'Так.', finishReason: 'stop', requestId: 'r' } }).model
+    expect(chatOf(after).session.pause).toBe('hidden')
+
+    // Mid-answer the timer is ignored; the answer's `done` brings the reminder.
+    const sent = run(m, { type: 'chat/send', text: 'Довге питання.', now: NOW + PAUSE_AFTER_MS - 5000 })
+    expect(run(sent.model, { type: 'chat/pause-due', now: NOW + PAUSE_AFTER_MS }).model).toBe(sent.model)
+    const done = run(sent.model, { type: 'turn/outcome', id: turnEffect(sent.effects).id, now: NOW + PAUSE_AFTER_MS + 2000, outcome: { kind: 'done', text: 'Відповідь.', finishReason: 'stop', requestId: 'r' } }).model
+    expect(chatOf(done).session.pause).toBe('time')
+    // The clock starts at the press of the first message (answered() sends without one: its time
+    // is that of `done`).
+    expect(pauseAt(chatOf(answered(booted())).session)).toBe(NOW + PAUSE_AFTER_MS)
+    expect(pauseAt(chatOf(booted()).session)).toBeNull()
+  })
+
+  test('the reminder lives with its conversation: the diary and the theses keep it; the crisis takes it; a new conversation starts over; «Зібрати тези» opens «Завершити розмову?»', () => {
+    const due = run(talk(2), { type: 'chat/pause-due', now: NOW + PAUSE_AFTER_MS }).model
+    expect(chatOf(due).session.pause).toBe('time')
+    const journal = run(due, { type: 'journal/open', tz: 'Europe/Kyiv' }).model
+    expect(journal.state.s).toBe('journal')
+    expect(run(journal, { type: 'chat/pause-hide' }).model).toBe(journal)
+    expect(chatOf(run(journal, { type: 'journal/back' }).model).session.pause).toBe('time')
+    expect(chatOf(run(toReview(due), { type: 'review/back' }).model).session.pause).toBe('time')
+    // «Зібрати тези»: the line goes, and the confirm that says the text goes to the provider again.
+    const collect = run(due, { type: 'chat/pause-collect' })
+    expect(chatOf(collect.model).session.pause).toBe('hidden')
+    expect(collect.model.overlay).toEqual([{ o: 'confirm', kind: 'end', revoke: null, leaveTo: null, back: false }])
+    expect(collect.effects).toEqual([])
+    // While an answer comes: nothing (the button waits).
+    const sent = run(due, { type: 'chat/send', text: 'Ще.', now: NOW + PAUSE_AFTER_MS + 1000 })
+    expect(run(sent.model, { type: 'chat/pause-collect' }).model).toBe(sent.model)
+    // The crisis: the conversation and its reminder are gone; a new conversation starts at none.
+    const crisis = run(sent.model, { type: 'turn/outcome', id: turnEffect(sent.effects).id, now: NOW, outcome: { kind: 'crisis', source: 'keyword', helplines: FALLBACK } }).model
+    expect(crisis.state.s).toBe('crisis')
+    expect(run(crisis, { type: 'chat/pause-due', now: NOW + 9 * PAUSE_AFTER_MS }).model).toBe(crisis)
+    const fresh = run(crisis, { type: 'confirm/open', kind: 'new-after-crisis' }, { type: 'confirm/accept' }).model
+    expect(chatOf(fresh).session).toMatchObject({ pause: 'none', marks: [] })
+  })
+})
+
+test.describe('api: the diary', () => {
+  function recorder(responder: (url: string, init: RequestInit) => Response = () => new Response('{}', { status: 200 })) {
+    const calls: { url: string; init: RequestInit }[] = []
+    const fetchFn: FetchLike = async (url, init) => {
+      calls.push({ url, init })
+      return responder(url, init)
+    }
+    return { calls, api: createApi({ fetch: fetchFn }) }
+  }
+
+  test('GET /summaries: limit, cursor, q, tag in this order; a blank q is not sent', async () => {
+    const { calls, api } = recorder(() => new Response(JSON.stringify({ items: [], next_cursor: null }), { status: 200 }))
+    await api.summaries({ limit: 20, cursor: 'c1', q: 'сон', tag: '00000000-0000-4000-9000-000000000101' })
+    await api.summaries({ q: '   ', tag: null })
+    expect(calls.map((c) => c.url)).toEqual([
+      '/api/v1/summaries?limit=20&cursor=c1&q=%D1%81%D0%BE%D0%BD&tag=00000000-0000-4000-9000-000000000101',
+      '/api/v1/summaries?limit=20',
+    ])
+    expect(summariesPath({})).toBe('/summaries?limit=20')
+  })
+
+  test('PATCH /summaries/{id}: the id encoded, the body field by field, tags as {name, source}; DELETE is a 204 without a body', async () => {
+    const { calls, api } = recorder((_url, init) =>
+      init.method === 'DELETE'
+        ? new Response(null, { status: 204 })
+        : new Response(JSON.stringify({ ...SUMMARY, title: 'Нова назва', edited_at: '2026-10-08T10:00:00Z' }), { status: 200 }),
+    )
+    const sloppy = {
+      title: 'Нова назва',
+      bullets: ['одна'],
+      tags: [{ name: 'день', source: 'ai', id: 'tg-1', extra: 1 }],
+      scenario: 'day',
+      created_at: 'x',
+    } as unknown as SummaryPatch
+    const patched = await api.patchSummary('s/1?x', sloppy)
+    expect(patched.ok && patched.data.title).toBe('Нова назва')
+    expect(calls[0]!.url).toBe('/api/v1/summaries/s%2F1%3Fx')
+    expect(calls[0]!.init.method).toBe('PATCH')
+    expect((calls[0]!.init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ title: 'Нова назва', bullets: ['одна'], tags: [{ name: 'день', source: 'ai' }] })
+    // Only what was given: a field left out stays as stored.
+    expect(patchBody({ tags: [] })).toEqual({ tags: [] })
+    expect(Object.keys(patchBody({ title: 't' }))).toEqual(['title'])
+    const removed = await api.deleteSummary('s-1')
+    expect(removed).toMatchObject({ ok: true, data: null, status: 204 })
+    expect(calls[1]).toMatchObject({ url: '/api/v1/summaries/s-1', init: { method: 'DELETE' } })
+    expect((calls[1]!.init.headers as Record<string, string>)['Content-Type']).toBe('application/json')
+  })
+
+  test('GET /tags and GET /reviews/weekly: the query, light checks of the answers', async () => {
+    const tagsApi = createApi({
+      fetch: async () =>
+        new Response(
+          JSON.stringify([
+            { id: 'tg-1', name: 'робота', count: 3 },
+            { id: 'tg-1', name: 'дубль', count: 1 },
+            { id: '', name: 'без id', count: 1 },
+            { id: 'tg-2', name: '  ', count: 1 },
+            { id: 'tg-3', name: 'сон', count: 'x' },
+          ]),
+          { status: 200 },
+        ),
+    })
+    const tags = await tagsApi.tags()
+    expect(tags.ok && tags.data).toEqual([
+      { id: 'tg-1', name: 'робота', count: 3 },
+      { id: 'tg-3', name: 'сон', count: 0 },
+    ])
+    const review = { week_start: '2026-10-05', week_end: '2026-10-12', tz: 'Europe/Kyiv', sessions: 2, prev_sessions: 1, delta: 1, top_tags: [{ name: 'робота', count: 2, prev_count: 0 }, { name: 7 }], recurring_tags: ['робота'], new_tags: [], faded_tags: ['спорт', 3] }
+    const { calls, api } = recorder(() => new Response(JSON.stringify(review), { status: 200 }))
+    const week = await api.weekly({ tz: 'Europe/Kyiv' })
+    await api.weekly({ weekStart: '2026-09-28', tz: 'America/Argentina/Buenos_Aires' })
+    await api.weekly({})
+    expect(calls.map((c) => c.url)).toEqual([
+      '/api/v1/reviews/weekly?tz=Europe%2FKyiv',
+      '/api/v1/reviews/weekly?week_start=2026-09-28&tz=America%2FArgentina%2FBuenos_Aires',
+      '/api/v1/reviews/weekly',
+    ])
+    expect(weeklyPath({ weekStart: null, tz: null })).toBe('/reviews/weekly')
+    expect(week.ok && week.data).toMatchObject({ week_start: '2026-10-05', sessions: 2, top_tags: [{ name: 'робота', count: 2, prev_count: 0 }], faded_tags: ['спорт'] })
+    const broken = await createApi({ fetch: async () => new Response(JSON.stringify({ week_start: 'today', sessions: 1 }), { status: 200 }) }).weekly({})
+    expect(broken.ok === false && broken.error.code).toBe('internal')
+  })
+})
+
+test.describe('journal helpers', () => {
+  test('weeks move on the calendar, not the clock: month and year ends, a leap day', () => {
+    expect(shiftDay('2026-10-19', -7)).toBe('2026-10-12')
+    expect(shiftDay('2026-10-26', 7)).toBe('2026-11-02')
+    expect(shiftDay('2026-12-28', 7)).toBe('2027-01-04')
+    expect(shiftDay('2028-02-26', 7)).toBe('2028-03-04')
+    expect(shiftDay('26.10.2026', 7)).toBeNull()
+  })
+
+  test('the search is what the server takes: trimmed, no NUL, ≤ 200 code points; spaces are no search', () => {
+    expect(searchQuery('  сон \u0000 ')).toBe('сон')
+    expect(searchQuery('   ')).toBe('')
+    expect(codePoints(searchQuery('😀'.repeat(300)))).toBe(MAX_QUERY)
+  })
+
+  test('themes typed as one line: an AI tag keeps its source and stored spelling, a new one is the person’s, repeats go', () => {
+    const own = [
+      { id: 'a', name: 'робота', source: 'ai' as const },
+      { id: 'b', name: 'пам’ять', source: 'user' as const },
+    ]
+    expect(tagsFromText('Робота, памʼять,  сон , , робота', own)).toEqual([
+      { id: 't0', name: 'робота', source: 'ai' },
+      { id: 't1', name: 'пам’ять', source: 'user' },
+      { id: 't2', name: 'сон', source: 'user' },
+    ])
+  })
+
+  test('the PATCH of an edit: nothing changed → no PATCH; a change sends all three fields; a check finds the field', () => {
+    const form = formOf(SUMMARY)
+    expect(form).toEqual({ id: 's-1', title: 'Розмова про день', bullets: ['перша', 'друга', 'третя'], tags: 'день' })
+    expect(patchOf(form, SUMMARY)).toEqual({ ok: true, sent: null })
+    const changed = patchOf({ ...form, bullets: ['перша', '  ', 'третя '], tags: 'день, сон' }, SUMMARY)
+    expect(changed).toEqual({
+      ok: true,
+      sent: {
+        body: { title: 'Розмова про день', bullets: ['перша', 'третя'], tags: [{ name: 'день', source: 'ai' }, { name: 'сон', source: 'user' }] },
+        index: { bulletIndex: ['b0', 'b2'], tagIndex: ['t0', 't1'] },
+      },
+    })
+    const wrong = patchOf({ ...form, title: ' ', tags: 'я'.repeat(41) }, SUMMARY)
+    expect(wrong.ok === false && wrong.issues).toEqual([
+      { field: 'title', reason: 'title-empty' },
+      { field: 't0', reason: 'tag-long' },
+    ])
+  })
+
+  test('a theme with a comma in its name: a title-only edit sends no themes; an edited line keeps it one theme, the AI’s still', () => {
+    const comma: SummaryOut = { ...SUMMARY, tags: [{ id: 'c', name: 'стосунки, родина', source: 'ai' }, { id: 'd', name: 'робота', source: 'user' }] }
+    const form = formOf(comma)
+    expect(form.tags).toBe('стосунки, родина, робота')
+    // Only the title changed: the stored themes stay as they are (no `tags` in the PATCH).
+    expect(patchOf({ ...form, title: 'Нова назва' }, comma)).toEqual({
+      ok: true,
+      sent: { body: { title: 'Нова назва', bullets: ['перша', 'друга', 'третя'] }, index: { bulletIndex: ['b0', 'b1', 'b2'], tagIndex: [] } },
+    })
+    // The line edited: the stored name with a comma is one theme again, with its source.
+    const themed = patchOf({ ...form, tags: 'Стосунки,  родина, робота, сон' }, comma)
+    expect(themed.ok && themed.sent?.body.tags).toEqual([
+      { name: 'стосунки, родина', source: 'ai' },
+      { name: 'робота', source: 'user' },
+      { name: 'сон', source: 'user' },
+    ])
+    expect(tagsFromText('родина, стосунки', comma.tags)).toEqual([
+      { id: 't0', name: 'родина', source: 'user' },
+      { id: 't1', name: 'стосунки', source: 'user' },
+    ])
+    // A theme the form leaves out (it spells the paused number) is not deleted by a title edit.
+    const numbered: SummaryOut = { ...SUMMARY, tags: [{ id: 'x', name: PAUSED, source: 'ai' }, ...SUMMARY.tags] }
+    const titled = patchOf({ ...formOf(numbered), title: 'Інша назва' }, numbered)
+    expect(titled.ok && titled.sent !== null && 'tags' in titled.sent.body).toBe(false)
+  })
+
+  test('the edit form starts masked: the paused number never reaches a field', () => {
+    const numbered: SummaryOut = { ...SUMMARY, title: `Лінія ${PAUSED}`, bullets: [`Дзвонити на ${PAUSED}`], tags: [{ id: 'x', name: PAUSED, source: 'ai' }, { id: 'y', name: 'день', source: 'ai' }] }
+    const form = formOf(numbered)
+    expect(JSON.stringify(form)).not.toContain(PAUSED)
+    expect(form.title).toBe(`Лінія ${PAUSED_LINE_NOTE_SHORT}`)
+    expect(form.tags).toBe('день')
+    expect(entryMarkdown(numbered)).not.toContain(PAUSED)
+  })
+
+  test('a record with the number broken over two lines: the form, the page and the copy read it on one line', () => {
+    const split = `${PAUSED.slice(0, 2)}\n${PAUSED.slice(2)}`
+    const stored: SummaryOut = {
+      ...SUMMARY,
+      title: `Лінія ${split}`,
+      bullets: [`Дзвонити на ${split}, цілодобово`, 'Перше.\nДруге.'],
+      tags: [{ id: 'x', name: split, source: 'ai' }, { id: 'y', name: 'день', source: 'ai' }],
+    }
+    const form = formOf(stored)
+    expect(form.title).toBe(`Лінія ${PAUSED_LINE_NOTE_SHORT}`)
+    expect(form.bullets).toEqual([`Дзвонити на ${PAUSED_LINE_NOTE_SHORT}, цілодобово`, 'Перше.\nДруге.'])
+    expect(form.tags).toBe('день')
+    const md = entryMarkdown(stored)
+    expect(md).not.toContain(split)
+    expect(md).toContain(`## Лінія ${PAUSED_LINE_NOTE}`)
+    expect(md).toContain(`- Дзвонити на ${PAUSED_LINE_NOTE}, цілодобово`)
+    // What the diary and «Збережено» draw (no pre-wrap there): the number masked, a text with
+    // nothing to mask as it was.
+    expect(maskPausedLineInline(`Лінія ${split}`)).toBe(`Лінія ${PAUSED_LINE_NOTE}`)
+    expect(maskPausedLineInline(`7\r\n${PAUSED.slice(1)}`)).toBe(PAUSED_LINE_NOTE)
+    expect(maskPausedLineInline('Перше.\nДруге.')).toBe('Перше.\nДруге.')
+    // The transcript is drawn pre-wrap: there a line break still ends a number (as on the screen).
+    expect(maskPausedLine(`Лінія ${split}`)).toBe(`Лінія ${split}`)
+  })
+
+  test('one record as Markdown: a heading, the day, the theses as a list, the themes', () => {
+    const md = entryMarkdown({ ...SUMMARY, created_at: '2026-10-07T12:00:00Z' })
+    expect(md).toBe('## Розмова про день\n\n_7 жовтня 2026_\n\n- перша\n- друга\n- третя\n\nТеми: день')
+  })
+})
+
+test.describe('state: the diary', () => {
+  const TZ = 'Europe/Berlin'
+  const REVIEW: WeeklyReviewOut = {
+    week_start: '2026-10-19',
+    week_end: '2026-10-26',
+    tz: TZ,
+    sessions: 2,
+    prev_sessions: 1,
+    delta: 1,
+    top_tags: [{ name: 'день', count: 2, prev_count: 0 }],
+    recurring_tags: ['день'],
+    new_tags: ['день'],
+    faded_tags: [],
+  }
+  const listFx = (effects: readonly Effect[]) => effects.find((e): e is Extract<Effect, { type: 'journal-list' }> => e.type === 'journal-list')!
+  const weekFx = (effects: readonly Effect[]) => effects.find((e): e is Extract<Effect, { type: 'journal-week' }> => e.type === 'journal-week')!
+  const patchFx = (effects: readonly Effect[]) => effects.find((e): e is Extract<Effect, { type: 'patch-summary' }> => e.type === 'patch-summary')!
+  const tagsFx = (effects: readonly Effect[]) => effects.find((e): e is Extract<Effect, { type: 'journal-tags' }> => e.type === 'journal-tags')!
+  const journalOf = (model: Model): JournalState => {
+    expect(model.state.s).toBe('journal')
+    return model.state as JournalState
+  }
+
+  /** The diary opened from `from`, its first page and week in. */
+  function opened(from: Model = booted()) {
+    const open = run(from, { type: 'journal/open', tz: TZ })
+    const list = listFx(open.effects)
+    const week = weekFx(open.effects)
+    const loaded = run(
+      open.model,
+      { type: 'journal/list-ok', req: list.req, diary: DIARY },
+      { type: 'journal/week-ok', req: week.req, review: REVIEW },
+      { type: 'journal/tags-ok', req: tagsFx(open.effects).req, tags: [{ id: 'tg-1', name: 'день', count: 2 }] },
+    )
+    return { open, model: loaded.model }
+  }
+
+  test('opens lazily from a conversation at rest, «Збережено» and «Розмову завершено» — never while the AI works', () => {
+    const { open } = opened()
+    expect(types(open.effects)).toEqual(['journal-week', 'journal-tags', 'journal-list'])
+    expect(weekFx(open.effects)).toMatchObject({ weekStart: null, tz: TZ })
+    expect(listFx(open.effects)).toMatchObject({ q: '', tag: null, cursor: null })
+    expect(journalOf(open.model)).toMatchObject({ loading: true, tags: { status: 'loading' }, week: { review: { status: 'loading' } } })
+    const streaming = run(booted(), { type: 'chat/send', text: 'Текст' }).model
+    expect(run(streaming, { type: 'journal/open', tz: TZ }).model.state.s).toBe('chat')
+    const saved: Model = { ...booted(), state: { s: 'saved', summary: SUMMARY } }
+    const ended: Model = { ...booted(), state: { s: 'ended' } }
+    expect(canOpenJournal(saved.state) && canOpenJournal(ended.state)).toBe(true)
+    expect(journalOf(run(saved, { type: 'journal/open', tz: null }).model).back).toBeNull()
+    expect(canOpenJournal({ s: 'summarizing', session: chatOf(booted()).session, pending: null, id: 1, busy: 0, until: null, error: null })).toBe(false)
+  })
+
+  test('back to the conversation: the same session and the unsent message; from «Збережено» back is a new conversation', () => {
+    const talk = answered(booted(), 'РОЗМОВА-ПІД-ЩОДЕННИКОМ')
+    const { model } = opened(talk)
+    expect(leaveGuard(model.state)).toBe(true)
+    const back = run(model, { type: 'journal/back' })
+    expect(chatOf(back.model).session).toEqual(chatOf(talk).session)
+    expect(back.effects).toEqual([])
+    const fromSaved = opened({ ...booted(), state: { s: 'saved', summary: SUMMARY } })
+    expect(leaveGuard(fromSaved.model.state)).toBe(false)
+    expect(chatOf(run(fromSaved.model, { type: 'journal/back' }).model).session.messages).toHaveLength(1)
+  })
+
+  test('the week: back a week by week_start, never past this week; a refused zone is retried once with Europe/Kyiv', () => {
+    const { model, open } = opened()
+    expect(journalOf(model).week).toMatchObject({ start: '2026-10-19', current: '2026-10-19' })
+    expect(run(model, { type: 'journal/week', step: 1 }).effects).toEqual([])
+    const prev = run(model, { type: 'journal/week', step: -1 })
+    expect(weekFx(prev.effects)).toMatchObject({ weekStart: '2026-10-12', tz: TZ })
+    const prevOk = run(prev.model, { type: 'journal/week-ok', req: weekFx(prev.effects).req, review: { ...REVIEW, week_start: '2026-10-12', week_end: '2026-10-19' } })
+    const next = run(prevOk.model, { type: 'journal/week', step: 1 })
+    expect(weekFx(next.effects)).toMatchObject({ weekStart: '2026-10-19' })
+
+    const first = weekFx(open.effects)
+    const refused = run(open.model, { type: 'journal/week-fail', req: first.req, error: apiError(422, 'invalid_timezone') })
+    const retry = weekFx(refused.effects)
+    expect(retry).toMatchObject({ weekStart: null, tz: 'Europe/Kyiv' })
+    const again = run(refused.model, { type: 'journal/week-fail', req: retry.req, error: apiError(422, 'invalid_timezone') })
+    expect(again.effects).toEqual([])
+    expect(journalOf(again.model).week.review).toEqual({ status: 'failed' })
+    // A late answer to the first request changes nothing.
+    expect(run(refused.model, { type: 'journal/week-ok', req: first.req, review: REVIEW }).model).toBe(refused.model)
+  })
+
+  test('search, theme and «Показати ще» keep each other; a stale page is ignored; a gone theme resets the filter', () => {
+    const { model } = opened()
+    const search = run(model, { type: 'journal/search', q: '  день \u0000' })
+    expect(listFx(search.effects)).toMatchObject({ q: 'день', tag: null, cursor: null })
+    const tag = run(search.model, { type: 'journal/tag', id: 'tg-1' })
+    const tagFx = listFx(tag.effects)
+    expect(tagFx).toMatchObject({ q: 'день', tag: 'tg-1', cursor: null })
+    // The search's answer comes after the theme's request went: it is not the list any more.
+    expect(run(tag.model, { type: 'journal/list-ok', req: listFx(search.effects).req, diary: DIARY }).model).toBe(tag.model)
+    const page1 = run(tag.model, { type: 'journal/list-ok', req: tagFx.req, diary: { items: [SUMMARY], nextCursor: 'c2' } })
+    const more = run(page1.model, { type: 'journal/more' })
+    expect(listFx(more.effects)).toMatchObject({ q: 'день', tag: 'tg-1', cursor: 'c2' })
+    const page2 = run(more.model, { type: 'journal/list-ok', req: listFx(more.effects).req, diary: { items: [{ ...SUMMARY, id: 's-3' }], nextCursor: null } })
+    expect(journalOf(page2.model).list?.items.map((i) => i.id)).toEqual(['s-1', 's-3'])
+    const gone = run(page2.model, { type: 'journal/tags-ok', req: journalOf(page2.model).tagsReq, tags: [] })
+    expect(listFx(gone.effects)).toMatchObject({ tag: null, cursor: null })
+    const failed = run(page2.model, { type: 'journal/search', q: 'інше' })
+    const failure = run(failed.model, { type: 'journal/list-fail', req: listFx(failed.effects).req, error: apiError(0, 'network') })
+    expect(journalOf(failure.model)).toMatchObject({ failed: true, loading: false })
+    expect(listFx(run(failure.model, { type: 'journal/retry' }).effects)).toMatchObject({ q: 'інше', cursor: null })
+  })
+
+  test('edit: nothing changed closes the form without a PATCH; a change goes field by field, the AI tag still «ai»', () => {
+    const { model } = opened()
+    const edit = run(model, { type: 'journal/edit', id: 's-1' })
+    const form = journalOf(edit.model).edit!.form
+    const same = run(edit.model, { type: 'journal/edit-save' })
+    expect(same.effects).toEqual([])
+    expect(journalOf(same.model).edit).toBeNull()
+    const changed = run(edit.model, { type: 'journal/edit-update', form: { ...form, title: 'Інша назва', tags: 'день, сон' } }, { type: 'journal/edit-save' })
+    const fx = patchFx(changed.effects)
+    expect(fx).toMatchObject({ id: 's-1', body: { title: 'Інша назва', bullets: ['перша', 'друга', 'третя'], tags: [{ name: 'день', source: 'ai' }, { name: 'сон', source: 'user' }] } })
+    expect(journalOf(changed.model).edit).toMatchObject({ saving: true })
+    // One record at a time.
+    expect(run(changed.model, { type: 'journal/edit', id: 's-2' }).model).toBe(changed.model)
+    const stored = { ...SUMMARY, title: 'Інша назва', edited_at: '2026-10-08T10:00:00Z' }
+    const ok = run(changed.model, { type: 'journal/patch-ok', req: fx.req, summary: stored })
+    expect(journalOf(ok.model)).toMatchObject({ edit: null, notice: { kind: 'saved' } })
+    expect(journalOf(ok.model).list?.items[0]).toEqual(stored)
+    // The week and the themes again; the page's diary changes in place (no GET, no window without names).
+    expect(types(ok.effects)).toEqual(['journal-week', 'journal-tags'])
+    expect(ok.model.ctx.diary).toEqual({ status: 'ok', value: { items: [stored, DIARY.items[1]], nextCursor: null } })
+  })
+
+  test('PATCH errors: a 422 lands on its field; 404 drops the record; 403 consent_required from «Збережено» resumes the same PATCH', () => {
+    const fromSaved = opened({ ...booted(), state: { s: 'saved', summary: SUMMARY } }).model
+    const edit = run(fromSaved, { type: 'journal/edit', id: 's-1' })
+    const form = journalOf(edit.model).edit!.form
+    const save = run(edit.model, { type: 'journal/edit-update', form: { ...form, bullets: ['', 'друга', 'нова третя'] } }, { type: 'journal/edit-save' })
+    const fx = patchFx(save.effects)
+    expect(fx.body.bullets).toEqual(['друга', 'нова третя'])
+    const invalid = run(save.model, { type: 'journal/patch-fail', req: fx.req, error: apiError(422, 'validation_error', { fields: ['bullets.1'] }) })
+    expect(journalOf(invalid.model).edit).toMatchObject({ saving: false, error: null, issues: [{ field: 'b2', reason: 'bullet-invalid' }] })
+    const gone = run(save.model, { type: 'journal/patch-fail', req: fx.req, error: apiError(404, 'not_found') })
+    expect(journalOf(gone.model)).toMatchObject({ edit: null, notice: { kind: 'gone' } })
+    expect(journalOf(gone.model).list?.items.map((i) => i.id)).toEqual(['s-2'])
+
+    const resume = run(save.model, { type: 'journal/patch-fail', req: fx.req, error: apiError(403, 'consent_required', { missing: ['data_processing', 'age_18'] }) })
+    expect(resume.model.state).toMatchObject({ s: 'consent', mode: 'resume', session: null, resume: { kind: 'patch' } })
+    expect(resume.effects).toEqual([{ type: 'consents', purpose: 'fresh' }])
+    const fresh = run(resume.model, { type: 'consents/ok', purpose: 'fresh', consents: { ...CONSENTS_OK, missing: ['data_processing', 'age_18'] } })
+    const agree = run(fresh.model, { type: 'consent/agree', checked: [...KINDS] })
+    const granted = run(agree.model, { type: 'grant/ok', consents: CONSENTS_OK })
+    expect(journalOf(granted.model)).toMatchObject({ back: null, edit: { saving: true } })
+    expect(patchFx(granted.effects).body).toEqual(fx.body)
+    expect(run(save.model, { type: 'journal/patch-fail', req: fx.req, error: apiError(401, 'unauthenticated') }).model.state.s).toBe('signed-out')
+  })
+
+  test('delete: a confirm that names the record, one DELETE, the record gone; a 404 is gone too', () => {
+    const { model } = opened()
+    const ask = run(model, { type: 'confirm/open', kind: 'delete-summary', summary: 's-2' })
+    expect(ask.model.overlay).toEqual([{ o: 'confirm', kind: 'delete-summary', revoke: null, leaveTo: null, back: false, summary: 's-2' }])
+    const accepted = run(ask.model, { type: 'confirm/accept' })
+    expect(accepted.model.overlay).toEqual([])
+    expect(accepted.effects).toEqual([{ type: 'delete-summary', id: 's-2' }])
+    expect(journalOf(accepted.model).deleting).toBe('s-2')
+    expect(run(accepted.model, { type: 'confirm/open', kind: 'delete-summary', summary: 's-1' }).model.overlay).toEqual([])
+    const done = run(accepted.model, { type: 'journal/delete-ok', id: 's-2' })
+    expect(journalOf(done.model)).toMatchObject({ deleting: null, notice: { kind: 'deleted' } })
+    expect(journalOf(done.model).list?.items.map((i) => i.id)).toEqual(['s-1'])
+    expect(types(done.effects)).toEqual(['journal-week', 'journal-tags'])
+    const missing = run(accepted.model, { type: 'journal/delete-fail', id: 's-2', error: apiError(404, 'not_found') })
+    expect(journalOf(missing.model).list?.items.map((i) => i.id)).toEqual(['s-1'])
+    const failed = run(accepted.model, { type: 'journal/delete-fail', id: 's-2', error: apiError(0, 'network') })
+    expect(journalOf(failed.model)).toMatchObject({ deleting: null, notice: { kind: 'delete-failed', error: { code: 'network' } } })
+  })
+
+  test('«Повернутися до цього»: a revisit conversation with that one record; over a conversation under way, a confirm first', () => {
+    const { model } = opened()
+    const go = run(model, { type: 'journal/revisit', id: 's-2' })
+    const c = chatOf(go.model)
+    expect(c.session).toMatchObject({ scenario: 'revisit', revisitIds: ['s-2'] })
+    expect(go.effects).toEqual([])
+    const sent = run(go.model, { type: 'chat/send', text: 'Повертаюся' })
+    expect(turnEffect(sent.effects).body.revisit_summary_ids).toEqual(['s-2'])
+
+    const talk = opened(answered(booted())).model
+    const ask = run(talk, { type: 'journal/revisit', id: 's-1' })
+    expect(ask.model.overlay).toEqual([{ o: 'confirm', kind: 'revisit-restart', revoke: null, leaveTo: null, back: false, summary: 's-1' }])
+    const replaced = run(ask.model, { type: 'confirm/accept' })
+    expect(chatOf(replaced.model).session).toMatchObject({ scenario: 'revisit', revisitIds: ['s-1'] })
+    expect(chatOf(replaced.model).session.messages).toHaveLength(1)
+    expect(types(replaced.effects)).toEqual(['composer/clear', 'announcer/clear'])
+    // Without the revisit scenario (GET /scenarios failed) there is nothing to go back with.
+    const onlyFree = opened(run(INITIAL_MODEL, { type: 'boot', search: '' }, { type: 'me/ok', purpose: 'boot', me: ME }, { type: 'consents/ok', purpose: 'boot', consents: CONSENTS_OK }, { type: 'scenarios/fail', error: apiError(502, 'upstream_unavailable') }).model).model
+    expect(run(onlyFree, { type: 'journal/revisit', id: 's-1' }).model).toBe(onlyFree)
+  })
+
+  test('an edit typed and not saved: every way off the page asks «Скасувати зміни?» first; unchanged, the page just goes', () => {
+    const { model } = opened()
+    const editing = run(model, { type: 'journal/edit', id: 's-1' }).model
+    const form = journalOf(editing).edit!.form
+    // Opened, nothing typed: nothing to lose, no question.
+    expect(editUnsaved(editing.state)).toBe(false)
+    expect(run(editing, { type: 'confirm/open', kind: 'discard-edit' }).model.overlay).toEqual([])
+    expect(run(editing, { type: 'journal/back' }).model.state.s).toBe('chat')
+    const typed = run(editing, { type: 'journal/edit-update', form: { ...form, title: 'Синтетична нова назва' } }).model
+    expect(editUnsaved(typed.state)).toBe(true)
+    // A field emptied (it fails the check) is a change too.
+    expect(editUnsaved(run(editing, { type: 'journal/edit-update', form: { ...form, title: ' ' } }).model.state)).toBe(true)
+
+    // «До розмови» / «Нова розмова».
+    const ask = run(typed, { type: 'journal/back' })
+    expect(ask.model.overlay).toEqual([{ o: 'confirm', kind: 'discard-edit', revoke: null, leaveTo: null, back: false }])
+    expect(ask.effects).toEqual([])
+    // «Редагувати далі»: the form and what was typed stay.
+    expect(journalOf(run(ask.model, { type: 'overlay/close' }).model).edit?.form.title).toBe('Синтетична нова назва')
+    // «Скасувати зміни»: the edit goes, then the way off the page — no PATCH.
+    const gone = run(ask.model, { type: 'confirm/accept' })
+    expect(gone.model.state.s).toBe('chat')
+    expect(gone.model.overlay).toEqual([])
+    expect(types(gone.effects)).not.toContain('patch-summary')
+
+    // «Повернутися до цього» carries its record through the question.
+    const revisit = run(typed, { type: 'journal/revisit', id: 's-2' })
+    expect(revisit.model.overlay).toEqual([{ o: 'confirm', kind: 'discard-edit', revoke: null, leaveTo: null, back: false, summary: 's-2' }])
+    expect(chatOf(run(revisit.model, { type: 'confirm/accept' }).model).session).toMatchObject({ scenario: 'revisit', revisitIds: ['s-2'] })
+
+    // The wordmark: home after the answer.
+    const home = run(typed, { type: 'confirm/open', kind: 'discard-edit', leaveTo: 'home' })
+    expect(home.model.overlay).toEqual([{ o: 'confirm', kind: 'discard-edit', revoke: null, leaveTo: 'home', back: false }])
+    expect(run(home.model, { type: 'confirm/accept' }).effects).toEqual([{ type: 'navigate', href: '/' }])
+    // With a conversation under the diary, its own question follows instead.
+    const under = opened(answered(booted())).model
+    const underEditing = run(under, { type: 'journal/edit', id: 's-1' }).model
+    const underTyped = run(underEditing, { type: 'journal/edit-update', form: { ...form, title: 'Синтетична нова назва' } }).model
+    const homeUnder = run(underTyped, { type: 'confirm/open', kind: 'discard-edit', leaveTo: 'home' }, { type: 'confirm/accept' })
+    expect(homeUnder.model.overlay).toEqual([{ o: 'confirm', kind: 'leave', revoke: null, leaveTo: 'home', back: false }])
+    expect(homeUnder.effects).toEqual([])
+
+    // «Вийти» asks too, though no conversation is under the diary.
+    expect(leaveGuard(typed.state)).toBe(false)
+    expect(run(typed, { type: 'account/logout' }).model.overlay.at(-1)).toMatchObject({ o: 'confirm', kind: 'logout' })
+    expect(types(run(editing, { type: 'account/logout' }).effects)).toContain('logout')
+  })
+
+  test('a 401 on the diary ends the session with the conversation kept; answers after leaving change nothing', () => {
+    const talk = answered(booted(), 'ЗБЕРЕЖЕНА-РОЗМОВА')
+    const open = run(talk, { type: 'journal/open', tz: TZ })
+    const expired = run(open.model, { type: 'journal/list-fail', req: listFx(open.effects).req, error: apiError(401, 'unauthenticated') })
+    expect(expired.model.state).toMatchObject({ s: 'session-expired', stale: { messages: chatOf(talk).session.messages } })
+    const back = run(open.model, { type: 'journal/back' })
+    expect(run(back.model, { type: 'journal/list-ok', req: listFx(open.effects).req, diary: DIARY }).model).toBe(back.model)
+  })
+
+  test('an edit keeps its record through a search, a theme and a filter reset: the form never loses its row', () => {
+    const { model } = opened()
+    const edit = run(model, { type: 'journal/edit', id: 's-1' })
+    const search = run(edit.model, { type: 'journal/search', q: 'інший' })
+    // The search finds only s-2: the record being edited stays, first, with its form.
+    const found = run(search.model, { type: 'journal/list-ok', req: listFx(search.effects).req, diary: { items: [DIARY.items[1]!], nextCursor: 'c2' } })
+    expect(journalOf(found.model).list?.items.map((i) => i.id)).toEqual(['s-1', 's-2'])
+    expect(journalOf(found.model).edit?.form.id).toBe('s-1')
+    // «Показати ще» does not repeat it.
+    const more = run(found.model, { type: 'journal/more' })
+    const page2 = run(more.model, { type: 'journal/list-ok', req: listFx(more.effects).req, diary: { items: [SUMMARY], nextCursor: null } })
+    expect(journalOf(page2.model).list?.items.map((i) => i.id)).toEqual(['s-1', 's-2'])
+    // A theme, then the theme gone (its last record went): the record under edit stays each time.
+    const themed = run(found.model, { type: 'journal/tag', id: 'tg-1' })
+    const themePage = run(themed.model, { type: 'journal/list-ok', req: listFx(themed.effects).req, diary: { items: [], nextCursor: null } })
+    expect(journalOf(themePage.model).list?.items.map((i) => i.id)).toEqual(['s-1'])
+    const goneTheme = run(themePage.model, { type: 'journal/tags-ok', req: journalOf(themePage.model).tagsReq, tags: [] })
+    expect(journalOf(goneTheme.model).tag).toBeNull()
+    const reset = run(goneTheme.model, { type: 'journal/list-ok', req: listFx(goneTheme.effects).req, diary: { items: [DIARY.items[1]!], nextCursor: null } })
+    expect(journalOf(reset.model).list?.items.map((i) => i.id)).toEqual(['s-1', 's-2'])
+    // «Зберегти» still finds it: what was typed goes out.
+    const typed = run(reset.model, { type: 'journal/edit-update', form: { ...journalOf(reset.model).edit!.form, title: 'Набране під час пошуку' } }, { type: 'journal/edit-save' })
+    expect(patchFx(typed.effects)).toMatchObject({ id: 's-1', body: { title: 'Набране під час пошуку' } })
+    // Closed, it is a record like any other: the next search leaves it out.
+    const closed = run(found.model, { type: 'journal/edit-cancel' }, { type: 'journal/search', q: 'інший запис' })
+    const after = run(closed.model, { type: 'journal/list-ok', req: listFx(closed.effects).req, diary: { items: [DIARY.items[1]!], nextCursor: null } })
+    expect(journalOf(after.model).list?.items.map((i) => i.id)).toEqual(['s-2'])
+  })
+
+  test('theme answers are stamped: an older GET /tags that lands last changes nothing', () => {
+    const { model } = opened()
+    const edit = run(model, { type: 'journal/edit', id: 's-1' })
+    const form = journalOf(edit.model).edit!.form
+    const save = run(edit.model, { type: 'journal/edit-update', form: { ...form, tags: 'сон' } }, { type: 'journal/edit-save' })
+    const patched = run(save.model, { type: 'journal/patch-ok', req: patchFx(save.effects).req, summary: { ...SUMMARY, tags: [{ id: 'tg-2', name: 'сон', source: 'user' }] } })
+    const first = tagsFx(patched.effects)
+    const removed = run(patched.model, { type: 'confirm/open', kind: 'delete-summary', summary: 's-2' }, { type: 'confirm/accept' }, { type: 'journal/delete-ok', id: 's-2' })
+    const second = tagsFx(removed.effects)
+    expect(second.req).not.toBe(first.req)
+    const latest = run(removed.model, { type: 'journal/tags-ok', req: second.req, tags: [{ id: 'tg-2', name: 'сон', count: 1 }] })
+    // The PATCH's answer, older, comes last: «день» does not come back.
+    const stale = run(latest.model, { type: 'journal/tags-ok', req: first.req, tags: [{ id: 'tg-1', name: 'день', count: 1 }, { id: 'tg-2', name: 'сон', count: 1 }] })
+    expect(stale.model).toBe(latest.model)
+    expect(run(latest.model, { type: 'journal/tags-fail', req: first.req, error: apiError(0, 'network') }).model).toBe(latest.model)
+  })
+
+  test('after a PATCH or a DELETE the page’s diary changes in place: no window where it is loading, no extra GET', () => {
+    const { model } = opened()
+    const edit = run(model, { type: 'journal/edit', id: 's-2' })
+    const form = journalOf(edit.model).edit!.form
+    const save = run(edit.model, { type: 'journal/edit-update', form: { ...form, title: 'Нова назва' } }, { type: 'journal/edit-save' })
+    const stored = { ...DIARY.items[1]!, title: 'Нова назва', edited_at: '2026-10-08T10:00:00Z' }
+    const ok = run(save.model, { type: 'journal/patch-ok', req: patchFx(save.effects).req, summary: stored })
+    expect(types(ok.effects)).toEqual(['journal-week', 'journal-tags'])
+    expect(ok.model.ctx.diary).toEqual({ status: 'ok', value: { items: [SUMMARY, stored], nextCursor: null } })
+    const removed = run(ok.model, { type: 'confirm/open', kind: 'delete-summary', summary: 's-1' }, { type: 'confirm/accept' }, { type: 'journal/delete-ok', id: 's-1' })
+    expect(types(removed.effects)).toEqual(['delete-summary', 'journal-week', 'journal-tags'])
+    expect(removed.model.ctx.diary).toEqual({ status: 'ok', value: { items: [stored], nextCursor: null } })
+    // «Повернутися до цього» right after: the name is there at once.
+    const go = run(removed.model, { type: 'journal/revisit', id: 's-2' })
+    expect(go.model.ctx.diary.status === 'ok' && go.model.ctx.diary.value.items.map((i) => i.title)).toEqual(['Нова назва'])
+  })
+
+  test('a record taken back from the diary keeps its name when the picker loads a first page without it', () => {
+    const { model } = opened()
+    const later: SummaryOut = { ...SUMMARY, id: 's-9', title: 'Запис із другої сторінки' }
+    const search = run(model, { type: 'journal/search', q: 'другої' })
+    const found = run(search.model, { type: 'journal/list-ok', req: listFx(search.effects).req, diary: { items: [later], nextCursor: null } })
+    const go = run(found.model, { type: 'journal/revisit', id: 's-9' })
+    expect(chatOf(go.model).session.revisitIds).toEqual(['s-9'])
+    const names = (m: Model) => (m.ctx.diary.status === 'ok' ? m.ctx.diary.value.items.map((i) => i.id) : [])
+    expect(names(go.model)).toContain('s-9')
+    // «Змінити»: the picker's first page replaces the page's diary — the chosen record stays in it.
+    const pickerOpen = run(go.model, { type: 'revisit/open' })
+    const page = run(pickerOpen.model, { type: 'revisit/list-ok', purpose: 'pick', q: '', cursor: null, diary: DIARY })
+    expect(names(page.model)).toEqual(['s-1', 's-2', 's-9'])
+    // Chosen in the picker from a search, a record off the first page is named too.
+    const picked = run(page.model, { type: 'revisit/search', q: 'далеко' })
+    const far: SummaryOut = { ...SUMMARY, id: 's-12', title: 'Далекий запис' }
+    const farPage = run(picked.model, { type: 'revisit/list-ok', purpose: 'pick', q: 'далеко', cursor: null, diary: { items: [far], nextCursor: null } })
+    const chosen = run(farPage.model, { type: 'revisit/toggle', id: 's-12' }, { type: 'revisit/confirm' })
+    expect(chatOf(chosen.model).session.revisitIds).toEqual(['s-9', 's-12'])
+    expect(names(chosen.model)).toEqual(['s-1', 's-2', 's-9', 's-12'])
+  })
+
+  test('a page emptied by deletes with more records behind it asks for the first page again', () => {
+    const open = run(booted(), { type: 'journal/open', tz: TZ })
+    const one = run(open.model, { type: 'journal/list-ok', req: listFx(open.effects).req, diary: { items: [SUMMARY], nextCursor: 'c2' } })
+    const removed = run(one.model, { type: 'confirm/open', kind: 'delete-summary', summary: 's-1' }, { type: 'confirm/accept' }, { type: 'journal/delete-ok', id: 's-1' })
+    expect(listFx(removed.effects)).toMatchObject({ cursor: null, q: '', tag: null })
+    expect(journalOf(removed.model)).toMatchObject({ loading: true, notice: { kind: 'deleted' } })
+  })
+
+  test('«До розмови» waits while a change is on its way: its answer is the page’s to show', () => {
+    const talk = opened(answered(booted())).model
+    const edit = run(talk, { type: 'journal/edit', id: 's-1' })
+    const form = journalOf(edit.model).edit!.form
+    const save = run(edit.model, { type: 'journal/edit-update', form: { ...form, title: 'Інша' } }, { type: 'journal/edit-save' })
+    expect(run(save.model, { type: 'journal/back' }).model).toBe(save.model)
+    const deleting = run(talk, { type: 'confirm/open', kind: 'delete-summary', summary: 's-2' }, { type: 'confirm/accept' })
+    expect(run(deleting.model, { type: 'journal/back' }).model).toBe(deleting.model)
+    expect(chatOf(run(talk, { type: 'journal/back' }).model).session).toEqual(chatOf(answered(booted())).session)
+    // «Повернутися до цього» leaves the page too: it waits the same way, its confirm does not open.
+    expect(journalBusy(journalOf(save.model)) && journalBusy(journalOf(deleting.model)) && !journalBusy(journalOf(talk))).toBe(true)
+    expect(run(save.model, { type: 'journal/revisit', id: 's-2' }).model).toBe(save.model)
+    expect(run(deleting.model, { type: 'journal/revisit', id: 's-1' }).model).toBe(deleting.model)
+    const fromSaved = opened({ ...booted(), state: { s: 'saved', summary: SUMMARY } }).model
+    const busy = run(fromSaved, { type: 'confirm/open', kind: 'delete-summary', summary: 's-2' }, { type: 'confirm/accept' })
+    expect(run(busy.model, { type: 'journal/revisit', id: 's-1' }).model).toBe(busy.model)
+    // The answer lands: the way out is open again.
+    const done = run(deleting.model, { type: 'journal/delete-ok', id: 's-2' })
+    expect(run(done.model, { type: 'journal/back' }).model.state.s).toBe('chat')
+  })
+
+  test('a DELETE on its way when a PATCH asks for consent: back from it, nothing waits for its lost answer; a going record is not edited', () => {
+    const talk = opened(answered(booted())).model
+    const deleting = run(talk, { type: 'confirm/open', kind: 'delete-summary', summary: 's-2' }, { type: 'confirm/accept' })
+    expect(run(deleting.model, { type: 'journal/edit', id: 's-2' }).model).toBe(deleting.model)
+    const edit = run(deleting.model, { type: 'journal/edit', id: 's-1' })
+    const form = journalOf(edit.model).edit!.form
+    const save = run(edit.model, { type: 'journal/edit-update', form: { ...form, title: 'Інша' } }, { type: 'journal/edit-save' })
+    const resume = run(save.model, { type: 'journal/patch-fail', req: patchFx(save.effects).req, error: apiError(403, 'consent_required', { missing: ['data_processing'] }) })
+    const fresh = run(resume.model, { type: 'consents/ok', purpose: 'fresh', consents: { ...CONSENTS_OK, missing: ['data_processing'] } })
+    const granted = run(fresh.model, { type: 'consent/agree', checked: [...KINDS] }, { type: 'grant/ok', consents: CONSENTS_OK })
+    expect(journalOf(granted.model)).toMatchObject({ deleting: null, edit: { saving: true } })
+    const done = run(granted.model, { type: 'journal/patch-ok', req: patchFx(granted.effects).req, summary: { ...SUMMARY, title: 'Інша' } })
+    expect(journalBusy(journalOf(done.model))).toBe(false)
+    expect(chatOf(run(done.model, { type: 'journal/back' }).model).session.messages).toHaveLength(3)
+  })
+
+  test('the page’s diary keeps chosen names through the picker: another search, a 404’s first page; a first page still on its way is dropped', () => {
+    const go = run(opened().model, { type: 'journal/revisit', id: 's-1' })
+    const names = (m: Model) => (m.ctx.diary.status === 'ok' ? m.ctx.diary.value.items.map((i) => i.id) : [])
+    const open = run(go.model, { type: 'revisit/open' }, { type: 'revisit/list-ok', purpose: 'pick', q: '', cursor: null, diary: DIARY })
+    // Chosen from one search, then another search replaces that list: the name is already kept.
+    const far: SummaryOut = { ...SUMMARY, id: 's-12', title: 'Далекий запис' }
+    const one = run(open.model, { type: 'revisit/search', q: 'далеко' })
+    const found = run(one.model, { type: 'revisit/list-ok', purpose: 'pick', q: 'далеко', cursor: null, diary: { items: [far], nextCursor: null } }, { type: 'revisit/toggle', id: 's-12' })
+    const other = run(found.model, { type: 'revisit/search', q: 'інше' })
+    const otherList = run(other.model, { type: 'revisit/list-ok', purpose: 'pick', q: 'інше', cursor: null, diary: { items: [], nextCursor: null } }, { type: 'revisit/confirm' })
+    expect(chatOf(otherList.model).session.revisitIds).toEqual(['s-1', 's-12'])
+    expect(names(otherList.model)).toEqual(['s-1', 's-2', 's-12'])
+    // A 404: one of the chosen is gone — the first page is the diary as the server has it.
+    const gone = run(otherList.model, { type: 'revisit/list-ok', purpose: 'pick-404', q: '', cursor: null, diary: { items: [DIARY.items[1]!], nextCursor: null } })
+    expect(names(gone.model)).toEqual(['s-2'])
+
+    // Taken back while the page's first page is still on its way: the record alone, the late page dropped.
+    const loading: Model = { ...opened().model, ctx: { ...opened().model.ctx, diary: { status: 'loading' } } }
+    const early = run(loading, { type: 'journal/search', q: 'другої' })
+    const later: SummaryOut = { ...SUMMARY, id: 's-9', title: 'Запис із другої сторінки' }
+    const taken = run(early.model, { type: 'journal/list-ok', req: listFx(early.effects).req, diary: { items: [later], nextCursor: null } }, { type: 'journal/revisit', id: 's-9' })
+    expect(names(taken.model)).toEqual(['s-9'])
+    expect(names(run(taken.model, { type: 'diary/ok', diary: DIARY }).model)).toEqual(['s-9'])
+  })
+
+  test('a 401 over an unsaved edit of a record: the next screen says the changes did not reach the diary — session-expired under a conversation, the sign-in notice without one', () => {
+    /** The diary opened from `from`, s-1 edited and «Зберегти» pressed: the PATCH on its way. */
+    const saving = (from: Model) => {
+      const edit = run(opened(from).model, { type: 'journal/edit', id: 's-1' })
+      const form = journalOf(edit.model).edit!.form
+      return run(edit.model, { type: 'journal/edit-update', form: { ...form, title: 'Набрана назва' } }, { type: 'journal/edit-save' })
+    }
+    const unauthorized = apiError(401, 'unauthenticated')
+    const talk = answered(booted(), 'РОЗМОВА-ПІД-ЩОДЕННИКОМ')
+    const underTalk = saving(talk)
+    const expired = run(underTalk.model, { type: 'journal/patch-fail', req: patchFx(underTalk.effects).req, error: unauthorized }).model
+    expect(expired.state).toMatchObject({ s: 'session-expired', editLost: true, draft: null, stale: { messages: chatOf(talk).session.messages } })
+    // From «Розмову завершено» / «Збережено» there is no conversation to keep: the sign-in screen says it.
+    for (const from of [{ s: 'ended' }, { s: 'saved', summary: SUMMARY }] as const) {
+      const fromEnd = saving({ ...booted(), state: from })
+      const out = run(fromEnd.model, { type: 'journal/patch-fail', req: patchFx(fromEnd.effects).req, error: unauthorized })
+      expect(out.model.state).toEqual({ s: 'signed-out', variant: 'fresh', notice: { kind: 'edit-lost' } })
+      expect(types(out.effects)).toEqual(['abort', 'announcer/clear'])
+    }
+    // Any 401 on the diary while the edit is typed and not saved says the same (a search's GET).
+    const typed = run(opened({ ...booted(), state: { s: 'ended' } }).model, { type: 'journal/edit', id: 's-1' })
+    const form = journalOf(typed.model).edit!.form
+    const search = run(typed.model, { type: 'journal/edit-update', form: { ...form, title: 'Ще не збережено' } }, { type: 'journal/search', q: 'сон' })
+    expect(run(search.model, { type: 'journal/list-fail', req: listFx(search.effects).req, error: unauthorized }).model.state).toMatchObject({ s: 'signed-out', notice: { kind: 'edit-lost' } })
+    // Nothing typed (a form opened and unchanged, or none): nothing to say.
+    const untouched = run(typed.model, { type: 'journal/search', q: 'сон' })
+    expect(run(untouched.model, { type: 'journal/list-fail', req: listFx(untouched.effects).req, error: unauthorized }).model.state).toEqual({ s: 'signed-out', variant: 'fresh', notice: null })
+    const open = run(talk, { type: 'journal/open', tz: TZ })
+    expect(run(open.model, { type: 'journal/list-fail', req: listFx(open.effects).req, error: unauthorized }).model.state).toMatchObject({ s: 'session-expired', editLost: false })
+    // The consent a PATCH asked for holds the edit: a 401 there (its GET or its POST) says the same.
+    const consentFor = (from: Model) => {
+      const pending = saving(from)
+      return run(pending.model, { type: 'journal/patch-fail', req: patchFx(pending.effects).req, error: apiError(403, 'consent_required', { missing: ['data_processing'] }) }).model
+    }
+    const resumeEnded = consentFor({ ...booted(), state: { s: 'ended' } })
+    expect(resumeEnded.state).toMatchObject({ s: 'consent', mode: 'resume', resume: { kind: 'patch' } })
+    expect(run(resumeEnded, { type: 'consents/fail', purpose: 'fresh', error: unauthorized }).model.state).toEqual({ s: 'signed-out', variant: 'fresh', notice: { kind: 'edit-lost' } })
+    const resumeTalk = run(consentFor(talk), { type: 'consents/ok', purpose: 'fresh', consents: { ...CONSENTS_OK, missing: ['data_processing'] } }, { type: 'consent/agree', checked: [...KINDS] }).model
+    expect(run(resumeTalk, { type: 'grant/fail', error: unauthorized }).model.state).toMatchObject({ s: 'session-expired', editLost: true })
+    // A consent for the conversation (a turn) has no edit to speak of.
+    const turnConsent = run(talk, { type: 'chat/send', text: 'Ще.' })
+    const asked = run(turnConsent.model, { type: 'turn/outcome', id: turnEffect(turnConsent.effects).id, now: NOW, outcome: { kind: 'http', error: apiError(403, 'consent_required', { missing: ['llm_transfer'] }) } }).model
+    expect(run(asked, { type: 'consents/fail', purpose: 'fresh', error: unauthorized }).model.state).toMatchObject({ s: 'session-expired', editLost: false })
+  })
+
+  test('the record a revisit goes back to leaves the diary: under way, «До розмови» brings the block «Записів… уже немає»; not begun, the record is no longer chosen', () => {
+    /** A revisit with s-1 chosen, from a page whose diary is `items`; the diary opened over it. */
+    const revisitWith = (items: readonly SummaryOut[], begun: boolean) => {
+      const base = booted()
+      const page: Model = { ...base, ctx: { ...base.ctx, diary: { status: 'ok', value: { items, nextCursor: null } } } }
+      const chosen = run(
+        page,
+        { type: 'chat/scenario', id: 'revisit' },
+        { type: 'revisit/open' },
+        { type: 'revisit/list-ok', purpose: 'pick', q: '', cursor: null, diary: { items, nextCursor: null } },
+        { type: 'revisit/toggle', id: 's-1' },
+        { type: 'revisit/confirm' },
+      ).model
+      const talk = begun ? answered(chosen, 'Повертаюся до теми.') : chosen
+      const open = run(talk, { type: 'journal/open', tz: TZ })
+      return run(open.model, { type: 'journal/list-ok', req: listFx(open.effects).req, diary: { items, nextCursor: null } }).model
+    }
+    const remove = (m: Model, id: string) => run(m, { type: 'confirm/open', kind: 'delete-summary', summary: id }, { type: 'confirm/accept' }, { type: 'journal/delete-ok', id }).model
+
+    // Under way, the only record deleted: the block, not a page without a field.
+    const emptied = run(remove(revisitWith([SUMMARY], true), 's-1'), { type: 'journal/back' }).model
+    expect(emptied.ctx.diary).toEqual({ status: 'ok', value: { items: [], nextCursor: null } })
+    expect(chatOf(emptied).notice).toEqual({ kind: 'revisit-gone' })
+    expect(canSendNow(chatOf(emptied))).toBe(false)
+    // The same when a PATCH finds it gone (404), and when its DELETE answers 404.
+    const editing = run(revisitWith([SUMMARY], true), { type: 'journal/edit', id: 's-1' })
+    const form = journalOf(editing.model).edit!.form
+    const save = run(editing.model, { type: 'journal/edit-update', form: { ...form, title: 'Інша назва' } }, { type: 'journal/edit-save' })
+    const patch404 = run(save.model, { type: 'journal/patch-fail', req: patchFx(save.effects).req, error: apiError(404, 'not_found') }, { type: 'journal/back' }).model
+    expect(chatOf(patch404).notice).toEqual({ kind: 'revisit-gone' })
+    const delete404 = run(
+      revisitWith([SUMMARY], true),
+      { type: 'confirm/open', kind: 'delete-summary', summary: 's-1' },
+      { type: 'confirm/accept' },
+      { type: 'journal/delete-fail', id: 's-1', error: apiError(404, 'not_found') },
+      { type: 'journal/back' },
+    ).model
+    expect(chatOf(delete404).notice).toEqual({ kind: 'revisit-gone' })
+    // Under way with records left: the conversation as it was (the next turn's 404 opens the picker).
+    const left = run(remove(revisitWith(DIARY.items, true), 's-1'), { type: 'journal/back' }).model
+    expect(chatOf(left)).toMatchObject({ notice: null, session: { revisitIds: ['s-1'] } })
+
+    // Not begun: the deleted record is no longer chosen, and no block covers the head that explains.
+    const notBegun = run(remove(revisitWith(DIARY.items, false), 's-1'), { type: 'journal/back' }).model
+    expect(chatOf(notBegun)).toMatchObject({ notice: null, session: { scenario: 'revisit', revisitIds: [] } })
+    const notBegunEmpty = run(remove(revisitWith([SUMMARY], false), 's-1'), { type: 'journal/back' }).model
+    expect(chatOf(notBegunEmpty)).toMatchObject({ notice: null, session: { scenario: 'revisit', revisitIds: [] } })
+    // Another record deleted: the chosen one stays chosen.
+    const other = run(remove(revisitWith(DIARY.items, false), 's-2'), { type: 'journal/back' }).model
+    expect(chatOf(other).session.revisitIds).toEqual(['s-1'])
+  })
+
+  test('a late first page of the record picker changes nothing once the picker is closed: a chosen name stays, a deleted record stays gone', () => {
+    const names = (m: Model) => (m.ctx.diary.status === 'ok' ? m.ctx.diary.value.items.map((i) => i.id) : [])
+    // s-12 chosen from a search (it is not on the first page), then «Змінити» and Esc before the
+    // picker's first page came; the diary opens.
+    const far: SummaryOut = { ...SUMMARY, id: 's-12', title: 'Далекий запис' }
+    const picked = run(
+      booted(),
+      { type: 'chat/scenario', id: 'revisit' },
+      { type: 'revisit/open' },
+      { type: 'revisit/list-ok', purpose: 'pick', q: '', cursor: null, diary: DIARY },
+      { type: 'revisit/search', q: 'далеко' },
+      { type: 'revisit/list-ok', purpose: 'pick', q: 'далеко', cursor: null, diary: { items: [far], nextCursor: null } },
+      { type: 'revisit/toggle', id: 's-12' },
+      { type: 'revisit/confirm' },
+    ).model
+    expect(names(picked)).toEqual(['s-1', 's-2', 's-12'])
+    const reopened = run(picked, { type: 'revisit/open' })
+    expect(reopened.effects).toEqual([{ type: 'pick-list', purpose: 'pick', q: '', cursor: null }])
+    const opening = run(reopened.model, { type: 'overlay/close' }, { type: 'journal/open', tz: TZ })
+    const open = run(opening.model, { type: 'journal/list-ok', req: listFx(opening.effects).req, diary: DIARY })
+    const late: Action = { type: 'revisit/list-ok', purpose: 'pick', q: '', cursor: null, diary: DIARY }
+    const onDiary = run(open.model, late)
+    expect(names(onDiary.model)).toEqual(['s-1', 's-2', 's-12'])
+    const back = run(onDiary.model, { type: 'journal/back' }).model
+    expect(chatOf(back).session.revisitIds).toEqual(['s-12'])
+    expect(names(back)).toContain('s-12')
+    // Back in the conversation with the picker closed, the same late page changes nothing either.
+    expect(run(back, late).model).toBe(back)
+    // A record deleted in the diary meanwhile does not come back with the late page.
+    const deleted = run(open.model, { type: 'confirm/open', kind: 'delete-summary', summary: 's-2' }, { type: 'confirm/accept' }, { type: 'journal/delete-ok', id: 's-2' })
+    expect(names(deleted.model)).toEqual(['s-1', 's-12'])
+    expect(names(run(deleted.model, late).model)).toEqual(['s-1', 's-12'])
+    // A 404's first page that lands on the diary does not replace it either.
+    expect(run(open.model, { type: 'revisit/list-ok', purpose: 'pick-404', q: '', cursor: null, diary: { items: [], nextCursor: null } }).model.ctx).toBe(open.model.ctx)
+  })
+
+  test('a failed refresh of the themes keeps the pills (a filter can still be taken off); a delete that empties the page’s diary asks it again', () => {
+    const { model } = opened()
+    const filtered = run(model, { type: 'journal/tag', id: 'tg-1' })
+    const page = run(filtered.model, { type: 'journal/list-ok', req: listFx(filtered.effects).req, diary: { items: [SUMMARY], nextCursor: null } })
+    const removed = run(page.model, { type: 'confirm/open', kind: 'delete-summary', summary: 's-2' }, { type: 'confirm/accept' }, { type: 'journal/delete-ok', id: 's-2' })
+    const failed = run(removed.model, { type: 'journal/tags-fail', req: journalOf(removed.model).tagsReq, error: apiError(0, 'network') })
+    expect(journalOf(failed.model)).toMatchObject({ tag: 'tg-1', tags: { status: 'ok' } })
+    // On the way in nothing was shown yet: a failure hides the group.
+    const open = run(booted(), { type: 'journal/open', tz: TZ })
+    expect(journalOf(run(open.model, { type: 'journal/tags-fail', req: journalOf(open.model).tagsReq, error: apiError(0, 'network') }).model).tags).toEqual({ status: 'failed' })
+
+    // The page's diary had one record and more behind it: deleted, it is asked for again.
+    const one: Model = { ...model, ctx: { ...model.ctx, diary: { status: 'ok', value: { items: [SUMMARY], nextCursor: 'c2' } } } }
+    const emptied = run(one, { type: 'confirm/open', kind: 'delete-summary', summary: 's-1' }, { type: 'confirm/accept' }, { type: 'journal/delete-ok', id: 's-1' })
+    expect(types(emptied.effects)).toEqual(['delete-summary', 'journal-week', 'journal-tags', 'diary'])
+    expect(emptied.model.ctx.diary).toEqual({ status: 'loading' })
+  })
+})
+
 test.describe('state: crisis and invariants', () => {
   function crisisModel() {
     const sent = run(booted(), { type: 'chat/send', text: 'Синтетична кризова фраза' })
@@ -2112,10 +3174,23 @@ test.describe('state: crisis and invariants', () => {
       { type: 'revisit/open' },
       { type: 'page/show', persisted: false },
       { type: 'page/left' },
+      { type: 'journal/open', tz: 'Europe/Kyiv' },
+      { type: 'journal/back' },
+      { type: 'journal/revisit', id: 's-1' },
+      { type: 'confirm/open', kind: 'delete-summary', summary: 's-1' },
+      { type: 'confirm/open', kind: 'revisit-restart', summary: 's-1' },
+      // The self-help tools (§3.13): no dialog and no timer open beside the contacts.
+      { type: 'overlay/open', overlay: 'breathe' },
+      { type: 'overlay/open', overlay: 'ground' },
+      { type: 'overlay/open', overlay: 'mood' },
+      { type: 'overlay/open', overlay: 'mood', when: 'after' },
+      { type: 'overlay/open', overlay: 'shelter' },
+      { type: 'mood/pick', word: 'спокій' },
     ]
     for (const action of actions) {
       const [next] = reduce(crisis, action)
       expect(next.state.s, action.type).toBe('crisis')
+      if (action.type === 'overlay/open' && action.overlay !== 'help' && action.overlay !== 'account') expect(next.overlay, action.overlay).toEqual([])
     }
     const fresh = run(crisis, { type: 'confirm/open', kind: 'new-after-crisis' }, { type: 'confirm/accept' })
     const c = chatOf(fresh.model)
@@ -2157,6 +3232,221 @@ test.describe('state: crisis and invariants', () => {
     for (const effect of all.effects) {
       if (effect.type === 'turn') continue
       expect(JSON.stringify(effect)).not.toContain('ПРИВАТНИЙ-ТЕКСТ')
+    }
+  })
+})
+
+// ── The self-help tools (spec §3.13) ─────────────────────────────────────────────────────────
+
+test.describe('state: the self-help tools', () => {
+  const crisisOutcome = (id: number): Action => ({
+    type: 'turn/outcome',
+    id,
+    now: NOW,
+    outcome: { kind: 'crisis', source: 'keyword', helplines: sanitizeHelplines(RAW_HELPLINES) },
+  })
+  /** The conversation (answered) through «Підсумувати» to the theses. */
+  function toReview(model: Model): Model {
+    const s = run(answered(model), { type: 'chat/summarize' })
+    const fx = s.effects.find((e): e is Extract<Effect, { type: 'summarize' }> => e.type === 'summarize')!
+    return run(s.model, { type: 'summarize/ok', id: fx.id, draft: { title: 'Розмова про день', bullets: ['перша', 'друга'], tags: ['день'] } }).model
+  }
+  const checkedIn = (model: Model, word: string): Model => run(model, { type: 'overlay/open', overlay: 'mood' }, { type: 'mood/pick', word }).model
+
+  test('a tool opens over nothing, stacks over «Якщо важко» and the shelter, asks the server nothing; never in the crisis or the boot', () => {
+    const m = booted()
+    for (const kind of TOOL_KINDS) {
+      const open = run(m, { type: 'overlay/open', overlay: kind })
+      expect(open.model.overlay, kind).toEqual([kind === 'mood' ? { o: 'mood', when: 'before' } : { o: kind }])
+      expect(open.effects, kind).toEqual([])
+      expect(topTool(open.model)?.o, kind).toBe(kind)
+      // The same tool again changes nothing.
+      expect(run(open.model, { type: 'overlay/open', overlay: kind }).model, kind).toBe(open.model)
+    }
+    // «Якщо важко» → «В укритті» → breathing: three deep, Esc gives back each one under it.
+    const deep = run(m, { type: 'overlay/open', overlay: 'help' }, { type: 'overlay/open', overlay: 'shelter' }, { type: 'overlay/open', overlay: 'breathe' })
+    expect(deep.model.overlay).toEqual([{ o: 'help' }, { o: 'shelter' }, { o: 'breathe' }])
+    expect(types(deep.effects)).toEqual(['helplines'])
+    expect(run(deep.model, { type: 'overlay/close' }).model.overlay).toEqual([{ o: 'help' }, { o: 'shelter' }])
+    expect(run(deep.model, { type: 'overlay/close' }, { type: 'overlay/close' }).model.overlay).toEqual([{ o: 'help' }])
+    // Over the shelter only breathing and grounding stack; anything over another tool replaces it.
+    const shelter = run(m, { type: 'overlay/open', overlay: 'shelter' }).model
+    expect(run(shelter, { type: 'overlay/open', overlay: 'ground' }).model.overlay).toEqual([{ o: 'shelter' }, { o: 'ground' }])
+    expect(run(shelter, { type: 'overlay/open', overlay: 'mood' }).model.overlay).toEqual([{ o: 'mood', when: 'before' }])
+    const breathing = run(m, { type: 'overlay/open', overlay: 'breathe' }).model
+    expect(run(breathing, { type: 'overlay/open', overlay: 'ground' }).model.overlay).toEqual([{ o: 'ground' }])
+    // Signed out: no session needed.
+    const out = run(INITIAL_MODEL, { type: 'boot', search: '' }, { type: 'me/fail', purpose: 'boot', error: apiError(401, 'unauthenticated') }).model
+    expect(out.state.s).toBe('signed-out')
+    expect(run(out, { type: 'overlay/open', overlay: 'ground' }).model.overlay).toEqual([{ o: 'ground' }])
+    // Booting: nothing yet.
+    expect(run(INITIAL_MODEL, { type: 'overlay/open', overlay: 'breathe' }).model).toBe(INITIAL_MODEL)
+    // The crisis: no dialog and no timer beside the contacts, not even from «Якщо важко» there.
+    const sent = run(m, { type: 'chat/send', text: 'Синтетична кризова фраза' })
+    const crisis = run(sent.model, crisisOutcome(turnEffect(sent.effects).id)).model
+    for (const kind of TOOL_KINDS) expect(run(crisis, { type: 'overlay/open', overlay: kind }).model, kind).toBe(crisis)
+    const help = run(crisis, { type: 'overlay/open', overlay: 'help' }).model
+    expect(run(help, { type: 'overlay/open', overlay: 'breathe' }).model.overlay).toEqual([{ o: 'help' }])
+  })
+
+  test('the crisis closes every tool in the step it comes, the stack under it too, and forgets the check-in', () => {
+    const before = checkedIn(booted(), 'напруга')
+    const sent = run(before, { type: 'chat/send', text: 'Синтетична кризова фраза' })
+    const { id } = turnEffect(sent.effects)
+    for (const stack of [['breathe'], ['ground'], ['mood'], ['shelter'], ['help', 'shelter', 'breathe'], ['shelter', 'ground']] as const) {
+      const open = run(sent.model, ...stack.map((overlay): Action => ({ type: 'overlay/open', overlay })))
+      expect(open.model.overlay.map((o) => o.o), stack.join(' → ')).toEqual([...stack])
+      const crisis = run(open.model, crisisOutcome(id)).model
+      expect(crisis.state.s).toBe('crisis')
+      expect(crisis.overlay, stack.join(' → ')).toEqual([])
+      expect(crisis.ctx.mood).toEqual(NO_MOOD)
+    }
+    // A 401 under a tool: session-expired, the tool closed (I6).
+    const tool = run(sent.model, { type: 'overlay/open', overlay: 'breathe' }).model
+    const expired = run(tool, { type: 'turn/outcome', id, now: NOW, outcome: { kind: 'http', error: apiError(401, 'unauthenticated') } }).model
+    expect(expired.state.s).toBe('session-expired')
+    expect(expired.overlay).toEqual([])
+  })
+
+  test('the check-in takes a word of the dictionary; the first stays; «А зараз?» only at the end with a first word; nothing carries it out', () => {
+    const m = booted()
+    expect(run(m, { type: 'mood/pick', word: 'спокій' }).model).toBe(m)
+    const open = run(m, { type: 'overlay/open', overlay: 'mood' }).model
+    // A word the page does not offer is not taken (and the check-in stays open).
+    expect(run(open, { type: 'mood/pick', word: 'синтетичне-слово' }).model).toBe(open)
+    const first = run(open, { type: 'mood/pick', word: 'неспокій' })
+    expect(first.model.ctx.mood).toEqual({ before: 'неспокій', after: null })
+    expect(first.model.overlay).toEqual([])
+    expect(first.effects).toEqual([])
+    // A check-in in the middle names a feeling; «спершу» stays the first word.
+    const again = checkedIn(answered(first.model), 'радість')
+    expect(again.ctx.mood).toEqual({ before: 'неспокій', after: null })
+    expect(again.overlay).toEqual([])
+    // «А зараз?» is the end's question: not in the conversation, not without a first word.
+    expect(run(again, { type: 'overlay/open', overlay: 'mood', when: 'after' }).model).toBe(again)
+    const noFirst = toReview(m)
+    expect(run(noFirst, { type: 'overlay/open', overlay: 'mood', when: 'after' }).model).toBe(noFirst)
+    // On the theses, «Збережено» and «Розмову завершено».
+    const review = toReview(first.model)
+    const after = run(review, { type: 'overlay/open', overlay: 'mood', when: 'after' })
+    expect(after.model.overlay).toEqual([{ o: 'mood', when: 'after' }])
+    const picked = run(after.model, { type: 'mood/pick', word: 'спокій' })
+    expect(picked.model.ctx.mood).toEqual({ before: 'неспокій', after: 'спокій' })
+    const ended: Model = { ...picked.model, state: { s: 'ended' }, overlay: [] }
+    expect(run(ended, { type: 'overlay/open', overlay: 'mood', when: 'after' }).model.overlay).toEqual([{ o: 'mood', when: 'after' }])
+    // Not while the theses are being saved: «Збережено» would close it half chosen (I6).
+    const saving = run(review, { type: 'review/save' }).model
+    expect(saving.state.s === 'review' && saving.state.saving).toBe('saving')
+    expect(run(saving, { type: 'overlay/open', overlay: 'mood', when: 'after' }).model).toBe(saving)
+    // Never a tag, never in a body: the save and the theses send what they always sent (I1, I9).
+    const save = run(picked.model, { type: 'review/save' })
+    const all = [...first.effects, ...after.effects, ...picked.effects, ...save.effects]
+    for (const word of ['неспокій', 'радість', 'спокій']) expect(JSON.stringify(all)).not.toContain(word)
+    const body = (save.effects[0] as Extract<Effect, { type: 'save' }>).body
+    expect(body.tags).toEqual([{ name: 'день', source: 'ai' }])
+  })
+
+  test('the check-in goes with its conversation: a new one, a revisit, a sign-out, a deleted account; the diary and back keep it', () => {
+    const talk = answered(checkedIn(booted(), 'втома'))
+    expect(talk.ctx.mood.before).toBe('втома')
+    // The diary from the conversation and back: the same conversation, the same word.
+    const diary = run(talk, { type: 'journal/open', tz: 'Europe/Kyiv' }).model
+    expect(run(diary, { type: 'journal/back' }).model.ctx.mood.before).toBe('втома')
+    // «Почати нову розмову» from «Збережено» / «Розмову завершено», and the diary opened there.
+    const saved: Model = { ...talk, state: { s: 'saved', summary: SUMMARY } }
+    expect(run(saved, { type: 'chat/new' }).model.ctx.mood).toEqual(NO_MOOD)
+    expect(run(saved, { type: 'journal/open', tz: null }, { type: 'journal/back' }).model.ctx.mood).toEqual(NO_MOOD)
+    // «Повернутися до цього» starts another conversation.
+    const opened = run(talk, { type: 'journal/open', tz: 'Europe/Kyiv' })
+    const list = opened.effects.find((e): e is Extract<Effect, { type: 'journal-list' }> => e.type === 'journal-list')!
+    const listed = run(opened.model, { type: 'journal/list-ok', req: list.req, diary: DIARY }).model
+    const revisit = run(listed, { type: 'journal/revisit', id: 's-1' }, { type: 'confirm/accept' }).model
+    expect(chatOf(revisit).session.scenario).toBe('revisit')
+    expect(revisit.ctx.mood).toEqual(NO_MOOD)
+    // Signed out, the account deleted, a fresh boot.
+    expect(run(talk, { type: 'account/logout' }, { type: 'confirm/accept' }, { type: 'logout/ok' }).model.ctx.mood).toEqual(NO_MOOD)
+    expect(run(talk, { type: 'overlay/open', overlay: 'account' }, { type: 'confirm/open', kind: 'delete-account' }, { type: 'confirm/accept' }, { type: 'delete/ok' }).model.ctx.mood).toEqual(NO_MOOD)
+    expect(INITIAL_MODEL.ctx.mood).toEqual(NO_MOOD)
+  })
+
+  test('the light breathes with the exercise and is quiet in the crisis', () => {
+    const m = booted()
+    expect(presenceOf(m)).toBe('idle')
+    expect(presenceOf(run(m, { type: 'overlay/open', overlay: 'breathe' }).model)).toBe('breathing')
+    expect(presenceOf(run(m, { type: 'overlay/open', overlay: 'shelter' }, { type: 'overlay/open', overlay: 'breathe' }).model)).toBe('breathing')
+    expect(presenceOf(run(m, { type: 'overlay/open', overlay: 'ground' }).model)).toBe('idle')
+    const sent = run(m, { type: 'chat/send', text: 'Синтетична кризова фраза' }, { type: 'overlay/open', overlay: 'breathe' })
+    expect(presenceOf(sent.model)).toBe('breathing')
+    expect(presenceOf(run(sent.model, crisisOutcome(turnEffect(sent.effects).id)).model)).toBe('quiet')
+  })
+})
+
+test.describe('self-help: the minute, the words', () => {
+  test('slow breathing is in 4 s, out 6 s, six times; the cyclic sigh 2 + 1 + 6 s, seven times; the count runs 4 3 2 1', () => {
+    expect(breathCycleMs('slow')).toBe(10_000)
+    expect(breathTotalMs('slow')).toBe(60_000)
+    expect(breathCycleMs('sigh')).toBe(9_000)
+    expect(breathTotalMs('sigh')).toBe(63_000)
+    const at = (pattern: BreathPattern, ms: number) => {
+      const x = breathAt(pattern, ms)
+      return [x.phase, x.left, x.round, x.done]
+    }
+    expect(at('slow', 0)).toEqual(['in', 4, 0, false])
+    expect(at('slow', 999)).toEqual(['in', 4, 0, false])
+    expect(at('slow', 1000)).toEqual(['in', 3, 0, false])
+    expect(at('slow', 3999)).toEqual(['in', 1, 0, false])
+    expect(at('slow', 4000)).toEqual(['out', 6, 0, false])
+    expect(at('slow', 9999)).toEqual(['out', 1, 0, false])
+    expect(at('slow', 10_000)).toEqual(['in', 4, 1, false])
+    expect(at('slow', 59_999)).toEqual(['out', 1, 5, false])
+    expect(breathAt('slow', 60_000).done).toBe(true)
+    expect(at('sigh', 0)).toEqual(['in', 2, 0, false])
+    expect(at('sigh', 2000)).toEqual(['top', 1, 0, false])
+    expect(at('sigh', 3000)).toEqual(['out', 6, 0, false])
+    expect(at('sigh', 62_999)).toEqual(['out', 1, 6, false])
+    expect(breathAt('sigh', 63_000).done).toBe(true)
+    // Garbage time is the start, not a crash.
+    expect(at('slow', Number.NaN)).toEqual(['in', 4, 0, false])
+    expect(at('slow', -5)).toEqual(['in', 4, 0, false])
+    // The next tick lands where the count changes.
+    expect(breathNextChangeMs(breathAt('slow', 250))).toBe(750)
+    expect(breathNextChangeMs(breathAt('slow', 3000))).toBe(1000)
+    expect(breathNextChangeMs(breathAt('sigh', 2500))).toBe(500)
+  })
+
+  test('the check-in dictionary: four cells of six words, each once, none on the stop-list; the sentences say words, not scores', () => {
+    const all = MOOD_QUADRANTS.flatMap((q) => [...MOOD_WORDS[q]])
+    for (const q of MOOD_QUADRANTS) expect(MOOD_WORDS[q], q).toHaveLength(6)
+    expect(new Set(all).size).toBe(24)
+    const clinical = /терапі|терапевт|психолог|психіатр|лікув|лікує|діагно[зс]|депрес|тривог|тривожн/
+    for (const word of all) {
+      expect(word, word).not.toMatch(clinical)
+      expect(isMoodWord(word)).toBe(true)
+    }
+    expect(isMoodWord('Спокій')).toBe(false)
+    expect(isToolKind('shelter') && isToolKind('breathe') && !isToolKind('account')).toBe(true)
+    expect(moodSentence('втома')).toBe('Зараз у мене — втома.')
+    expect(moodLine('втома', null)).toBe('Спершу — втома.')
+    expect(moodLine('втома', 'спокій')).toBe('Спершу — втома, зараз — спокій.')
+    expect(moodLine('втома', 'спокій')).not.toMatch(/\d|краще|гірше|%/)
+  })
+
+  test('the shelter is the dark theme whatever the page: its tokens are the dark side of each light-dark()', () => {
+    const tokens = readFileSync(resolve(test.info().project.testDir, '..', '..', 'src', 'styles', 'tokens.css'), 'utf8')
+    const block = (selector: string): string => {
+      const start = tokens.indexOf(`${selector} {`)
+      expect(start, selector).toBeGreaterThanOrEqual(0)
+      return tokens.slice(start, tokens.indexOf('}', start))
+    }
+    const theme = block(':root:not([data-theme-lock])')
+    const shelter = block(':root:not([data-theme-lock]) :is(.sheet--shelter, .sheet--tool[data-shelter])')
+    expect(shelter).toContain('color-scheme: dark;')
+    const pairs = [...shelter.matchAll(/--([a-z0-9-]+):\s*([^;]+);/g)].map((m) => [m[1]!, m[2]!.trim()] as const)
+    expect(pairs.length).toBeGreaterThan(20)
+    for (const [name, value] of pairs) {
+      const source = theme.match(new RegExp(`--${name}:\\s*light-dark\\((#[0-9a-f]{6}|rgb\\([^)]*\\)),\\s*(#[0-9a-f]{6}|rgb\\([^)]*\\))\\)`, 'i'))
+      expect(source, name).not.toBeNull()
+      expect(value, name).toBe(source![2])
     }
   })
 })
@@ -2728,7 +4018,7 @@ test('keyboard: the inset is what the keyboard covers of the layout viewport; 15
 })
 
 test.describe('sky presets', () => {
-  test('only dusk and dawn are presets; anything else is the night, and the crisis is always the night', () => {
+  test('only dusk and dawn are presets; anything else is the plain sky, and the crisis takes the preset off', () => {
     expect(SKY_KEY).toBe('liora:sky')
     expect(parseSky('dusk')).toBe('dusk')
     expect(parseSky('dawn')).toBe('dawn')
@@ -2740,30 +4030,93 @@ test.describe('sky presets', () => {
     expect(skyAttribute('dawn', true)).toBeNull()
   })
 
-  test('no preset layer is lighter than the night: bases under its lightest base, each haze under its own', () => {
-    const css = readFileSync(resolve(test.info().project.testDir, '..', '..', 'src', 'styles', 'stage.css'), 'utf8')
-    const block = (selector: string): Record<string, number[]> => {
-      const start = css.indexOf(`${selector} {`)
+  // ADR-012: the dark theme («вечірня лампа») keeps every layer under text at L ≤ 0.023, the light
+  // one («ранковий папір») at L ≥ 0.76, counted at the worst point: each haze at its full alpha
+  // over the lightest (dark) or darkest (light) base of the preset, and in the light theme the
+  // vignette's edge on top. --color-text-dim keeps 4.5:1 and the field border 3:1 there.
+  test('each theme keeps its three skies on its side of the text: dark ≤ L 0.023, light ≥ L 0.76', () => {
+    const styles = resolve(test.info().project.testDir, '..', '..', 'src', 'styles')
+    const css = readFileSync(join(styles, 'stage.css'), 'utf8')
+    const tokens = readFileSync(join(styles, 'tokens.css'), 'utf8')
+    const body = (text: string, selector: string): string => {
+      const start = text.indexOf(`${selector} {`)
       expect(start, selector).toBeGreaterThanOrEqual(0)
-      const body = css.slice(start, css.indexOf('}', start))
-      return Object.fromEntries([...body.matchAll(/--(sky-[a-z-]+):\s*(\d+)\s+(\d+)\s+(\d+)/g)].map((m) => [m[1]!, [Number(m[2]), Number(m[3]), Number(m[4])]]))
+      return text.slice(start, text.indexOf('}', start))
     }
-    const lin = (c: number): number => (c / 255 <= 0.03928 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4)
-    const lum = ([r, g, b]: number[]): number => 0.2126 * lin(r!) + 0.7152 * lin(g!) + 0.0722 * lin(b!)
+    const props = (selector: string): Record<string, string> =>
+      Object.fromEntries([...body(css, selector).matchAll(/--([a-z-]+):\s*([^;]+);/g)].map((m) => [m[1]!, m[2]!.trim()]))
+    const triples = (selector: string): Record<string, number[]> =>
+      Object.fromEntries(
+        [...body(css, selector).matchAll(/--(sky-[a-z-]+):\s*(\d+)\s+(\d+)\s+(\d+)/g)].map((m) => [m[1]!, [Number(m[2]), Number(m[3]), Number(m[4])]]),
+      )
+    const alphas = (selector: string): Record<string, number> =>
+      Object.fromEntries([...body(css, selector).matchAll(/--haze-a-([a-z]+):\s*([\d.]+)/g)].map((m) => [m[1]!, Number(m[2])]))
+    const color = (value: string): number[] => {
+      const hex = value.match(/^#([0-9a-f]{6})$/i)
+      if (hex) return [0, 2, 4].map((i) => parseInt(hex[1]!.slice(i, i + 2), 16)).concat(1)
+      const rgb = value.match(/^rgb\((\d+) (\d+) (\d+)(?: \/ ([\d.]+))?\)$/)
+      expect(rgb, value).not.toBeNull()
+      return [Number(rgb![1]), Number(rgb![2]), Number(rgb![3]), rgb![4] === undefined ? 1 : Number(rgb![4])]
+    }
+    // The chat's tokens: light-dark(<light>, <dark>).
+    const chat = body(tokens, ':root:not([data-theme-lock])')
+    const token = (name: string, theme: 'light' | 'dark'): number[] => {
+      const m = chat.match(new RegExp(`--${name}:\\s*light-dark\\((#[0-9a-f]{6}|rgb\\([^)]*\\)),\\s*(#[0-9a-f]{6}|rgb\\([^)]*\\))\\)`, 'i'))
+      expect(m, name).not.toBeNull()
+      return color(m![theme === 'light' ? 1 : 2]!)
+    }
+    const over = (fg: number[], alpha: number, bg: number[]): number[] => [0, 1, 2].map((i) => fg[i]! * alpha + bg[i]! * (1 - alpha))
+    const lin = (c: number): number => (c / 255 <= 0.04045 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4)
+    const lum = (c: number[]): number => 0.2126 * lin(c[0]!) + 0.7152 * lin(c[1]!) + 0.0722 * lin(c[2]!)
     const contrast = (a: number, b: number): number => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
     const BASES = ['sky-top', 'sky-mid', 'sky-bottom', 'sky-glow-teal', 'sky-glow-violet']
-    const HAZES = ['sky-haze-teal', 'sky-haze-violet', 'sky-haze-amber']
+    const HAZES = ['teal', 'violet', 'amber']
+    const KEYS = [...BASES, ...HAZES.map((h) => `sky-haze-${h}`)].sort()
+    const SKIES = {
+      dark: { night: ':root', dusk: "html[data-sky='dusk']", dawn: "html[data-sky='dawn']" },
+      light: {
+        night: ":root[data-theme='light']:not([data-theme-lock])",
+        dusk: ":root[data-theme='light'][data-sky='dusk']:not([data-theme-lock])",
+        dawn: ":root[data-theme='light'][data-sky='dawn']:not([data-theme-lock])",
+      },
+    } as const
 
-    const night = block(':root')
-    expect(Object.keys(night).sort()).toEqual([...BASES, ...HAZES].sort())
-    const nightBase = Math.max(...BASES.map((k) => lum(night[k]!)))
-    // --color-text-dim on the night's lightest base: the margin the presets may not eat into.
-    expect(contrast(lum([132, 145, 141]), nightBase)).toBeGreaterThanOrEqual(4.5)
-    for (const preset of ['dusk', 'dawn']) {
-      const sky = block(`html[data-sky='${preset}']`)
-      expect(Object.keys(sky).sort(), preset).toEqual([...BASES, ...HAZES].sort())
-      for (const k of BASES) expect(lum(sky[k]!), `${preset} ${k}`).toBeLessThanOrEqual(nightBase)
-      for (const k of HAZES) expect(lum(sky[k]!), `${preset} ${k}`).toBeLessThanOrEqual(lum(night[k]!))
+    for (const theme of ['dark', 'light'] as const) {
+      const dark = theme === 'dark'
+      const alpha = alphas(SKIES[theme].night)
+      expect(Object.keys(alpha).sort(), `${theme}: the haze alphas`).toEqual([...HAZES].sort())
+      const vignette = token('color-vignette', theme)
+      const dim = lum(token('color-text-dim', theme))
+      const border = lum(token('color-field-border', theme))
+      for (const preset of ['night', 'dusk', 'dawn'] as const) {
+        const sky = triples(SKIES[theme][preset])
+        const label = `${theme} ${preset}`
+        expect(Object.keys(sky).sort(), label).toEqual(KEYS)
+        // The alphas belong to the theme: a preset changes colours only.
+        if (preset !== 'night') expect(Object.keys(alphas(SKIES[theme][preset])), label).toEqual([])
+        const bases = BASES.map((k) => sky[k]!)
+        const extreme = bases.reduce((a, b) => ((dark ? lum(b) > lum(a) : lum(b) < lum(a)) ? b : a))
+        const layers = [...bases, ...HAZES.map((h) => over(sky[`sky-haze-${h}`]!, alpha[h]!, extreme))]
+        // The light vignette darkens the edges a little; the dark one only makes them darker.
+        const seen = dark ? layers : [...layers, ...layers.map((c) => over(vignette, vignette[3]!, c))]
+        for (const [i, c] of seen.entries()) {
+          if (dark) expect(lum(c), `${label} layer ${i}`).toBeLessThanOrEqual(0.023)
+          else expect(lum(c), `${label} layer ${i}`).toBeGreaterThanOrEqual(0.76)
+        }
+        const worst = dark ? Math.max(...seen.map(lum)) : Math.min(...seen.map(lum))
+        expect(contrast(dim, worst), `${label}: --color-text-dim`).toBeGreaterThanOrEqual(4.5)
+        expect(contrast(border, worst), `${label}: --color-field-border`).toBeGreaterThanOrEqual(3)
+      }
+    }
+
+    // The system's light (no choice made) is a copy of the chosen light theme, preset by preset.
+    const SYSTEM = {
+      night: ':root:not([data-theme]):not([data-theme-lock])',
+      dusk: ":root:not([data-theme]):not([data-theme-lock])[data-sky='dusk']",
+      dawn: ":root:not([data-theme]):not([data-theme-lock])[data-sky='dawn']",
+    } as const
+    for (const preset of ['night', 'dusk', 'dawn'] as const) {
+      expect(props(SYSTEM[preset]), `system light ${preset}`).toEqual(props(SKIES.light[preset]))
     }
   })
 })
@@ -2805,9 +4158,10 @@ test.describe('source rules', () => {
     }
   })
 
-  test('localStorage.setItem only in src/ui/motion.ts and src/ui/sky.ts', () => {
+  test('localStorage.setItem only in src/ui/motion.ts, src/ui/sky.ts and src/ui/theme.ts', () => {
     const writers = offenders(sources(''), /localStorage\s*\.\s*setItem\b/).map((o) => o.split(':')[0])
-    expect(writers.every((p) => p === 'src/ui/motion.ts' || p === 'src/ui/sky.ts'), writers.join(', ')).toBe(true)
+    const allowed = ['src/ui/motion.ts', 'src/ui/sky.ts', 'src/ui/theme.ts']
+    expect(writers.every((p) => allowed.includes(p!)), writers.join(', ')).toBe(true)
   })
 
   test('src/chat/**: no fetch mode, keepalive, bearer header, EventSource or storage', () => {
@@ -2829,7 +4183,7 @@ test.describe('source rules', () => {
   test('src/chat/core/**: no DOM, browser globals, storage, three.js, UI imports or console', () => {
     const core = sources('chat/core')
     expect(core.map((f) => f.path).sort()).toEqual(
-      ['api', 'country', 'errors', 'helplines', 'limits', 'sse', 'state', 'turn', 'types'].map((n) => `src/chat/core/${n}.ts`),
+      ['api', 'country', 'errors', 'helplines', 'journal', 'limits', 'selfhelp', 'sse', 'state', 'turn', 'types'].map((n) => `src/chat/core/${n}.ts`),
     )
     for (const pattern of [
       /\bdocument\b/,
@@ -2853,7 +4207,8 @@ test.describe('source rules', () => {
 
   test('chat/index.html: every text field is left out of the browser’s form restore (autocomplete="off")', () => {
     // Firefox's session store keeps a textarea's text on disk unless it has autocomplete="off"; the
-    // consent screen promises the browser keeps only the session cookie and two choices (§3.5).
+    // consent screen promises the browser keeps only the session cookie and three choices (motion,
+    // theme, sky; §3.5).
     const repo = resolve(test.info().project.testDir, '..', '..')
     const chat = readFileSync(join(repo, 'chat', 'index.html'), 'utf8')
     const tags = [...chat.matchAll(/<textarea\b[^>]*>/g), ...chat.matchAll(/<input\b[^>]*>/g)].map((m) => m[0])
@@ -2878,6 +4233,134 @@ test.describe('source rules', () => {
     const radios = [...chat.matchAll(/<input[^>]*name="sky"[^>]*value="([a-z]+)"/g)].map((m) => m[1])
     expect(radios).toEqual(['night', 'dusk', 'dawn'])
     expect(chat).toContain('data-sky-pick')
+  })
+
+  test('theme: one module knows the key; public/theme-init.js only reads storage, sets two attributes and the theme-color, first in <head> of both pages', () => {
+    const keyHolders = offenders(sources(''), /liora:theme/).map((o) => o.split(':')[0])
+    expect(keyHolders.length).toBeGreaterThan(0)
+    expect(keyHolders.every((p) => p === 'src/ui/theme.ts'), keyHolders.join(', ')).toBe(true)
+
+    const repo = resolve(test.info().project.testDir, '..', '..')
+    const init = readFileSync(join(repo, 'public', 'theme-init.js'), 'utf8')
+    const code = init.replace(/\/\/[^\n]*/g, '')
+    // A classic script before the first frame: small, and nothing but reads and two attributes.
+    expect(init.length).toBeLessThan(1500)
+    for (const pattern of [
+      /\bsetItem\b/,
+      /\bremoveItem\b/,
+      /\.clear\s*\(/,
+      /\bsessionStorage\b/,
+      /\bindexedDB\b/,
+      /\bcookie\b/,
+      /\bfetch\b/,
+      /XMLHttpRequest/,
+      /\bimport\b/,
+      /innerHTML|outerHTML|insertAdjacent|document\.write/,
+      /\.style\b|cssText|setProperty/,
+      /\beval\b|\bFunction\b/,
+      /\.dataset\b/,
+    ]) {
+      expect(code, String(pattern)).not.toMatch(pattern)
+    }
+    expect([...code.matchAll(/localStorage\.getItem\(\s*'([^']+)'\s*\)/g)].map((m) => m[1]).sort()).toEqual(['liora:sky', 'liora:theme'])
+    expect([...new Set([...code.matchAll(/\.setAttribute\(\s*'([^']+)'/g)].map((m) => m[1]))].sort()).toEqual(['data-sky', 'data-theme'])
+    expect([...code.matchAll(/\.setAttribute\(/g)]).toHaveLength([...code.matchAll(/\.setAttribute\(\s*'data-(?:theme|sky)'/g)].length)
+    // The sky only where the page asks for it (the landing never has a preset).
+    expect(code).toMatch(/hasAttribute\('data-sky'\)/)
+
+    for (const [page, sky] of [
+      ['index.html', false],
+      [join('chat', 'index.html'), true],
+    ] as const) {
+      const html = readFileSync(join(repo, page), 'utf8')
+      const head = html.slice(html.indexOf('<head>'), html.indexOf('</head>'))
+      const scripts = head.match(/<script\b[^>]*>/g) ?? []
+      expect(scripts[0], page).toBe(sky ? '<script src="/theme-init.js" data-sky>' : '<script src="/theme-init.js">')
+      // Right after the charset and the one theme-color (the script sets the latter in the chat),
+      // before every other tag of the head.
+      const tags = head.replace(/<!--[\s\S]*?-->/g, '').match(/<(?:meta|link|script|title)\b[^>]*>/g)!
+      expect(tags[0], page).toBe('<meta charset="UTF-8" />')
+      expect(tags[1], page).toMatch(/^<meta name="theme-color" content="#[0-9a-f]{6}" \/>$/)
+      expect(tags[2], page).toBe(scripts[0])
+      expect(head.match(/<meta name="theme-color"/g), page).toHaveLength(1)
+    }
+    // The theme-color it writes before the first frame is --color-bg of each theme, in the very
+    // form theme.ts writes later (getComputedStyle: rgb(r, g, b)) — no change, no flash in the bar.
+    // Light is the same paper on both pages (a literal); dark is each page's own, read from the hex
+    // its meta ships: the chat's lamp (tokens.css), the landing's night (landing.css).
+    const tokens = readFileSync(join(repo, 'src', 'styles', 'tokens.css'), 'utf8')
+    const landingCss = readFileSync(join(repo, 'src', 'styles', 'landing.css'), 'utf8')
+    const bgOf = (css: string): RegExpExecArray => /--color-bg: light-dark\(#([0-9a-f]{6}), #([0-9a-f]{6})\)/.exec(css)!
+    const rgb = (hex: string): string => `rgb(${[0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`
+    expect(bgOf(landingCss)[1]).toBe(bgOf(tokens)[1])
+    expect(code).toContain(`'${rgb(bgOf(tokens)[1]!)}' : 'rgb(' + (n >> 16)`)
+    expect(code).toMatch(/var n = parseInt\(meta\.content\.slice\(1\), 16\)/)
+    for (const [page, css] of [
+      ['index.html', landingCss],
+      [join('chat', 'index.html'), tokens],
+    ] as const) {
+      const html = readFileSync(join(repo, page), 'utf8')
+      expect(/<meta name="theme-color" content="#([0-9a-f]{6})" \/>/.exec(html)![1], page).toBe(bgOf(css)[2])
+    }
+    expect(code).toMatch(/meta\.content = /)
+    expect(code).toMatch(/prefers-color-scheme: light/)
+    // Both pages follow the system before any CSS (ADR-012); no page is pinned to one theme.
+    const chat = readFileSync(join(repo, 'chat', 'index.html'), 'utf8')
+    const landing = readFileSync(join(repo, 'index.html'), 'utf8')
+    for (const [page, html] of [
+      ['chat', chat],
+      ['landing', landing],
+    ] as const) {
+      expect(html, page).toContain('<meta name="color-scheme" content="light dark" />')
+      expect(html, page).not.toMatch(/data-theme-lock/)
+      // The header's menu: three menuitemradio, plain buttons (the landing has no inputs at all).
+      expect([...html.matchAll(/<button[^>]*role="menuitemradio"[^>]*data-theme-choice="([a-z]+)"/g)].map((m) => m[1]), page).toEqual(['system', 'light', 'dark'])
+    }
+    // The chat also has the sheet's radios: two controls, one choice.
+    expect([...chat.matchAll(/<input[^>]*name="theme"[^>]*value="([a-z]+)"/g)].map((m) => m[1])).toEqual(['system', 'light', 'dark'])
+  })
+
+  // ADR-012 on the landing: light is the chat's «ранковий папір», dark the landing's own night. The
+  // landing restates (landing.css) every token of tokens.css whose dark side differs from the night
+  // of :root, as light-dark(<the same light>, <the night>), and the night once more for engines
+  // without light-dark(). Nothing is left on the lamp, nothing drifts from tokens.css.
+  test('landing: its tokens are the chat’s light and the night of :root, with a fallback for engines without light-dark()', () => {
+    const styles = resolve(test.info().project.testDir, '..', '..', 'src', 'styles')
+    const tokens = readFileSync(join(styles, 'tokens.css'), 'utf8')
+    const landing = readFileSync(join(styles, 'landing.css'), 'utf8')
+    const block = (text: string, selector: string, from = 0): string => {
+      const start = text.indexOf(`${selector} {`, from)
+      expect(start, selector).toBeGreaterThanOrEqual(0)
+      return text.slice(start, text.indexOf('}', start))
+    }
+    const props = (text: string): Map<string, string> => new Map([...text.matchAll(/--([a-z0-9-]+):\s*([^;]+);/g)].map((m) => [m[1]!, m[2]!.trim()]))
+    const pair = /^light-dark\((#[0-9a-f]{6}|rgb\([^)]*\)),\s*(#[0-9a-f]{6}|rgb\([^)]*\))\)$/i
+    const night = props(block(tokens, ':root'))
+    const theme = props(block(tokens, ':root:not([data-theme-lock])'))
+    const own = props(block(landing, ':root:not([data-theme-lock])'))
+    const fallbackAt = landing.indexOf('@supports not (color: light-dark(#000, #fff))')
+    expect(fallbackAt).toBeGreaterThan(landing.indexOf(':root:not([data-theme-lock]) {'))
+    const fallback = props(block(landing, ':root[data-theme]:not([data-theme-lock])', fallbackAt))
+    expect(landing.slice(fallbackAt, landing.indexOf(':root[data-theme]:not([data-theme-lock])', fallbackAt))).toContain(':root:not([data-theme-lock]),')
+
+    // Every token whose dark side is not the night is restated…
+    const differs = [...theme].filter(([name, value]) => night.has(name) && pair.exec(value)?.[2] !== night.get(name)).map(([name]) => name)
+    expect(differs.length).toBeGreaterThan(10)
+    for (const name of differs) expect(own.has(name), `--${name} restated`).toBe(true)
+    for (const [name, value] of own) {
+      const m = pair.exec(value)
+      expect(m, `--${name}: light-dark(<light>, <dark>)`).not.toBeNull()
+      // …with the chat's light and the night of :root (the landing's own tokens have no counterpart).
+      if (theme.has(name)) {
+        expect(m![1], `--${name} light`).toBe(pair.exec(theme.get(name)!)![1])
+        expect(m![2], `--${name} dark`).toBe(night.get(name))
+      } else {
+        expect(name, 'a token only the landing has').toMatch(/^landing-/)
+      }
+      // The fallback holds the night of every one of them.
+      expect(fallback.get(name), `--${name} fallback`).toBe(m![2])
+    }
+    expect([...fallback.keys()].sort()).toEqual([...own.keys()].sort())
   })
 
   test('page life lives in the leave guard: pagehide and pageshow are listened to in one place', () => {

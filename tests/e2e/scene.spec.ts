@@ -328,9 +328,13 @@ test.describe('static backdrop', () => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     // With motion off the scene never loads: only the small entry script is fetched, plus the module
-    // it shares with /chat/ (motion, sound, the GL boot) since the build has two pages (ADR-007).
-    expect(early.length).toBeGreaterThanOrEqual(1)
-    expect(early.length).toBeLessThanOrEqual(2)
+    // it shares with /chat/ (motion, sound, the GL boot) since the build has two pages (ADR-007),
+    // and the tiny classic /theme-init.js that puts the theme on <html> before the first frame
+    // (ADR-012).
+    const modules = early.filter((url) => new URL(url).pathname !== '/theme-init.js')
+    expect(early.length - modules.length).toBe(1)
+    expect(modules.length).toBeGreaterThanOrEqual(1)
+    expect(modules.length).toBeLessThanOrEqual(2)
     expect(early.filter((url) => /\/assets\/(scene|presence)-/.test(url))).toEqual([])
     const sizes = await page.evaluate(
       async (urls) => Promise.all(urls.map(async (url) => (await (await fetch(url)).arrayBuffer()).byteLength)),

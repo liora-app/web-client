@@ -2,7 +2,7 @@
 // deleted, no connection (spec §3.3, §3.4, §3.8, §3.9, §7.5, §7.6, §8.5). Their copy is static in
 // chat/index.html; here only what comes from the state or the API is filled in.
 
-import { maskPausedLine } from '../../core/helplines'
+import { maskPausedLineInline } from '../../core/helplines'
 import type { Model, State } from '../../core/state'
 import { hasUserMessage } from '../../core/state'
 import { accountOpError, longDateTime, requestIdLine, signInBanner, stillSignedIn } from '../copy'
@@ -112,6 +112,8 @@ export function expiredScreen(): Screen {
       const state = model.state as On<'session-expired'>
       setText(copy, state.draft !== null ? 'Скопіювати тези' : 'Скопіювати текст розмови')
       copy.dataset.act = state.draft !== null ? 'copy-theses' : 'copy'
+      // The 401 came over an unsaved edit of a diary record: say it did not reach the diary.
+      show(byEl('expired-edit', root), state.editLost)
       if (entered) renderStatic(talk, state.stale.messages, state.pending)
     },
     leave: () => talk.replaceChildren(),
@@ -129,13 +131,14 @@ export function savedScreen(): Screen {
       setText(byEl('saved-title', root), '')
       byEl('saved-bullets', root).replaceChildren()
       setText(byEl('saved-tags', root), '')
+      setText(byEl('saved-keep-text', root), '')
     },
     render(model, entered) {
       if (!entered) return
       const { summary } = model.state as On<'saved'>
       setText(byEl('saved-date', root), longDateTime(summary.created_at))
       // The record as saved; the AI drafted it, so the paused number is masked here too.
-      setText(byEl('saved-title', root), maskPausedLine(summary.title))
+      setText(byEl('saved-title', root), maskPausedLineInline(summary.title))
       const list = byEl('saved-bullets', root)
       list.replaceChildren()
       summary.bullets.forEach((bullet, i) => {
@@ -145,13 +148,17 @@ export function savedScreen(): Screen {
         index.setAttribute('aria-hidden', 'true')
         index.textContent = String(i + 1).padStart(2, '0')
         const text = document.createElement('p')
-        text.textContent = maskPausedLine(bullet)
+        text.textContent = maskPausedLineInline(bullet)
         li.append(index, text)
         list.append(li)
       })
       const tags = byEl('saved-tags', root)
-      setText(tags, summary.tags.map((t) => `#${maskPausedLine(t.name)}`).join(' '))
+      setText(tags, summary.tags.map((t) => `#${maskPausedLineInline(t.name)}`).join(' '))
       show(tags, summary.tags.length > 0)
+      // «Взяти з собою» (§7.5): only a thesis the person marked themselves; nothing otherwise.
+      const { keep } = model.state as On<'saved'>
+      setText(byEl('saved-keep-text', root), keep === undefined ? '' : maskPausedLineInline(keep))
+      show(byEl('saved-keep', root), keep !== undefined)
     },
   }
 }

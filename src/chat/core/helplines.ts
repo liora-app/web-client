@@ -221,6 +221,23 @@ export function maskPausedLineShort(text: string): string {
   return mask(text, PAUSED_LINE_NOTE_SHORT)
 }
 
+/** A text as a page draws it outside pre-wrap — a title, a thesis, a theme: every run of white
+ *  space, line breaks included, one space. A line break ends a number for the mask, while the
+ *  browser draws «73⏎33» on one line as «73 33»: a text drawn, copied or saved on one line is
+ *  masked after this, never before. */
+export function oneLine(text: string): string {
+  return text.replace(/\s+/g, ' ')
+}
+
+/** maskPausedLine for a text the page draws on one line (see oneLine): the text as it was when
+ *  there is nothing to mask, else its one line, masked. The transcript, drawn pre-wrap, keeps
+ *  maskPausedLine. */
+export function maskPausedLineInline(text: string): string {
+  const flat = oneLine(text)
+  const masked = mask(flat, PAUSED_LINE_NOTE)
+  return masked === flat ? text : masked
+}
+
 function mask(raw: string, note: string): string {
   // A text without a digit stays as it is, bidi controls and all: nothing in it to draw reversed.
   if (!NUMBER.test(raw)) return raw

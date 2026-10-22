@@ -1,48 +1,141 @@
-/* The night behind the page. Layers, back to front:
+/* The sky behind the page. Layers, back to front:
      .stage     CSS sky: gradient, slow haze, grain — the same with or without WebGL
      .hero__orb static light (sections.css), shown while the scene is not on
      .scene     transparent WebGL canvas: the light, particles, bokeh (src/gl)
      .vignette  darkens the edges over the light
    html[data-gl] is set by src/gl/core/boot.ts: loading → on, or off with a reason. */
 
-/* The sky's colours: the night (the only sky the landing has). R G B channels, so each layer can
-   fade its colour to alpha 0. A sky preset overrides these and nothing else; the lightest sky under
-   text has to stay at L ≈ 0.02 or darker (tokens.css: --color-text-dim keeps 4.5:1 there). */
+/* The sky's colours. R G B channels, so each layer can fade its colour to alpha 0. A sky preset
+   (/chat/ only: src/ui/sky.ts, and public/theme-init.js before the first frame) overrides the
+   triples and nothing else; the crisis takes the preset off and keeps the theme. The landing paints
+   its own sky (landing.css) and hides the haze and the grain, so these are the chat's.
+
+   Each theme has its three skies, and every layer under text stays on its side of the text colours
+   (tests/e2e/chat-core.spec.ts), counted at the worst point — each haze at its full alpha over the
+   lightest (dark) or darkest (light) base, and in the light theme the vignette's edge on top:
+   dark, «вечірня лампа» — nothing lighter than L 0.023 (--color-text-dim ≥ 5.5:1 there);
+   light, «ранковий папір» — nothing darker than L 0.76 (--color-text-dim ≥ 4.8:1 there).
+   The haze alphas belong to the theme, not to the preset. */
+
+/* Dark: the evening. */
 :root {
-  --sky-top: 7 16 18; /* #071012 */
-  --sky-mid: 4 7 8; /* #040708 */
-  --sky-bottom: 3 5 5; /* #030505 */
-  --sky-glow-teal: 13 34 38; /* #0d2226, top right */
-  --sky-glow-violet: 18 15 28; /* #120f1c, bottom left */
+  --sky-top: 22 32 33; /* #162021 */
+  --sky-mid: 18 26 27; /* #121a1b, --color-bg */
+  --sky-bottom: 14 21 22; /* #0e1516 */
+  --sky-glow-teal: 25 37 39; /* #192527, top right */
+  --sky-glow-violet: 27 24 36; /* #1b1824, bottom left */
   --sky-haze-teal: 38 112 112;
   --sky-haze-violet: 78 62 150;
   --sky-haze-amber: 170 102 46;
+  --haze-a-teal: 0.1;
+  --haze-a-violet: 0.16;
+  --haze-a-amber: 0.08;
+  --grain-opacity: 0.08;
 }
 
-/* Sky presets: /chat/ only (src/ui/sky.ts sets the attribute after an explicit choice; the landing
-   never does, and the crisis takes it off). No layer is lighter than the night's: each base colour
-   stays at or under the night's lightest base (L ≈ 0.014, text-dim ≥ 5:1 on it), each haze under the
-   night's own (relative luminance, checked in tests/e2e/chat-core.spec.ts). */
+/* Dark presets. */
 html[data-sky='dusk'] {
-  --sky-top: 16 10 22; /* #100a16, plum */
-  --sky-mid: 7 5 9;
-  --sky-bottom: 5 4 5;
-  --sky-glow-teal: 34 16 36; /* the top-right glow turns violet */
-  --sky-glow-violet: 36 16 20; /* and the bottom-left one ember */
+  --sky-top: 30 22 36; /* #1e1624, plum */
+  --sky-mid: 22 19 26;
+  --sky-bottom: 17 15 20;
+  --sky-glow-teal: 38 24 40; /* the top-right glow turns violet */
+  --sky-glow-violet: 40 26 28; /* and the bottom-left one ember */
   --sky-haze-teal: 96 64 120;
   --sky-haze-violet: 118 50 84;
   --sky-haze-amber: 184 90 34;
 }
 
 html[data-sky='dawn'] {
-  --sky-top: 8 14 26; /* #080e1a, deep blue */
-  --sky-mid: 5 7 11;
-  --sky-bottom: 4 5 6;
-  --sky-glow-teal: 22 30 52;
-  --sky-glow-violet: 36 20 28; /* a rose edge low on the left */
+  --sky-top: 20 28 44; /* #141c2c, deep blue */
+  --sky-mid: 17 22 30;
+  --sky-bottom: 14 18 24;
+  --sky-glow-teal: 24 33 52;
+  --sky-glow-violet: 40 27 34; /* a rose edge low on the left */
   --sky-haze-teal: 64 100 150;
   --sky-haze-violet: 104 58 86;
   --sky-haze-amber: 176 96 60;
+}
+
+/* Light: the same blocks twice — once for a chosen light theme (html[data-theme]), once for the
+   system's light without a choice. A media query and an attribute cannot share one selector; the
+   test checks that both copies match. An engine without light-dark() keeps the dark theme in
+   tokens.css, so it keeps the dark sky too. */
+@supports (color: light-dark(#000, #fff)) {
+  :root[data-theme='light']:not([data-theme-lock]) {
+    --sky-top: 241 237 229; /* «Ніч» becomes the day: paper */
+    --sky-mid: 246 241 234; /* #f6f1ea, --color-bg */
+    --sky-bottom: 243 237 228;
+    --sky-glow-teal: 230 239 235; /* a cool light, top right */
+    --sky-glow-violet: 243 235 238; /* a rose one, bottom left */
+    --sky-haze-teal: 196 228 220;
+    --sky-haze-violet: 222 214 242;
+    --sky-haze-amber: 250 216 186;
+    --haze-a-teal: 0.2;
+    --haze-a-violet: 0.2;
+    --haze-a-amber: 0.2;
+    --grain-opacity: 0.05;
+  }
+
+  :root[data-theme='light'][data-sky='dusk']:not([data-theme-lock]) {
+    --sky-top: 246 236 225; /* warm sand */
+    --sky-mid: 247 240 231;
+    --sky-bottom: 244 236 226;
+    --sky-glow-teal: 245 233 226;
+    --sky-glow-violet: 243 233 236;
+    --sky-haze-teal: 230 212 232;
+    --sky-haze-violet: 246 210 212;
+    --sky-haze-amber: 250 212 178;
+  }
+
+  :root[data-theme='light'][data-sky='dawn']:not([data-theme-lock]) {
+    --sky-top: 236 241 246; /* a blue morning mist */
+    --sky-mid: 245 242 240;
+    --sky-bottom: 242 239 238;
+    --sky-glow-teal: 230 237 247;
+    --sky-glow-violet: 246 234 236;
+    --sky-haze-teal: 206 222 244;
+    --sky-haze-violet: 242 216 228;
+    --sky-haze-amber: 250 220 200;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]):not([data-theme-lock]) {
+      --sky-top: 241 237 229;
+      --sky-mid: 246 241 234;
+      --sky-bottom: 243 237 228;
+      --sky-glow-teal: 230 239 235;
+      --sky-glow-violet: 243 235 238;
+      --sky-haze-teal: 196 228 220;
+      --sky-haze-violet: 222 214 242;
+      --sky-haze-amber: 250 216 186;
+      --haze-a-teal: 0.2;
+      --haze-a-violet: 0.2;
+      --haze-a-amber: 0.2;
+      --grain-opacity: 0.05;
+    }
+
+    :root:not([data-theme]):not([data-theme-lock])[data-sky='dusk'] {
+      --sky-top: 246 236 225;
+      --sky-mid: 247 240 231;
+      --sky-bottom: 244 236 226;
+      --sky-glow-teal: 245 233 226;
+      --sky-glow-violet: 243 233 236;
+      --sky-haze-teal: 230 212 232;
+      --sky-haze-violet: 246 210 212;
+      --sky-haze-amber: 250 212 178;
+    }
+
+    :root:not([data-theme]):not([data-theme-lock])[data-sky='dawn'] {
+      --sky-top: 236 241 246;
+      --sky-mid: 245 242 240;
+      --sky-bottom: 242 239 238;
+      --sky-glow-teal: 230 237 247;
+      --sky-glow-violet: 246 234 236;
+      --sky-haze-teal: 206 222 244;
+      --sky-haze-violet: 242 216 228;
+      --sky-haze-amber: 250 220 200;
+    }
+  }
 }
 
 .stage {
@@ -68,20 +161,20 @@ html[data-sky='dawn'] {
 .stage__haze--teal {
   left: -30vmax;
   top: -38vmax;
-  background: radial-gradient(closest-side, rgb(var(--sky-haze-teal) / 0.42), rgb(var(--sky-haze-teal) / 0));
+  background: radial-gradient(closest-side, rgb(var(--sky-haze-teal) / var(--haze-a-teal)), rgb(var(--sky-haze-teal) / 0));
 }
 
 .stage__haze--violet {
   right: -42vmax;
   top: 12vh;
-  background: radial-gradient(closest-side, rgb(var(--sky-haze-violet) / 0.26), rgb(var(--sky-haze-violet) / 0));
+  background: radial-gradient(closest-side, rgb(var(--sky-haze-violet) / var(--haze-a-violet)), rgb(var(--sky-haze-violet) / 0));
 }
 
 /* The warm light rises as the page comes to its end (--progress is set by src/ui/nav.ts). */
 .stage__haze--amber {
   left: 5vw;
   bottom: -62vmax;
-  background: radial-gradient(closest-side, rgb(var(--sky-haze-amber) / 0.34), rgb(var(--sky-haze-amber) / 0));
+  background: radial-gradient(closest-side, rgb(var(--sky-haze-amber) / var(--haze-a-amber)), rgb(var(--sky-haze-amber) / 0));
   opacity: calc(0.35 + var(--progress, 0) * 0.65);
 }
 
@@ -120,7 +213,7 @@ html[data-motion='on'] .stage__haze--amber {
 .stage__grain {
   position: absolute;
   inset: 0;
-  opacity: 0.09;
+  opacity: var(--grain-opacity);
   background-image: url('../assets/grain.svg');
   background-size: 240px 240px;
 }
@@ -146,7 +239,7 @@ html[data-gl='on'] .scene {
   inset: 0;
   z-index: var(--z-vignette);
   pointer-events: none;
-  background: radial-gradient(130% 110% at 50% 42%, rgb(3 5 5 / 0) 52%, rgb(3 5 5 / 0.62) 100%);
+  background: radial-gradient(130% 110% at 50% 42%, var(--color-vignette-0) 52%, var(--color-vignette) 100%);
 }
 
 /* Windows High Contrast and similar: the user's palette wins, the decoration goes away. */

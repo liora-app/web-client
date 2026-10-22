@@ -6,16 +6,180 @@
   --chapter-space: clamp(5rem, 12vw, 10rem);
   --leading-display: 1.06;
   --display-2: clamp(2.4rem, 4.5vw, 4.5rem);
-  --sky-top: 7 13 14;
-  --sky-glow-teal: 10 22 23;
-  --sky-glow-violet: 12 14 18;
+}
+
+/* ---------- The landing's two themes (ADR-012) ----------
+   Light is the chat's «ранковий папір»: the same tokens with the same values. Dark is the night the
+   landing was drawn in, not the chat's «вечірня лампа»: every token of tokens.css whose dark side
+   differs from the night of its :root is restated here as light-dark(<the chat's light>, <the
+   night>), with the same selector — this file loads after tokens.css, on this page only.
+   tests/e2e/chat-core.spec.ts derives both sides from tokens.css and checks every one, and the list.
+   The --landing-* tokens are this page's own: its sky, its pale button, the soft title line, the
+   example's card and the footer. */
+:root:not([data-theme-lock]) {
+  --color-bg: light-dark(#f6f1ea, #040708);
+  --color-sky: light-dark(#f6f1ea, #0b1a1e);
+  --color-surface: light-dark(#fffcf7, rgb(4 8 9 / 0.82));
+  --color-bubble-you: light-dark(#dce9e4, #0b1416);
+  --color-panel: light-dark(rgb(255 252 247 / 0.62), rgb(4 8 9 / 0.62));
+  --color-text: light-dark(#1c2626, #eef2ee);
+  --color-text-soft: light-dark(#36423f, #c2ccc8);
+  --color-text-muted: light-dark(#4f5b58, #8e9b97);
+  --color-text-dim: light-dark(#58635f, #84918d);
+  --color-line: light-dark(rgb(28 38 38 / 0.13), rgb(238 242 238 / 0.13));
+  --color-line-strong: light-dark(rgb(28 38 38 / 0.26), rgb(238 242 238 / 0.26));
+  --color-on-accent: light-dark(#ffffff, #040708);
+  --color-accent-line: light-dark(#c2714f, rgb(255 197 143 / 0.45));
+  --color-accent-tint: light-dark(rgb(181 83 42 / 0.08), rgb(255 197 143 / 0.12));
+  --color-accent-tint-strong: light-dark(rgb(181 83 42 / 0.12), rgb(255 197 143 / 0.14));
+  --color-hover: light-dark(rgb(28 38 38 / 0.06), rgb(238 242 238 / 0.08));
+  --color-pressed: light-dark(rgb(28 38 38 / 0.1), rgb(238 242 238 / 0.14));
+  --color-field-border: light-dark(#78827f, #84918d);
+  --color-scrim: light-dark(rgb(60 48 36 / 0.2), rgb(4 7 8 / 0.6));
+  --color-band-top: light-dark(rgb(246 241 234 / 0.97), rgb(4 7 8 / 0.97));
+  --color-band-mid: light-dark(rgb(246 241 234 / 0.9), rgb(4 7 8 / 0.9));
+  --color-band-tail: light-dark(rgb(246 241 234 / 0.45), rgb(4 7 8 / 0.45));
+  --color-fade-0: light-dark(rgb(246 241 234 / 0), rgb(4 7 8 / 0));
+  --color-field-shadow: light-dark(rgb(60 44 28 / 0.07), rgb(0 0 0 / 0));
+  --color-vignette: light-dark(rgb(120 96 70 / 0.04), rgb(3 5 5 / 0.62));
+  --color-vignette-0: light-dark(rgb(120 96 70 / 0), rgb(3 5 5 / 0));
+
+  /* The sky: paper with a cool light top right and a warm one lower down (text ≥ 4.5:1 on each). */
+  --landing-sky: light-dark(#f6f1ea, #050b10);
+  --landing-sky-cool: light-dark(#e4eeea, #101b21);
+  --landing-sky-warm: light-dark(#f5e6d7, #18140f);
+  /* The second line of a big title: a soft teal ink by day (≥ 5.2:1), a pale teal at night. */
+  --landing-title-soft: light-dark(#346661, #a9c4c5);
+  /* The filled button: terracotta with white by day (the chat's accent), pale paper at night. */
+  --landing-cta: light-dark(#b5532a, #e9e6de);
+  --landing-cta-hover: light-dark(#9a4318, #fff9ed);
+  --landing-cta-ink: light-dark(#ffffff, #111817);
+  /* The example session's card. */
+  --landing-card: light-dark(#fffcf7, #101916);
+  --landing-card-line: light-dark(#e2dbd1, #35413b);
+  --landing-card-shadow: light-dark(rgb(60 44 28 / 0.08), rgb(0 0 0 / 0.16));
+  --landing-footer: light-dark(#efe9e0, #060b0a);
+  --landing-mark-glow: light-dark(rgb(217 119 58 / 0.18), rgb(255 190 120 / 0.16));
+}
+
+/* An engine without light-dark() would drop every colour above: it keeps the night (themes need
+   light-dark(), and «Вигляд» stays hidden there). Both selectors of tokens.css's own fallback. */
+@supports not (color: light-dark(#000, #fff)) {
+  :root:not([data-theme-lock]),
+  :root[data-theme]:not([data-theme-lock]) {
+    --color-bg: #040708;
+    --color-sky: #0b1a1e;
+    --color-surface: rgb(4 8 9 / 0.82);
+    --color-bubble-you: #0b1416;
+    --color-panel: rgb(4 8 9 / 0.62);
+    --color-text: #eef2ee;
+    --color-text-soft: #c2ccc8;
+    --color-text-muted: #8e9b97;
+    --color-text-dim: #84918d;
+    --color-line: rgb(238 242 238 / 0.13);
+    --color-line-strong: rgb(238 242 238 / 0.26);
+    --color-on-accent: #040708;
+    --color-accent-line: rgb(255 197 143 / 0.45);
+    --color-accent-tint: rgb(255 197 143 / 0.12);
+    --color-accent-tint-strong: rgb(255 197 143 / 0.14);
+    --color-hover: rgb(238 242 238 / 0.08);
+    --color-pressed: rgb(238 242 238 / 0.14);
+    --color-field-border: #84918d;
+    --color-scrim: rgb(4 7 8 / 0.6);
+    --color-band-top: rgb(4 7 8 / 0.97);
+    --color-band-mid: rgb(4 7 8 / 0.9);
+    --color-band-tail: rgb(4 7 8 / 0.45);
+    --color-fade-0: rgb(4 7 8 / 0);
+    --color-field-shadow: rgb(0 0 0 / 0);
+    --color-vignette: rgb(3 5 5 / 0.62);
+    --color-vignette-0: rgb(3 5 5 / 0);
+    --landing-sky: #050b10;
+    --landing-sky-cool: #101b21;
+    --landing-sky-warm: #18140f;
+    --landing-title-soft: #a9c4c5;
+    --landing-cta: #e9e6de;
+    --landing-cta-hover: #fff9ed;
+    --landing-cta-ink: #111817;
+    --landing-card: #101916;
+    --landing-card-line: #35413b;
+    --landing-card-shadow: rgb(0 0 0 / 0.16);
+    --landing-footer: #060b0a;
+    --landing-mark-glow: rgb(255 190 120 / 0.16);
+  }
+}
+
+/* ---------- The art without WebGL ----------
+   Night: the rendered stills (public/*-still.png). They are dark, so the light theme never shows
+   them (nor loads them): it draws the same subjects in CSS — rings of the theme's teal ink and
+   terracotta, the contours the scene draws by day. Images cannot go through light-dark(): the
+   light theme swaps the variables, once chosen (html[data-theme]) and once from the system — the
+   same pair of blocks as stage.css, and only where light-dark() exists (else the night stays). */
+:root {
+  --still-field: url('/field-still.png');
+  --still-portrait: url('/portrait-still.png');
+  --still-portrait-mobile: url('/portrait-mobile-still.png');
+  --still-conversation: url('/conversation-still.png');
+  --still-atlas: url('/atlas-still.png');
+
+  --day-ink: color-mix(in srgb, var(--color-ai) 30%, transparent);
+  --day-ink-soft: color-mix(in srgb, var(--color-ai) 16%, transparent);
+  --day-warm: color-mix(in srgb, var(--color-accent) 36%, transparent);
+  --day-warm-soft: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  /* The hero's and the final's light: two woven sets of rings, a warm heart. */
+  --day-field:
+    radial-gradient(circle closest-side at 56% 58%, var(--day-warm-soft), transparent 58%),
+    repeating-radial-gradient(circle closest-side at 47% 46%, transparent 0 6.6%, var(--day-ink) 6.9% 7.3%, transparent 7.6% 8%),
+    repeating-radial-gradient(circle closest-side at 55% 55%, transparent 0 8.1%, var(--day-warm) 8.4% 8.7%, transparent 9% 9.5%);
+  /* The contour study: a head's topography, lit warm along the jaw. */
+  --day-portrait:
+    repeating-radial-gradient(ellipse 30% 40% at 52% 42%, transparent 0 13%, var(--day-ink) 14% 15.5%, transparent 16.5% 18%),
+    repeating-radial-gradient(ellipse 22% 18% at 40% 70%, transparent 0 18%, var(--day-warm) 20% 22%, transparent 24% 26%),
+    radial-gradient(ellipse 46% 50% at 50% 46%, var(--day-ink-soft), transparent 70%);
+  /* Thought → dialogue: two voices, each a few loops, meeting in the middle. */
+  --day-conversation:
+    radial-gradient(ellipse 30% 42% at 40% 50%, transparent 0 74%, var(--day-ink) 75% 77%, transparent 78% 86%, var(--day-ink) 87% 89%, transparent 90%),
+    radial-gradient(ellipse 30% 42% at 60% 50%, transparent 0 74%, var(--day-warm) 75% 77%, transparent 78% 86%, var(--day-warm) 87% 89%, transparent 90%),
+    radial-gradient(ellipse 22% 30% at 50% 50%, var(--day-warm-soft), transparent 80%);
+  /* The diary's map: one large contour map, a warm summit. */
+  --day-atlas:
+    repeating-radial-gradient(ellipse 58% 50% at 48% 52%, transparent 0 7%, var(--day-ink) 7.5% 8.2%, transparent 8.7% 9.5%),
+    radial-gradient(ellipse 22% 18% at 58% 44%, var(--day-warm-soft), transparent 100%),
+    repeating-radial-gradient(ellipse 22% 18% at 58% 44%, transparent 0 20%, var(--day-warm) 22% 26%, transparent 28% 34%);
+  /* The day's drawings fade at their edge (the PNGs carry their own alpha). The final's rings rise
+     under the words and end before the art's box does: no cut edge. */
+  --day-fade: radial-gradient(closest-side, #000 52%, transparent 100%);
+  --day-final-fade: radial-gradient(closest-side, transparent 0 12%, #000 30% 50%, transparent 70%);
+}
+
+@supports (color: light-dark(#000, #fff)) {
+  :root[data-theme='light']:not([data-theme-lock]) {
+    --still-field: var(--day-field);
+    --still-portrait: var(--day-portrait);
+    --still-portrait-mobile: var(--day-portrait);
+    --still-conversation: var(--day-conversation);
+    --still-atlas: var(--day-atlas);
+    --still-fade: var(--day-fade);
+    --still-final-fade: var(--day-final-fade);
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]):not([data-theme-lock]) {
+      --still-field: var(--day-field);
+      --still-portrait: var(--day-portrait);
+      --still-portrait-mobile: var(--day-portrait);
+      --still-conversation: var(--day-conversation);
+      --still-atlas: var(--day-atlas);
+      --still-fade: var(--day-fade);
+      --still-final-fade: var(--day-final-fade);
+    }
+  }
 }
 
 .stage {
   background:
-    radial-gradient(ellipse at 84% 28%, #101b21, transparent 57%),
-    radial-gradient(ellipse at 78% 72%, #18140f, transparent 46%),
-    #050b10;
+    radial-gradient(ellipse at 84% 28%, var(--landing-sky-cool), transparent 57%),
+    radial-gradient(ellipse at 78% 72%, var(--landing-sky-warm), transparent 46%),
+    var(--landing-sky);
 }
 .stage__haze,
 .stage__grain { display: none; }
@@ -56,7 +220,7 @@ html[data-gl='on'] .chapter { text-shadow: none; }
 .site-header { min-height: 5.5rem; gap: clamp(2rem, 5vw, 5rem); }
 .site-header::before { bottom: -1rem; }
 .brand { gap: 0.65rem; font-size: 1.6rem; font-weight: 500; letter-spacing: -0.065em; }
-.brand__mark { width: 0.8rem; height: 0.8rem; box-shadow: 0 0 12px rgb(255 190 120 / 0.16); }
+.brand__mark { width: 0.8rem; height: 0.8rem; box-shadow: 0 0 12px var(--landing-mark-glow); }
 .site-nav { gap: clamp(1rem, 2.4vw, 2.25rem); }
 .site-nav a { font-size: 0.8125rem; }
 .site-header__actions { gap: 0.75rem; }
@@ -64,8 +228,12 @@ html[data-gl='on'] .chapter { text-shadow: none; }
 .site-header .help-link:hover { color: var(--color-light-strong); }
 .site-header .help-link[aria-current] { border-color: var(--color-light); color: var(--color-light); }
 .media { border-color: transparent; background: transparent; }
-.cta { background: #e9e6de; color: #111817; font-weight: 500; text-shadow: none; }
-.cta:hover { background: #fff9ed; }
+/* «Вигляд» (the chat's menu button) as quiet as «Пауза» and «Звук» beside it: no ring, the icon says it. */
+.theme-toggle { width: 2.25rem; height: 2.25rem; border-color: transparent; background: transparent; }
+.theme-toggle:hover,
+.theme-toggle[aria-expanded='true'] { background: var(--color-hover); }
+.cta { background: var(--landing-cta); color: var(--landing-cta-ink); font-weight: 500; text-shadow: none; }
+.cta:hover { background: var(--landing-cta-hover); }
 .site-header__cta { font-size: 0.8125rem; }
 .hud { display: none; }
 
@@ -87,11 +255,11 @@ html[data-gl='on'] .chapter { text-shadow: none; }
   max-width: 100%;
   text-shadow: none;
 }
-.hero__title-soft { color: #a9c4c5; }
+.hero__title-soft { color: var(--landing-title-soft); }
 .hero__orb { border-radius: 0; background: none; box-shadow: none; }
 .hero__orb::after { display: none; }
 .hero__orb::before,
-.final__art::before { content: ''; display: block; position: absolute; inset: -20%; border-radius: 0; padding: 0; opacity: 1; background: url('/field-still.png') center / contain no-repeat; mask: radial-gradient(closest-side, #000 82%, transparent 100%); mask-composite: add; }
+.final__art::before { content: ''; display: block; position: absolute; inset: -20%; border-radius: 0; padding: 0; opacity: 1; background-image: var(--still-field); background-position: center; background-size: contain; background-repeat: no-repeat; mask: radial-gradient(closest-side, #000 82%, transparent 100%); mask-composite: add; }
 .hero__orb-link { clip-path: circle(48%); }
 .hero__aside { gap: 1.15rem; max-width: 28rem; }
 .hero__lead { font-size: clamp(1rem, 1.3vw, 1.1875rem); line-height: 1.7; text-shadow: none; }
@@ -132,19 +300,17 @@ html[data-gl='on'] .chapter { text-shadow: none; }
   color: var(--color-text-muted);
   font-size: 0.75rem;
 }
-.hero__foot a { display: inline-flex; gap: 3rem; align-items: center; min-height: 2.75rem; text-decoration: none; }
-.hero__foot a:hover { color: var(--color-text); }
 
 /* A single visual transition: light becomes the contours of a face. */
 .mind { position: relative; height: 190svh; }
-.mind__stage { position: sticky; top: 0; height: 100svh; min-height: 40rem; }
+.mind__stage { position: sticky; top: 0; height: 100svh; min-height: 40rem; perspective: 1600px; }
 .mind__copy { position: relative; padding-top: clamp(10rem, 25vh, 18rem); }
 .mind__copy .tag { color: var(--color-text-muted); }
 .mind__copy h2 { margin-block: 2rem; font-size: clamp(3.4rem, 7.3vw, 7.5rem); line-height: 1.04; letter-spacing: -0.065em; font-weight: 400; }
-.mind__copy h2 span { color: #a9c4c5; }
+.mind__copy h2 span { color: var(--landing-title-soft); }
 .mind__note { font-size: 1rem; line-height: 1.8; color: var(--color-text-soft); }
 .mind__foot { position: absolute; bottom: 3rem; left: 0; right: 0; display: flex; justify-content: space-between; padding-top: 1.5rem; border-top: 1px solid var(--color-line); font-size: 0.6875rem; color: var(--color-text-muted); }
-.mind__still { position: absolute; width: min(45vw, 75vh); aspect-ratio: 1; right: 5%; top: 15%; background: url('/portrait-still.png') center / contain no-repeat; }
+.mind__still { position: absolute; width: min(45vw, 75vh); aspect-ratio: 1; right: 5%; top: 15%; background-image: var(--still-portrait); background-position: center; background-size: contain; background-repeat: no-repeat; mask-image: var(--still-fade, none); }
 html[data-gl='on'] .mind__still { visibility: hidden; }
 html:not([data-motion='on']) .mind,
 html[data-gl='off'] .mind { height: auto; }
@@ -163,7 +329,7 @@ html[data-gl='off'][data-gl-reason='user'] .mind__stage { position: sticky; }
   .mind__foot { bottom: 1.5rem; font-size: 0.625rem; }
   .mind__foot > span:first-child { display: none; }
   .mind__foot { justify-content: flex-end; }
-  .mind__still { width: min(100%, max(164px, calc(92.825svh - 352.5px))); top: calc(39.5svh + 140px); right: auto; left: 50%; transform: translate(-50%, -50%); background-image: url('/portrait-mobile-still.png'); }
+  .mind__still { width: min(100%, max(164px, calc(92.825svh - 352.5px))); top: calc(39.5svh + 140px); right: auto; left: 50%; translate: -50% -50%; background-image: var(--still-portrait-mobile); }
 }
 
 /* The four moments of a conversation, with a recognisable product preview. */
@@ -182,7 +348,7 @@ html[data-gl='off'][data-gl-reason='user'] .mind__stage { position: sticky; }
 .step p { font-size: 1rem; }
 .how__visual { display: none; }
 .how__drawing { position: sticky; top: 24vh; }
-.how__motion { width: 100%; height: min(46vh, 28rem); background: url('/conversation-still.png') center / contain no-repeat; }
+.how__motion { width: 100%; height: min(46vh, 28rem); background-image: var(--still-conversation); background-position: center; background-size: contain; background-repeat: no-repeat; mask-image: var(--still-fade, none); }
 html[data-gl='on'] .how__motion { background-image: none; }
 .how__phases { display: flex; gap: 0.75rem; align-items: center; margin: 1rem 12% 0; font-family: var(--font-mono); font-size: 0.5625rem; color: var(--color-text-muted); }
 .how__phases i { flex: 1; height: 1px; background: var(--color-line); }
@@ -190,10 +356,10 @@ html[data-gl='on'] .how__motion { background-image: none; }
 .transcript {
   gap: 1.75rem;
   padding: clamp(1.25rem, 2.5vw, 2.5rem);
-  border: 1px solid #35413b;
+  border: 1px solid var(--landing-card-line);
   border-radius: 1.25rem;
-  background: #101916;
-  box-shadow: 0 24px 80px rgb(0 0 0 / 0.16);
+  background: var(--landing-card);
+  box-shadow: 0 24px 80px var(--landing-card-shadow);
   text-shadow: none;
 }
 .transcript__heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--color-line); }
@@ -225,7 +391,7 @@ html[data-gl='on'] .how__motion { background-image: none; }
 .diary .chapter__head { margin-bottom: 3rem; }
 .diary__art { display: block; position: relative; width: min(100%, 28rem); margin: 0 auto 3rem; }
 .diary__sky { display: block; position: relative; inset: auto; width: 100%; aspect-ratio: 1; margin-block: 1rem; }
-.diary__sky::before { content: ''; position: absolute; inset: 0; background: url('/atlas-still.png') center / contain no-repeat; }
+.diary__sky::before { content: ''; position: absolute; inset: 0; background-image: var(--still-atlas); background-position: center; background-size: contain; background-repeat: no-repeat; mask-image: var(--still-fade, none); }
 html[data-gl='on'] .diary__sky { opacity: 0; }
 .diary__art-kicker { font-family: var(--font-mono); font-size: 0.625rem; letter-spacing: 0.08em; color: var(--color-text-muted); text-transform: uppercase; }
 .diary__art-caption { display: flex; justify-content: space-between; gap: 1rem; padding-top: 1.25rem; border-top: 1px solid var(--color-line); font-size: 0.75rem; color: var(--color-text-soft); }
@@ -260,9 +426,9 @@ html[data-gl='on'] .diary__sky { opacity: 0; }
 .final .lead { max-width: 40rem; text-wrap: pretty; }
 .final__meta { gap: 2rem; margin-top: 0.75rem; justify-content: center; }
 .final__art { --final-size: min(94vw, 132svh); position: absolute; left: 50%; top: 93%; transform: translate(-50%, -50%); width: min(100%, var(--final-size)); height: var(--final-size); pointer-events: none; opacity: 0.62; mask-image: linear-gradient(transparent 1%, #000 34%); }
-.final__art::before { inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); width: calc(var(--final-size) * 1.4); height: calc(var(--final-size) * 1.4); mask-image: radial-gradient(ellipse at 50% 20%, transparent, #000 68%); }
+.final__art::before { inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); width: calc(var(--final-size) * 1.4); height: calc(var(--final-size) * 1.4); mask-image: var(--still-final-fade, radial-gradient(ellipse at 50% 20%, transparent, #000 68%)); }
 html[data-gl='on'] .final__art::before { visibility: hidden; }
-.site-footer { padding-top: 2.5rem; background: #060b0a; }
+.site-footer { padding-top: 2.5rem; background: var(--landing-footer); }
 .site-footer__brand { font-family: var(--font-body); font-size: 2rem; text-transform: none; letter-spacing: -0.055em; }
 .site-footer__note { font-size: 0.75rem; line-height: 1.8; gap: 0.8rem; }
 .site-footer__links { flex-direction: column; gap: 0; }
@@ -296,7 +462,6 @@ html[data-gl='on'] .final__art::before { visibility: hidden; }
   .hero__aside { max-width: 32rem; }
   .hero__tag { position: absolute; top: 7rem; }
   .hero__foot { bottom: 1.5rem; }
-  .hero__foot a { gap: 0.75rem; }
   .hero__orb,
   .hero__orb-link { top: var(--light-y, 14rem); width: var(--light-d, 12rem); }
   .step { min-height: 0; }
@@ -323,7 +488,8 @@ html[data-gl='on'] .final__art::before { visibility: hidden; }
   .site-header__actions { gap: 0.125rem; }
   .site-header .help-link { padding-inline: 0.35rem; font-size: 0.75rem; }
   .site-header .media { padding: 0; gap: 0; }
-  .media__button { width: 2rem; }
+  .media__button,
+  .theme-toggle { width: 2rem; }
   .menu-toggle { width: 2.25rem; height: 2.5rem; border-color: transparent; background: transparent; }
   .hero { min-height: 52rem; padding-top: 20rem; }
   .hero__title { font-size: clamp(2.55rem, 10.6vw, 3.6rem); }
@@ -334,7 +500,6 @@ html[data-gl='on'] .final__art::before { visibility: hidden; }
   .hero__links .cta--primary { padding-inline: 1.25rem; min-height: 3.25rem; gap: 1rem; font-size: 0.875rem; }
   .hero__links .text-link { font-size: 0.8125rem; gap: 0.5rem; }
   .hero__foot { font-size: 0.6875rem; gap: 1rem; }
-  .hero__foot p { max-width: 10rem; }
   .chapter__head { gap: 1.25rem; margin-bottom: 2.5rem; }
   .display-2 { font-size: clamp(2.1rem, 8.8vw, 3rem); }
   .scenario-list .row { gap: 1rem; }
@@ -347,11 +512,223 @@ html[data-gl='on'] .final__art::before { visibility: hidden; }
 
 @media (max-width: 23em) {
   .brand__mark { display: none; }
+  /* With «Вигляд» the row is full at 320 px: the wordmark's hit area stops where «Якщо важко» starts. */
+  .brand { padding-inline: 0.25rem; margin-inline: -0.25rem; }
+  /* The crisis chapter in view: a ring round «Якщо важко» came 3 px from «Liora» here. The current
+     chapter is a small light under the words instead, as in the navigation — still not colour alone
+     (SC 1.4.1). */
+  .site-header .help-link[aria-current] { position: relative; border-color: transparent; }
+  .site-header .help-link[aria-current]::after { content: ''; position: absolute; left: 50%; bottom: 0.3rem; width: 4px; height: 4px; border-radius: 50%; background: var(--color-light); translate: -50% 0; }
   .site-header { gap: 0.25rem; }
   .hero__links { gap: 0.75rem; }
   .hero__links .cta--primary { padding-inline: 1rem; gap: 0.65rem; font-size: 0.8125rem; }
   .hero__links .text-link { font-size: 0.75rem; }
   .transcript { padding: 1rem; }
+}
+
+/* ---------- Motion between the chapters (ADR-012 «Рух», spec §9.4 п. 8) ----------
+   Everything below moves only under html[data-motion='on'] and without prefers-reduced-motion, and
+   every element's resting state is the visible one drawn above: without JS, with an
+   IntersectionObserver that never answers, with reduced motion or on «Пауза» the page stands as it
+   is, all text on screen. Only opacity and transforms (and the separate rotate/scale) move, so no
+   layout shifts. Opacity is a start that ends at 1, never a resting dimness. */
+
+/* «Пауза» ends what is under way at once (a reveal half-way, the FAQ's «+» turning) instead of letting
+   it run out — a transition no longer named stops — and what follows the scroll changes its ink at
+   once: the example session's lines, the steps' numbers, the header's current chapter. */
+html:not([data-motion='on']) [data-reveal],
+html:not([data-motion='on']) :is(.step__index, .transcript [data-for] :is(p, span, li), .site-nav a),
+html:not([data-motion='on']) .qa summary::after {
+  transition: none;
+}
+
+@keyframes landing-fade {
+  from { opacity: 0; }
+}
+
+@keyframes landing-rise {
+  from { opacity: 0; transform: translate3d(0, var(--rise, var(--rise-screen)), 0); }
+}
+
+/* The hero on load: a cascade within 600 ms. The headline by opacity alone (hero-light.ts measures
+   its glyphs, transforms included, to place the light), the lead and the links rise 8 px.
+   html.js-intro comes from src/ui/intro.ts only while nothing has been painted (no text that was
+   already on screen is taken away to come in again) and goes once the cascade is over. */
+@media (prefers-reduced-motion: no-preference) {
+  html.js-intro[data-motion='on'] .hero__title { animation: landing-fade var(--dur-5) var(--ease-decelerate) 60ms backwards; }
+  html.js-intro[data-motion='on'] .hero__aside { animation: landing-rise var(--dur-4) var(--ease-decelerate) 160ms backwards; }
+  html.js-intro[data-motion='on'] .hero__links { animation: landing-rise var(--dur-4) var(--ease-decelerate) 240ms backwards; }
+}
+
+/* Steps, privacy rows and FAQ answers (data-reveal="item", src/ui/reveal.ts): once, 280 ms, 8 px,
+   decelerate — quicker and closer than the chapter titles' 1.2 s. Neighbours that come in together
+   follow each other by 40 ms. data-reveal="mind" is #mind's copy where scroll-driven animations do
+   not exist (reveal.ts sets it): the same entrance, one step after another. */
+@media (prefers-reduced-motion: no-preference) {
+  html.js-reveal[data-motion='on'] :is([data-reveal='item'], [data-reveal='mind']) {
+    transition:
+      opacity var(--dur-screen) var(--ease-decelerate),
+      transform var(--dur-screen) var(--ease-decelerate);
+  }
+
+  html.js-reveal[data-motion='on'] :is([data-reveal='item'], [data-reveal='mind']):not(.is-visible) {
+    transform: translate3d(0, var(--rise-screen), 0);
+  }
+
+  html.js-reveal[data-motion='on'] :is(.principles, .faq__list) > [data-reveal='item']:nth-child(2) { transition-delay: 40ms; }
+  html.js-reveal[data-motion='on'] :is(.principles, .faq__list) > [data-reveal='item']:nth-child(3) { transition-delay: 80ms; }
+  html.js-reveal[data-motion='on'] :is(.principles, .faq__list) > [data-reveal='item']:nth-child(n + 4) { transition-delay: 120ms; }
+  html.js-reveal[data-motion='on'] [data-reveal='mind'][data-mind-step='2'] { transition-delay: 120ms; }
+  html.js-reveal[data-motion='on'] [data-reveal='mind'][data-mind-step='3'] { transition-delay: 240ms; }
+}
+
+/* #mind: the copy unfolds with the scroll instead of standing still for the 90svh of the pin — the
+   tag and «Ближче» as the section comes up, «до себе.» and the note while it is pinned, then the copy
+   drifts up as the portrait turns away. The scroll can stop anywhere on this timeline, so the text is
+   never faded: it rises and brightens from the dim ink (--color-text-dim, ≥ 4.5:1) to its own,
+   readable and findable at every position. Without WebGL the still portrait turns on the same
+   timeline (CSS only: no canvas), and the section keeps its pinned height, so data-gl going
+   loading → off moves nothing on the page and «Пауза» does not change the scroll position. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    html[data-gl='off']:not([data-gl-reason='reduced-motion'], [data-gl-reason='forced-colors']) .mind { height: 190svh; }
+    html[data-gl='off']:not([data-gl-reason='reduced-motion'], [data-gl-reason='forced-colors']) .mind__stage { position: sticky; }
+
+    /* No inset: the ranges follow the pin itself (sticky top: 0), not html's scroll-padding under the header. */
+    html[data-motion='on'] .mind { view-timeline: --mind block; view-timeline-inset: 0px; }
+
+    html[data-motion='on'] .mind__copy .tag {
+      --rise: 1rem;
+      animation: landing-ink linear both;
+      animation-timeline: --mind;
+      animation-range: entry 45% entry 85%;
+    }
+
+    html[data-motion='on'] .mind__copy h2 {
+      --rise: 2.5rem;
+      animation: landing-ink linear both;
+      animation-timeline: --mind;
+      animation-range: entry 55% entry 100%;
+    }
+
+    html[data-motion='on'] .mind__copy h2 span {
+      --rise: 0px;
+      animation: landing-ink linear both;
+      animation-timeline: --mind;
+      animation-range: contain 0% contain 30%;
+    }
+
+    html[data-motion='on'] .mind__note {
+      --rise: 1rem;
+      animation: landing-ink linear both;
+      animation-timeline: --mind;
+      animation-range: contain 25% contain 55%;
+    }
+
+    html[data-motion='on'] .mind__copy {
+      animation: landing-drift linear both;
+      animation-timeline: --mind;
+      animation-range: contain 70% exit 50%;
+    }
+
+    html[data-motion='on']:not([data-gl='on']) .mind__still {
+      animation: landing-turn linear both;
+      animation-timeline: --mind;
+      animation-range: cover 0% cover 100%;
+    }
+  }
+}
+
+/* An engine without scroll-driven animations: the copy comes in with the reveal (above), and without
+   WebGL the still portrait breathes slowly instead of turning with the scroll. */
+@supports not (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    html[data-motion='on'][data-gl='off'] .mind__still { animation: landing-breathe var(--dur-breath) var(--ease-breath) infinite alternate; }
+  }
+}
+
+/* #mind's copy on its scroll timeline: dim ink and a little lower, to its own colour and place. */
+@keyframes landing-ink {
+  from { color: var(--color-text-dim); transform: translate3d(0, var(--rise, 0px), 0); }
+}
+
+@keyframes landing-drift {
+  to { transform: translate3d(0, -12vh, 0); }
+}
+
+/* Scaled so the turned box never passes the still's own width (cutOffAtEdges at 412 px). */
+@keyframes landing-turn {
+  0% { opacity: 0.45; rotate: y -16deg; scale: 0.94; }
+  50% { opacity: 1; rotate: y 0deg; scale: 0.98; }
+  100% { opacity: 0.55; rotate: y 9deg; scale: 0.95; }
+}
+
+@keyframes landing-breathe {
+  from { rotate: y -6deg; scale: 0.95; }
+  to { rotate: y 5deg; scale: 0.98; }
+}
+
+/* The sky through the long stretch without a scene (#scenarios → #faq): two soft lights in the sky's
+   own colours — so nothing under the text gets lighter at night or darker by day than the sky
+   already is — drift with the page's progress (--progress, src/ui/nav.ts), transform only. They
+   go out beside the crisis contacts (.stage[data-quiet], ADR-011) and do not exist on pause. */
+.stage::before,
+.stage::after {
+  content: '';
+  position: absolute;
+  width: 90vmax;
+  height: 90vmax;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.stage::before {
+  left: -34vmax;
+  top: -10vh;
+  background: radial-gradient(closest-side, var(--landing-sky-cool), transparent);
+}
+
+.stage::after {
+  right: -38vmax;
+  top: 40vh;
+  background: radial-gradient(closest-side, var(--landing-sky-warm), transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html[data-motion='on'] .stage::before,
+  html[data-motion='on'] .stage::after {
+    opacity: 1;
+    will-change: transform;
+    transition: opacity var(--dur-5) var(--ease-standard);
+  }
+
+  html[data-motion='on'] .stage::before { transform: translate3d(calc(var(--progress, 0) * 42vw), calc(var(--progress, 0) * 55vh), 0); }
+  html[data-motion='on'] .stage::after { transform: translate3d(calc(var(--progress, 0) * -34vw), calc(var(--progress, 0) * -60vh), 0); }
+
+  html[data-motion='on'] .stage[data-quiet]::before,
+  html[data-motion='on'] .stage[data-quiet]::after { opacity: 0; }
+}
+
+/* A FAQ answer opens (and closes) smoothly where details' content box and keyword sizes can be
+   animated; elsewhere it opens at once, as before. Closed answers stay findable in the page. */
+@supports (interpolate-size: allow-keywords) {
+  @media (prefers-reduced-motion: no-preference) {
+    html[data-motion='on'] .qa { interpolate-size: allow-keywords; }
+
+    html[data-motion='on'] .qa::details-content {
+      block-size: 0;
+      overflow: clip;
+      transition:
+        block-size var(--dur-4) var(--ease-standard),
+        content-visibility var(--dur-4) var(--ease-standard) allow-discrete;
+    }
+
+    html[data-motion='on'] .qa[open]::details-content {
+      block-size: auto;
+      transition-timing-function: var(--ease-decelerate);
+    }
+  }
 }
 
 @media (forced-colors: active) {
@@ -360,4 +737,6 @@ html[data-gl='on'] .final__art::before { visibility: hidden; }
   .transcript { background: Canvas; border-color: CanvasText; }
   .cta { background: ButtonFace; color: ButtonText; border-color: ButtonText; }
   .site-header .help-link { border-color: LinkText; }
+  /* The small light of a narrow header is a background, which forced colours drop: the ring again. */
+  .site-header .help-link[aria-current] { border-color: Highlight; }
 }

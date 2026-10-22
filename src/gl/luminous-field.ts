@@ -1,4 +1,5 @@
-import { AdditiveBlending, BufferGeometry, DoubleSide, Float32BufferAttribute, Group, Mesh, PlaneGeometry, Points, ShaderMaterial, Vector2 } from 'three'
+import { AdditiveBlending, BufferGeometry, DoubleSide, Float32BufferAttribute, Group, Mesh, NormalBlending, PlaneGeometry, Points, ShaderMaterial, Vector2, Vector3 } from 'three'
+import { type ScenePalette, setRgb } from './core/palette'
 import fieldShape from './shaders/field-shape.glsl?raw'
 import fieldVertex from './shaders/field.vert.glsl?raw'
 import fieldFragment from './shaders/field.frag.glsl?raw'
@@ -18,6 +19,11 @@ export function createLuminousField(low: boolean) {
     uStroke: { value: 1 }, uPixelRatio: { value: 1 }, uSize: { value: 1 },
     uFinal: { value: 0 }, uResolution: { value: new Vector2(1, 1) },
     uGain: { value: 1.65 },
+    // The theme (setPalette): shared by every material below, so one write reaches all of them.
+    uFieldBlue: { value: new Vector3() }, uFieldMint: { value: new Vector3() }, uFieldGold: { value: new Vector3() },
+    uFieldFlash: { value: new Vector3() }, uFieldAlpha: { value: 1 },
+    uMoteCool: { value: new Vector3() }, uMoteWarm: { value: new Vector3() }, uMoteAlpha: { value: 1 },
+    uAtmosphereCool: { value: new Vector3() }, uAtmosphereWarm: { value: new Vector3() }, uAtmosphereAlpha: { value: 1 },
   }
   const flow: number[] = [], side: number[] = [], positions: number[] = [], indices: number[] = []
   for (let i = 0; i < strands; i++) {
@@ -78,8 +84,24 @@ export function createLuminousField(low: boolean) {
   atmosphere.renderOrder = -1
   const root = new Group()
   root.add(atmosphere, body)
+  const materials = [filaments.material, innerMaterial, orbitMaterial, motes.material, atmosphere.material]
+  /** The theme's colours in place, and its blending: draw state, no new program, no rebuilt scene. */
+  const setPalette = ({ additive, field, motes: dust, atmosphere: air }: ScenePalette): void => {
+    setRgb(uniforms.uFieldBlue.value, field.blue)
+    setRgb(uniforms.uFieldMint.value, field.mint)
+    setRgb(uniforms.uFieldGold.value, field.gold)
+    setRgb(uniforms.uFieldFlash.value, field.flash)
+    uniforms.uFieldAlpha.value = field.alpha
+    setRgb(uniforms.uMoteCool.value, dust.cool)
+    setRgb(uniforms.uMoteWarm.value, dust.warm)
+    uniforms.uMoteAlpha.value = dust.alpha
+    setRgb(uniforms.uAtmosphereCool.value, air.cool)
+    setRgb(uniforms.uAtmosphereWarm.value, air.warm)
+    uniforms.uAtmosphereAlpha.value = air.alpha
+    for (const material of materials) material.blending = additive ? AdditiveBlending : NormalBlending
+  }
   return {
-    root, body, inner, orbits, uniforms, vertices: positions.length / 3, particles: motesCount,
+    root, body, inner, orbits, uniforms, setPalette, vertices: positions.length / 3, particles: motesCount,
     simplify: () => { motesGeometry.setDrawRange(0, Math.floor(motesCount / 2)); geometry.setDrawRange(0, Math.floor(strands / 2) * segments * 6) },
     dispose: () => {
       for (const object of [filaments, motes, atmosphere, orbits]) { object.geometry.dispose(); object.material.dispose() }

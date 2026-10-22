@@ -1,6 +1,6 @@
-// Entry of chat/index.html (spec §9.1): styles, «Пауза» and «Звук», the sky preset, the light in its
-// slot, the on-screen keyboard, and the state machine of src/chat/core driven through store →
-// render → effects.
+// Entry of chat/index.html (spec §9.1): styles, «Пауза» and «Звук», the theme and the sky preset,
+// the light in its slot, the on-screen keyboard, and the state machine of src/chat/core driven
+// through store → render → effects.
 
 import '../../styles/fonts.css'
 import '../../styles/tokens.css'
@@ -15,12 +15,15 @@ import type { PresenceHandle } from '../../gl/presence'
 import { initMotionToggle } from '../../ui/motion'
 import { initSky } from '../../ui/sky'
 import { initSound } from '../../ui/sound'
+import { initThemePicker } from '../../ui/theme-picker'
+import { initTips } from '../../ui/tips'
 import { createApi } from '../core/api'
-import { draftOf, leaveGuard, pendingOf, sessionOf, type Action, type Model } from '../core/state'
+import { maskPausedLine } from '../core/helplines'
+import { MAX_MARKS, draftOf, editUnsaved, leaveGuard, pendingOf, sessionOf, type Action, type Model } from '../core/state'
 import type { ConsentKind } from '../core/types'
 import { createAnnouncer } from './announcer'
-import { conversationText, copyText, thesesText } from './clipboard'
-import { COPIED, COPY_FAILED_LABEL, copyFailed } from './copy'
+import { conversationText, copyText, entryMarkdown, thesesText } from './clipboard'
+import { COPIED, COPY_FAILED_LABEL, copyFailed, sayMarked, sayMarksFull, sayUnmarked } from './copy'
 import { createEffects } from './effects'
 import { initKeyboard } from './keyboard'
 import { createLeaveGuard } from './leave-guard'
@@ -28,9 +31,15 @@ import { applyPresence } from './presence'
 import { createView, type View } from './render'
 import { createStore } from './store'
 
-// The sky first: the fewer frames of the night before a chosen preset, the better (§9.2).
+// The theme and the sky preset are on <html> before the first frame (public/theme-init.js); these
+// wire their controls and keep the page in step with a new choice.
 const sky = initSky(document.querySelector<HTMLElement>('[data-sky-pick]'))
+const theme = initThemePicker({
+  root: document.querySelector<HTMLElement>('[data-theme-pick]'),
+  radios: document.querySelector<HTMLElement>('[data-theme-radios]'),
+})
 initMotionToggle(document.querySelector<HTMLButtonElement>('[data-motion-toggle]'))
+initTips()
 // The page sets the chord and the silence itself (presence.ts): no chapters to follow here.
 const sound = initSound({ follow: 'manual' })
 initKeyboard()
@@ -79,8 +88,9 @@ const effects = createEffects({
   announcer,
   leave,
   composer: (text) => view.chat.composer.put(text),
+  clearComposer: () => view.chat.composer.clear(),
 })
-view = createView(dispatch, { gl, sound, sky })
+view = createView(dispatch, { gl, sound, sky, theme, say: (text) => announcer.say(text) })
 
 // ── One delegated handler for every [data-act] on the page and in the dialogs ──
 
@@ -88,15 +98,33 @@ function topOverlay(model: Model) {
   return model.overlay[model.overlay.length - 1]
 }
 
-/** «Скопіювати текст розмови» / «Скопіювати тези» on whichever screen still holds them (§3.8). The
- *  result is said through the live region too: a changed name of the focused button is not
- *  announced by most screen readers (WCAG 4.1.3). */
-async function copy(button: HTMLElement, kind: 'talk' | 'theses'): Promise<void> {
+/** The page's IANA zone for the weekly review (the core has no time zone database), if Intl has one. */
+function timeZone(): string | null {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    return typeof zone === 'string' && zone !== '' && zone.length <= 64 ? zone : null
+  } catch {
+    return null
+  }
+}
+
+/** «Скопіювати текст розмови» / «Скопіювати тези» on whichever screen still holds them (§3.8), and
+ *  «Копіювати» under one reply of the AI: its text from the model, the paused number masked — never
+ *  read back from the page. The result is said through the live region too: a changed name of the
+ *  focused button is not announced by most screen readers (WCAG 4.1.3). */
+async function copy(button: HTMLElement, kind: 'talk' | 'theses' | 'reply' | 'entry'): Promise<void> {
   const { state } = store.model()
   let text = ''
-  if (kind === 'theses') {
+  if (kind === 'entry') {
+    // One diary record as Markdown, from the model (masked), never read back from the page.
+    const item = state.s === 'journal' ? state.list?.items.find((x) => x.id === button.dataset.id) : undefined
+    if (item) text = entryMarkdown(item)
+  } else if (kind === 'theses') {
     const draft = draftOf(state)
     if (draft) text = thesesText(draft)
+  } else if (kind === 'reply') {
+    const message = sessionOf(state)?.messages[Number(button.dataset.i)]
+    if (message?.role === 'assistant') text = maskPausedLine(message.content)
   } else {
     const session = sessionOf(state)
     const pending = pendingOf(state)
@@ -105,14 +133,16 @@ async function copy(button: HTMLElement, kind: 'talk' | 'theses'): Promise<void>
   if (text === '') return
   const ok = await copyText(text)
   const shown = ok ? COPIED : COPY_FAILED_LABEL
-  // The button's own name, kept across quick repeated presses (a failure, then a success).
-  const label = button.dataset.label ?? button.textContent ?? ''
+  // The words of the button (its label, beside an icon), kept across quick repeated presses (a
+  // failure, then a success).
+  const words = button.querySelector<HTMLElement>('.said__copy-label') ?? button
+  const label = button.dataset.label ?? words.textContent ?? ''
   button.dataset.label = label
-  button.textContent = shown
+  words.textContent = shown
   announcer.say(ok ? COPIED : copyFailed(kind))
   window.setTimeout(() => {
-    if (button.textContent !== shown) return
-    button.textContent = label
+    if (words.textContent !== shown) return
+    words.textContent = label
     delete button.dataset.label
   }, 2000)
 }
@@ -124,10 +154,16 @@ function act(name: string, target: HTMLElement, event: Event): void {
   // The account operation (or the save) is on its way: a second press sends nothing.
   if (target.getAttribute('aria-busy') === 'true') return
   if (view.review.act(name, target)) return
+  if (view.journal.act(name, target)) return
+  if (view.tools.act(name, target)) return
   switch (name) {
     case 'leave-home':
-      // Something would be lost: ask first (spec §3.12); otherwise the link just works.
-      if (leaveGuard(state)) {
+      // Something would be lost: ask first (spec §3.12, §7.7); otherwise the link just works. A
+      // record's unsaved edit first: the conversation's own question may follow.
+      if (editUnsaved(state)) {
+        event.preventDefault()
+        dispatch({ type: 'confirm/open', kind: 'discard-edit', leaveTo: 'home' })
+      } else if (leaveGuard(state)) {
         event.preventDefault()
         dispatch({ type: 'confirm/open', kind: 'leave', leaveTo: 'home' })
       }
@@ -235,14 +271,88 @@ function act(name: string, target: HTMLElement, event: Event): void {
     case 'copy-theses':
       void copy(target, 'theses')
       return
+    case 'copy-reply':
+      void copy(target, 'reply')
+      return
+    case 'starter':
+      return view.chat.start(Number(target.dataset.i))
+    // «→ У тези» under a reply (§3.7.2): a toggle. What changed is said in the live region — the
+    // pressed state alone is not announced by every screen reader.
+    case 'keep-reply': {
+      if (state.s !== 'chat') return
+      const index = Number(target.dataset.i)
+      const before = state.session.marks
+      const on = before.includes(index)
+      if (!on && before.length >= MAX_MARKS) return announcer.say(sayMarksFull(MAX_MARKS))
+      dispatch({ type: 'chat/mark', index })
+      const after = store.model().state
+      if (after.s !== 'chat' || after.session.marks === before) return
+      announcer.say((on ? sayUnmarked : sayMarked)(after.session.marks.length, MAX_MARKS))
+      return
+    }
+    // The reminder to pause (§3.7.7).
+    case 'pause-hide':
+      return dispatch({ type: 'chat/pause-hide' })
+    case 'pause-collect': {
+      // The line goes as the confirm opens; the confirm gives the focus back to «Завершити
+      // розмову», the control it stands for, not to a button that is no longer there.
+      const end = document.querySelector<HTMLElement>('[data-el="session-end"]')
+      if (end !== null && end.closest('[hidden]') === null) end.focus({ preventScroll: true })
+      return dispatch({ type: 'chat/pause-collect' })
+    }
+    // The diary (§7.7).
+    case 'journal-open':
+      return dispatch({ type: 'journal/open', tz: timeZone() })
+    case 'journal-back':
+      return dispatch({ type: 'journal/back' })
+    case 'journal-more':
+      return dispatch({ type: 'journal/more' })
+    case 'journal-retry':
+      return dispatch({ type: 'journal/retry' })
+    case 'week-prev':
+      return dispatch({ type: 'journal/week', step: -1 })
+    case 'week-next':
+      return dispatch({ type: 'journal/week', step: 1 })
+    case 'week-retry':
+      return dispatch({ type: 'journal/week-retry' })
+    case 'entry-copy':
+      void copy(target, 'entry')
+      return
   }
 }
 
+// A press that takes its own control away — the row it stood in, the line it closed — or opens a
+// dialog: the second press of the same double click lands on whatever took that place (the next
+// candidate's «Прибрати»; on a phone, the confirm's buttons where «Зібрати тези» was) and is no
+// press of it, nor does it move the focus the first press placed. No timer: the browser's own click
+// count (`detail`) says it is the same double click; the keyboard's presses have none.
+let swallow = false
+const swallowed = (event: MouseEvent): boolean => swallow && event.detail > 1
+document.addEventListener(
+  'mousedown',
+  (event) => {
+    if (swallowed(event)) event.preventDefault()
+  },
+  true,
+)
+document.addEventListener(
+  'click',
+  (event) => {
+    if (!swallowed(event)) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  },
+  true,
+)
+
 document.addEventListener('click', (event) => {
+  swallow = false
   const target = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-act]') : null
   if (target === null || target instanceof HTMLInputElement) return
+  const open = document.querySelectorAll('dialog[open]').length
   view.dialogs.noteOpener(target)
   act(target.dataset.act ?? '', target, event)
+  swallow = target.getClientRects().length === 0 || document.querySelectorAll('dialog[open]').length > open
 })
 
 document.addEventListener('change', (event) => {

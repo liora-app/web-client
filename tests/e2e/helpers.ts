@@ -1,9 +1,50 @@
-import { expect, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 import type { SceneStats } from '../../src/gl/scene'
 
 export type { SceneStats }
 
+// The repo has no @types/node (node-builtins.d.ts): the one Node global read here.
+declare const process: { readonly env: Readonly<Record<string, string | undefined>> }
+
 export const SECTION_IDS = ['hero', 'how', 'scenarios', 'diary', 'privacy', 'safety', 'faq', 'final'] as const
+
+/** E2E_CPU_THROTTLE=<rate>, opt-in: slows this page's main thread `rate` times (CDP, Chromium
+ *  only), to see locally what a CI runner sees — two workers on two vCPUs. Unset (CI, every
+ *  ordinary run) it does nothing. One browser, --workers=1, as always on the owner's PC. */
+export async function throttle(page: Page): Promise<void> {
+  const rate = Number(process.env.E2E_CPU_THROTTLE ?? '')
+  if (!Number.isFinite(rate) || rate <= 1) return
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate })
+}
+
+/** Waits until the finite animations and transitions that run now are over — in `scope`'s subtree,
+ *  or the whole document for a page. A cancelled one counts as over: its `finished` rejects with an
+ *  AbortError when a transition is retargeted or its element hidden (a slow runner sees that where a
+ *  fast PC sees the end). Endless ones (a breath, a drift) never end and are left alone, and so are
+ *  those on targets matching `except` (motion the caller does not read, such as the breathing
+ *  circle's scale under a colour check). One pass: what starts after the call is not waited for.
+ *  `cap` (ms, Node side — an in-page timer would stand still under page.clock) goes on after that
+ *  long instead of waiting on; without it the test's own timeout is the bound. */
+export async function animationsDone(scope: Page | Locator, options: { except?: string; cap?: number } = {}): Promise<void> {
+  const target = 'goto' in scope ? scope.locator(':root') : scope
+  const done = target.evaluate((root, except) => {
+    const all = root === document.documentElement ? document.getAnimations() : root.getAnimations({ subtree: true })
+    return Promise.all(
+      all
+        .filter((a) => Number.isFinite(Number(a.effect?.getComputedTiming().endTime)))
+        .filter((a) => {
+          const on = (a.effect as KeyframeEffect | null)?.target
+          return except === '' || !(on instanceof Element && on.matches(except))
+        })
+        .map((a) => a.finished.then(() => undefined, () => undefined)),
+    ).then(() => undefined)
+  }, options.except ?? '')
+  if (options.cap === undefined) return done
+  // Left behind past the cap, the wait may still reject (the page navigated): nobody listens then.
+  done.catch(() => undefined)
+  await Promise.race([done, new Promise((resolve) => setTimeout(resolve, options.cap))])
+}
 
 /** Collects console errors/warnings and uncaught exceptions for the whole test. */
 export function watchConsole(page: Page): string[] {

@@ -8,6 +8,8 @@ import type { GlControl } from '../../gl/core/boot'
 import type { PresenceHandle } from '../../gl/presence'
 import type { SkyControl } from '../../ui/sky'
 import type { SoundControl } from '../../ui/sound'
+import { skipThemeTransition } from '../../ui/theme'
+import type { ThemePicker } from '../../ui/theme-picker'
 import { hasUserMessage, sessionOf, type Action, type Model, type State } from '../core/state'
 import { createDialogs, type Dialogs } from './dialogs'
 import { finePointer, headingOf, setAttr, show } from './dom'
@@ -15,6 +17,7 @@ import { createPresence, type PresenceView } from './presence'
 import { chatScreen, type ChatScreen } from './screens/chat'
 import { consentScreen } from './screens/consent'
 import { crisisScreen } from './screens/crisis'
+import { journalScreen, type JournalScreen } from './screens/journal'
 import {
   deletedScreen,
   endedScreen,
@@ -27,13 +30,16 @@ import {
   type Screen,
 } from './screens/text'
 import { reviewScreen, summarizingScreen, type ReviewScreen } from './screens/theses'
+import { createTools, type Tools } from './tools'
 
 export type View = Readonly<{
   render(model: Model, prev: Model | null): void
   chat: ChatScreen
   consent: ReturnType<typeof consentScreen>
   review: ReviewScreen
+  journal: JournalScreen
   dialogs: Dialogs
+  tools: Tools
 }>
 
 const WIDE = window.matchMedia('(min-width: 64em)')
@@ -42,9 +48,13 @@ export type ViewDeps = Readonly<{
   gl: GlControl<PresenceHandle> | null
   sound: SoundControl | null
   sky: SkyControl | null
+  theme: ThemePicker | null
+  /** The page's one polite live region (announcer.ts), for what a screen does where the focus is
+   *  not: words put into the field from a touch screen, another week of the diary. */
+  say: (text: string) => void
 }>
 
-export function createView(dispatch: (action: Action) => void, { gl, sound, sky }: ViewDeps): View {
+export function createView(dispatch: (action: Action) => void, { gl, sound, sky, theme, say }: ViewDeps): View {
   const html = document.documentElement
   const main = document.querySelector<HTMLElement>('main')!
   const account = document.querySelector<HTMLElement>('.account-toggle')!
@@ -55,10 +65,14 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky 
   )
 
   const presence: PresenceView = createPresence(presenceRoot, gl, sound)
-  const dialogs = createDialogs(dispatch)
-  const chat = chatScreen(dispatch, () => presence.pulse())
+  // The self-help tools (§3.13) put a mood sentence into the field: the chat screen's composer,
+  // created just below.
+  const tools = createTools(dispatch, () => chat.composer)
+  const dialogs = createDialogs(dispatch, tools)
+  const chat = chatScreen(dispatch, () => presence.pulse(), () => presence.listen(), say)
   const consent = consentScreen()
   const review = reviewScreen(dispatch)
+  const journal = journalScreen(dispatch, say)
   const screens: Record<State['s'], Screen> = {
     booting: staticScreen,
     'signed-out': signInScreen(),
@@ -71,6 +85,7 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky 
     review,
     saved: savedScreen(),
     ended: endedScreen(),
+    journal,
     'account-deleted': deletedScreen(),
     fatal: fatalScreen(),
   }
@@ -151,8 +166,13 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky 
         window.scrollTo(0, 0)
       }
       setAttr(main, 'aria-busy', s === 'booting' ? 'true' : 'false')
-      // The help contacts always stand on the night sky (§9.2).
+      // The crisis keeps the person's theme but takes off the sky preset (and, in chat.css, the
+      // haze, the grain and the vignette): the help contacts stand on the theme's plain sky (§9.2).
       sky?.setSuppressed(s === 'crisis')
+      // The «Вигляд» menu does not stay open over a new screen — over the crisis above all — and a
+      // theme cross-fade still running ends at once: a screen comes in one frame (§0).
+      theme?.close()
+      skipThemeTransition()
     }
     // «Акаунт» only with a live session: not after a 401 either (§8.1).
     const signedIn = model.ctx.me !== null && s !== 'signed-out' && s !== 'account-deleted' && s !== 'booting' && s !== 'session-expired'
@@ -161,6 +181,7 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky 
 
     screens[s].render(model, changed)
     dialogs.sync(model, changed)
+    tools.sync(model)
     presence.sync(model, dialogs.helpOpen())
     syncSlot(model)
 
@@ -177,5 +198,5 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky 
     }
   }
 
-  return { render, chat, consent, review, dialogs }
+  return { render, chat, consent, review, journal, dialogs, tools }
 }

@@ -2,14 +2,19 @@
 <html lang="uk">
   <head>
     <meta charset="UTF-8" />
+    <!-- One theme-color, before public/theme-init.js. Its hex is this page's dark background, the night: the
+         script reads it for the dark theme (paper for the light one) before the first frame, and
+         src/ui/theme.ts keeps it on the page's background from then on. -->
+    <meta name="theme-color" content="#040708" />
+    <!-- First, before any stylesheet: the chosen theme on <html> before the first frame (ADR-012). -->
+    <script src="/theme-init.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Liora — щоденник саморефлексії з AI</title>
     <meta
       name="description"
       content="Liora — простір для саморефлексії з AI. Розкладіть думки по місцях, отримайте 3–5 коротких тез і вирішіть, що зберегти. Почніть розмову у браузері."
     />
-    <meta name="theme-color" content="#040708" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light dark" />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="uk_UA" />
     <meta property="og:site_name" content="Liora" />
@@ -64,6 +69,20 @@
           <button class="media__button sound-toggle" type="button" data-sound-toggle aria-pressed="false" aria-label="Звук" hidden>
             <span class="sound-toggle__wave" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
           </button>
+        </div>
+        <!-- «Вигляд» (src/ui/theme-picker.ts), the chat's control: a menu button outside .media (that group is
+             motion and sound), three plain buttons in the menu — no inputs on this page. Hidden without JS. -->
+        <div class="theme-pick" data-theme-pick hidden>
+          <button class="theme-toggle" type="button" data-theme-toggle data-choice="system" aria-haspopup="menu" aria-expanded="false" aria-controls="theme-menu" aria-label="Вигляд: як у системі">
+            <svg class="theme-toggle__icon theme-toggle__auto" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="5.25" /><path class="theme-toggle__half" d="M8 2.75a5.25 5.25 0 0 1 0 10.5z" /></svg>
+            <svg class="theme-toggle__icon theme-toggle__sun" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="2.75" /><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.06 1.06M11.54 11.54l1.06 1.06M3.4 12.6l1.06-1.06M11.54 4.46l1.06-1.06" /></svg>
+            <svg class="theme-toggle__icon theme-toggle__moon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M13.25 9.6A5.5 5.5 0 0 1 6.4 2.75a5.5 5.5 0 1 0 6.85 6.85z" /></svg>
+          </button>
+          <div class="theme-menu" id="theme-menu" role="menu" aria-label="Вигляд" data-theme-menu hidden>
+            <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="true" tabindex="-1" data-theme-choice="system">Як у системі</button>
+            <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-theme-choice="light">Світла</button>
+            <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-theme-choice="dark">Темна</button>
+          </div>
         </div>
         <!-- The way into the chat (ADR-007). From 64em only; below that it heads the menu. -->
         <a class="cta site-header__cta" href="/chat/">Розмова з AI <span aria-hidden="true">→</span></a>
@@ -128,17 +147,18 @@
         </div>
         <div class="hero__foot">
           <p>У вашому темпі. З вашими словами.</p>
-          <a href="#mind">Знайомство з Liora <span aria-hidden="true">↓</span></a>
         </div>
       </section>
 
+      <!-- The copy unfolds with the scroll (landing.css, «#mind»): data-mind-step orders it for engines
+           without scroll-driven animations, where src/ui/reveal.ts brings the steps in instead. -->
       <section class="mind" id="mind" data-portrait data-gl-state="0" aria-labelledby="mind-title">
         <div class="mind__stage">
           <div class="mind__still" aria-hidden="true"></div>
           <div class="mind__copy frame">
-            <p class="tag">Простір для ваших думок</p>
-            <h2 id="mind-title">Ближче<br /><span>до себе.</span></h2>
-            <p class="mind__note">Зупинитися. Висловитися.<br />Побачити те, що справді важливо.</p>
+            <p class="tag" data-mind-step="1">Простір для ваших думок</p>
+            <h2 id="mind-title" data-mind-step="2">Ближче<br /><span>до себе.</span></h2>
+            <p class="mind__note" data-mind-step="3">Зупинитися. Висловитися.<br />Побачити те, що справді важливо.</p>
           </div>
           <div class="mind__foot frame" aria-hidden="true"><span>Від відчуття — до слів</span><span>Продовжуйте прокручувати ↓</span></div>
         </div>
@@ -149,32 +169,30 @@
           <header class="chapter__head">
             <p class="tag" data-decode><span class="tag__index">01</span> Як це працює</p>
             <h2 class="display-2" id="how-title" data-reveal>Від першої думки<br />до власних висновків.</h2>
-            <p class="lead" data-reveal>
-              Не потрібно заздалегідь знати відповідь. Почніть із того, що зараз вас займає.
-            </p>
+            <p class="lead" data-reveal>Не потрібно заздалегідь знати відповідь.</p>
           </header>
 
           <div class="how__layout">
             <ol class="steps" role="list">
-              <li class="step" data-step="1" data-gl-state="1">
+              <li class="step" data-step="1" data-gl-state="1" data-reveal="item">
                 <span class="step__index" aria-hidden="true">01</span>
                 <h3 class="step__title">Ви пишете</h3>
-                <p>Почніть із порожнього поля й пишіть так, як думаєте. Або оберіть сценарій, якщо не знаєте, з чого почати.</p>
+                <p>Пишіть так, як думаєте, або оберіть сценарій, якщо не знаєте, з чого почати.</p>
               </li>
-              <li class="step" data-step="2" data-gl-state="2">
+              <li class="step" data-step="2" data-gl-state="2" data-reveal="item">
                 <span class="step__index" aria-hidden="true">02</span>
                 <h3 class="step__title">AI уточнює</h3>
-                <p>Ставить уточнювальні запитання, помічає формулювання, що повторюються, і повертає до сказаного раніше в цій розмові.</p>
+                <p>Ставить уточнювальні запитання й помічає формулювання, що повторюються.</p>
               </li>
-              <li class="step" data-step="3" data-gl-state="3">
+              <li class="step" data-step="3" data-gl-state="3" data-reveal="item">
                 <span class="step__index" aria-hidden="true">03</span>
                 <h3 class="step__title">Підсумок у 3–5 тезах</h3>
-                <p>Наприкінці AI зводить розмову до кількох коротких тез. Кожну можна відредагувати або прибрати ще до збереження.</p>
+                <p>Наприкінці AI зводить розмову до коротких тез, і кожну можна змінити чи прибрати.</p>
               </li>
-              <li class="step" data-step="4" data-gl-state="3" data-gl-decide>
+              <li class="step" data-step="4" data-gl-state="3" data-gl-decide data-reveal="item">
                 <span class="step__index" aria-hidden="true">04</span>
                 <h3 class="step__title">Рішення за вами</h3>
-                <p>Зберегти тези в щоденник чи видалити їх — вирішуєте тільки ви. Повний текст розмови в нашу базу даних не потрапляє.</p>
+                <p>Зберегти тези в щоденник чи видалити їх — вирішуєте тільки ви.</p>
               </li>
             </ol>
 
@@ -277,7 +295,7 @@
             <p class="tag" data-decode><span class="tag__index">03</span> Щоденник</p>
             <h2 class="display-2" id="diary-title" data-reveal>Окремі думки.<br />Цілісніша картина.</h2>
             <p class="lead" data-reveal>
-              Збережені тези стають записами. Ми готуємо щоденник і&nbsp;тижневий огляд, щоб ви могли помічати теми, які повертаються.
+              Збережені тези стають записами в&nbsp;щоденнику, а&nbsp;тижневий огляд допомагає помічати теми, які повертаються.
             </p>
           </header>
 
@@ -291,7 +309,7 @@
 
           <div class="diary__layout">
             <figure class="log" data-reveal>
-              <figcaption class="caption">Майбутній щоденник · вигаданий приклад</figcaption>
+              <figcaption class="caption">Щоденник · вигаданий приклад</figcaption>
               <ol class="log__list" role="list">
                 <li class="log__entry">
                   <span class="log__day">Нд</span>
@@ -335,15 +353,15 @@
             <div class="nosave__text">
               <h3 class="row__title">Режим «не зберігати»</h3>
               <p>
-                Вмикається перед сесією. Після закриття в Liora від такої розмови не залишиться ні тексту, ні тез, ні запису в
-                щоденнику. Під час сесії текст, як і завжди, обробляє зовнішній постачальник AI.
+                Вмикається перед сесією: після закриття в Liora від розмови не залишиться ні тексту, ні тез. Під час сесії
+                текст, як і завжди, обробляє зовнішній постачальник AI.
               </p>
             </div>
           </div>
 
           <ul class="facts" role="list" data-reveal>
             <li>Усі записи — в одному списку, з пошуком і тегами</li>
-            <li>Записи можна буде видаляти по одному</li>
+            <li>Записи можна видаляти по одному</li>
             <li>Огляд рахує лише те, що є в щоденнику</li>
           </ul>
         </div>
@@ -355,71 +373,55 @@
         <div class="frame">
           <header class="chapter__head" data-gl-state="5">
             <p class="tag" data-decode><span class="tag__index">04</span> Приватність</p>
-            <h2 class="display-2" id="privacy-title">Особисте.<br />Під вашим контролем.</h2>
-            <p class="lead">У нашій базі залишаються лише тези, які ви вирішили зберегти. Ось як ми працюємо з&nbsp;даними.</p>
+            <h2 class="display-2" id="privacy-title" data-reveal>Особисте.<br />Під вашим контролем.</h2>
+            <p class="lead" data-reveal>Із розмови в нашій базі залишаються лише тези, які ви вирішили зберегти.</p>
           </header>
 
+          <!-- One sentence a line; the details live in the FAQ («Хто бачить…», «Що саме ви зберігаєте?»). -->
           <ol class="rows principles" role="list" data-gl-state="6">
-            <li class="row">
+            <li class="row" data-reveal="item">
               <h3 class="row__title">Ми не зберігаємо повний текст розмови</h3>
               <div class="row__body">
-                <p>Він не потрапляє в нашу базу даних: із розмови туди потрапляє лише підсумок, який ви переглянули й зберегли.</p>
+                <p>Із розмови в базу даних потрапляє лише підсумок, який ви переглянули й зберегли.</p>
               </div>
             </li>
-            <li class="row">
+            <li class="row" data-reveal="item">
               <h3 class="row__title">Відповіді створює зовнішній сервіс AI</h3>
               <div class="row__body">
                 <p>
-                  Відповіді й підсумки генерує не наш сервер, а зовнішній постачальник AI. Тому під час сесії йому передається текст
-                  розмови й назви ваших тегів, а в сценарії «Повернення до теми» — ще й збережені тези, до яких ви повертаєтеся. Ми
-                  прямо пишемо про це в тексті згоди. Зараз це Ollama Cloud (Ollama Inc., США); назву й країну видно й на
-                  екрані згоди.
+                  Під час сесії йому передаються текст розмови й назви тегів (у «Поверненні до теми» — ще й вибрані тези);
+                  зараз це Ollama Cloud (Ollama Inc., США).
                 </p>
               </div>
             </li>
-            <li class="row">
+            <li class="row" data-reveal="item">
               <h3 class="row__title">Тільки те, що ви написали</h3>
               <div class="row__body">
-                <p>
-                  Liora не підключається до інших ваших сервісів — ні до листування, ні до документів, ні до фінансів. Єдине джерело
-                  змісту щоденника — текст, який ви самі ввели в застосунку.
-                </p>
+                <p>Liora не підключається до вашої пошти, документів чи фінансів: у щоденнику лише те, що ви самі написали.</p>
               </div>
             </li>
-            <li class="row">
+            <li class="row" data-reveal="item">
               <h3 class="row__title">Вхід через Google без зайвих дозволів</h3>
               <div class="row__body">
-                <p>
-                  Застосунок не запитує доступу до ваших листів, Google Диска чи календаря. З акаунта ми зберігаємо тільки
-                  ідентифікатор та адресу email, без імені й фото.
-                </p>
+                <p>З акаунта ми зберігаємо лише ідентифікатор та email, без імені й фото, і не просимо доступу до листів, Диска чи календаря.</p>
               </div>
             </li>
-            <li class="row">
+            <li class="row" data-reveal="item">
               <h3 class="row__title">Окрема згода</h3>
               <div class="row__body">
-                <p>
-                  Перед першою сесією — окремий екран, а не галочка в загальних умовах: що саме зберігається, де й як це видалити.
-                  Там же ви підтверджуєте, що вам виповнилося 18&nbsp;років.
-                </p>
+                <p>Перед першою сесією — окремий екран про те, що зберігається і як це видалити, з підтвердженням, що вам є 18&nbsp;років.</p>
               </div>
             </li>
-            <li class="row">
+            <li class="row" data-reveal="item">
               <h3 class="row__title">Експорт і видалення — кнопкою</h3>
               <div class="row__body">
-                <p>
-                  Увесь щоденник можна експортувати у файл, а акаунт — видалити разом з усіма записами щоденника. Без листів і
-                  запитів до нас.
-                </p>
+                <p>Щоденник можна експортувати у файл, а акаунт — видалити разом з усіма записами, без листів і запитів до нас.</p>
               </div>
             </li>
-            <li class="row">
+            <li class="row" data-reveal="item">
               <h3 class="row__title">Шифрування зʼєднання й сховища</h3>
               <div class="row__body">
-                <p>
-                  Зʼєднання й сховище сервера зашифровані. Це захист від сторонніх: сам сервер Liora збережені тези читає — так
-                  працюють щоденник і пошук.
-                </p>
+                <p>Шифрування захищає від сторонніх, але сам сервер Liora збережені тези читає — так працюють щоденник і пошук.</p>
               </div>
             </li>
           </ol>
@@ -486,14 +488,14 @@
             <p class="lead" data-reveal>Кілька відповідей, які варто знати.</p>
           </header>
           <div class="faq__list">
-            <details class="qa">
+            <details class="qa" data-reveal="item">
               <summary>Liora — це психолог?</summary>
               <p>
                 Ні. Liora — застосунок для саморефлексії, а не психологічна чи медична допомога. Ви розмовляєте зі штучним інтелектом
                 (AI), а не з&nbsp;людиною. Liora не призначена для діагностики чи лікування, а відповіді AI можуть бути неточними.
               </p>
             </details>
-            <details class="qa">
+            <details class="qa" data-reveal="item">
               <summary>Хто бачить те, що я пишу?</summary>
               <p>
                 Під час сесії текст розмови проходить через сервер Liora: там його автоматично перевіряють на кризові фрази, але
@@ -507,7 +509,7 @@
                 тези від самого сервера: він їх читає, щоб працювали щоденник і пошук.
               </p>
             </details>
-            <details class="qa">
+            <details class="qa" data-reveal="item">
               <summary>Що саме ви зберігаєте?</summary>
               <p>
                 З Google-акаунта — лише ідентифікатор та email. Із сесій — підсумки, які ви переглянули й зберегли, разом із тегами.
@@ -520,30 +522,30 @@
                 у режимі «не зберігати» в Liora лишаються тільки такі технічні записи — ні тексту, ні тез.
               </p>
             </details>
-            <details class="qa">
+            <details class="qa" data-reveal="item">
               <summary>Чи можна видалити свої записи й акаунт?</summary>
               <p>
                 Так. Акаунт можна видалити разом з усіма записами щоденника — кнопкою в меню «Акаунт» на сторінці розмови, без
-                листів і запитів до нас. Перед цим щоденник можна завантажити у файл. Видаляти записи по одному можна буде на
-                сторінці щоденника — вона ще в роботі.
+                листів і запитів до нас. Перед цим щоденник можна завантажити у файл. Окремий запис можна видалити в щоденнику,
+                який відкривається на сторінці розмови.
               </p>
             </details>
-            <details class="qa">
+            <details class="qa" data-reveal="item">
               <summary>Як спробувати Liora? Що з оплатою?</summary>
               <p>
                 Розмову з AI можна відкрити у браузері та увійти через Google із підтвердженою адресою email.
                 Liora ще розвивається; умови оплати поки не визначено. Застосунки для телефона ще в роботі.
               </p>
             </details>
-            <details class="qa">
+            <details class="qa" data-reveal="item">
               <summary>З якого віку можна користуватися Liora?</summary>
               <p>З&nbsp;18&nbsp;років. Liora розрахована лише на дорослих.</p>
             </details>
-            <details class="qa">
+            <details class="qa" data-reveal="item">
               <summary>На яких пристроях працюватиме Liora?</summary>
               <p>
-                Розмова з AI вже працює у браузері на компʼютері й телефоні; щоденник у вебі й застосунки для iOS і Android
-                ми ще готуємо. Акаунт буде один, а щоденник синхронізуватиметься між пристроями. На телефоні — ті самі сценарії, щоденник і огляди, що й на компʼютері.
+                Розмова з AI і щоденник уже працюють у браузері на компʼютері й телефоні; застосунки для iOS і Android
+                ми ще готуємо. Акаунт буде один, а щоденник синхронізуватиметься між пристроями.
               </p>
             </details>
           </div>
@@ -573,9 +575,8 @@
         <div class="site-footer__note">
           <p>Liora — застосунок для саморефлексії з AI, а не психологічна, медична чи екстрена допомога. Екстрені служби — 112.</p>
           <p>
-            Лендінг сам не ставить файли cookie і не має аналітики. Після входу в розмову з AI браузер тримає файл cookie сесії,
-            недоступний скриптам сторінки, а на час входу — ще й тимчасовий файл cookie входу. Вибір паузи анімації й фону
-            зберігається лише в цьому браузері.
+            Лендінг не ставить cookie і не має аналітики. Після входу чат тримає cookie сесії, недоступний скриптам, а на
+            час входу — ще тимчасовий cookie входу. Пауза, тема й фон запамʼятовуються лише в цьому браузері.
           </p>
         </div>
         <nav class="site-footer__links" aria-label="Посилання внизу сторінки">

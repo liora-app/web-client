@@ -1,8 +1,12 @@
 // Continuous light filaments in the hero; a contour portrait in the scroll transition.
 // The chat has its own independent scene.
+// One palette per theme (core/palette.ts GL_PALETTES[theme].scene): light that adds up on the night,
+// ink that covers the paper by day. The theme event (THEME_EVENT) swaps uniforms and blending in
+// place — no new materials, no recompiled programs, no rebuilt scene.
 import { OrthographicCamera, Scene } from 'three'
 import { WIDE_LAYOUT, heroLight, onHeroLightChange } from '../ui/hero-light'
 import type { SceneCallbacks, SceneHandle, SceneOptions } from './core/boot'
+import { GL_PALETTES, type GlTheme } from './core/palette'
 import { FrameGovernor, pickTier } from './core/quality'
 import { createRenderer } from './core/renderer'
 import { PointerTracker } from './pointer'
@@ -10,6 +14,7 @@ import { ScrollStates, damp } from './scroll'
 import { createLuminousField } from './luminous-field'
 import { createContourPortrait } from './contour-portrait'
 import { createConversationFlow } from './conversation-flow'
+import { THEME_EVENT, resolvedTheme } from '../ui/theme'
 
 export interface SceneStats {
   tier: string
@@ -70,6 +75,15 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
   })
   const conversation = createConversationFlow(tier.name === 'low')
   scene.add(field.root, portrait.root, conversation.root)
+  let theme: GlTheme = resolvedTheme()
+  const applyPalette = (next: GlTheme): void => {
+    theme = next
+    const palette = GL_PALETTES[next].scene
+    field.setPalette(palette)
+    portrait.setPalette(palette)
+    conversation.setPalette(palette)
+  }
+  applyPalette(theme)
   const pointer = new PointerTracker()
   const scroll = new ScrollStates()
   const transition = document.querySelector<HTMLElement>('[data-portrait]')
@@ -261,6 +275,14 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
   const onRestored = (): void => { lost = false; resize(); callbacks.onContextRestored(); start() }
   const onPageHide = (): void => stop()
   const onPageShow = (): void => start()
+  // While the scene is paused the page shows the static art (html[data-gl='off'] hides the canvas):
+  // the next frame after resume() is drawn in the new colours, nothing to draw now.
+  const onTheme = (event: Event): void => {
+    const next = (event as CustomEvent<unknown>).detail
+    if ((next !== 'light' && next !== 'dark') || next === theme) return
+    applyPalette(next)
+  }
+  window.addEventListener(THEME_EVENT, onTheme)
   const observer = new ResizeObserver(resize)
   observer.observe(document.body)
   window.addEventListener('resize', resize, { passive: true })
@@ -305,6 +327,7 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
       document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('pagehide', onPageHide)
       window.removeEventListener('pageshow', onPageShow)
+      window.removeEventListener(THEME_EVENT, onTheme)
       canvas.removeEventListener('webglcontextlost', onLost)
       canvas.removeEventListener('webglcontextrestored', onRestored)
       field.dispose()

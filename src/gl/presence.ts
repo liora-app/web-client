@@ -9,6 +9,8 @@
 //   leaves the slot's soft mask.
 // - The same FrameGovernor as the landing: full rate while the AI thinks or answers, ~30 fps after
 //   2 s of calm, ~20 fps after 8 s.
+// - One palette per theme (core/palette.ts): the theme event (THEME_EVENT) swaps uniforms and the
+//   particles' blending in place — no new materials, no recompiled programs, no rebuilt scene.
 
 import {
   AdditiveBlending,
@@ -30,7 +32,7 @@ import {
   Vector4,
 } from 'three'
 import type { SceneCallbacks, SceneHandle, SceneOptions } from './core/boot'
-import { GL_PALETTE, hexToVec3 } from './core/palette'
+import { GL_PALETTES, hexToVec3, type GlTheme } from './core/palette'
 import { FrameGovernor, pickTier } from './core/quality'
 import { createRenderer } from './core/renderer'
 import { SOMAS, WAVE_PERIOD } from './neural'
@@ -45,8 +47,9 @@ import particlesFrag from './shaders/particles.frag.glsl?raw'
 import particlesVert from './shaders/particles.vert.glsl?raw'
 import somaFrag from './shaders/soma.frag.glsl?raw'
 import somaVert from './shaders/soma.vert.glsl?raw'
+import { THEME_EVENT, resolvedTheme } from '../ui/theme'
 
-export type Presence = 'idle' | 'thinking' | 'speaking' | 'summary' | 'saved' | 'quiet'
+export type Presence = 'idle' | 'listening' | 'thinking' | 'speaking' | 'summary' | 'saved' | 'quiet' | 'breathing'
 
 export interface PresenceHandle extends SceneHandle {
   setPresence(presence: Presence): void
@@ -95,11 +98,15 @@ const ACTIVE_FRAME_MS = 9.2
 /** Per presence: signal in the network, halo strength, brightness of the light. */
 const MOOD: Readonly<Record<Presence, Readonly<{ fire: number; glow: number; intensity: number }>>> = {
   idle: { fire: 0.2, glow: 0.3, intensity: 0.9 },
+  // The person is typing: a little more awake than idle, far from thinking (nothing has been sent).
+  listening: { fire: 0.32, glow: 0.33, intensity: 0.93 },
   thinking: { fire: 0.6, glow: 0.34, intensity: 0.95 },
   speaking: { fire: 0.8, glow: 0.36, intensity: 1 },
   summary: { fire: 0.5, glow: 0.32, intensity: 0.92 },
   saved: { fire: 0.6, glow: 0.4, intensity: 1 },
   quiet: { fire: 0, glow: 0.2, intensity: 0.7 },
+  // «Подихати хвилину»: little signal, a soft halo; the breath itself already runs at 4/6.
+  breathing: { fire: 0.1, glow: 0.32, intensity: 0.9 },
 }
 
 function breath(seconds: number): number {
@@ -125,8 +132,11 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
   const light = new Group()
   scene.add(light)
 
+  let theme: GlTheme = resolvedTheme()
+  let palette = GL_PALETTES[theme]
+
   // Halo behind the light.
-  const glowUniforms = { uColor: { value: hexToVec3(GL_PALETTE.glow) }, uStrength: { value: 0.3 } }
+  const glowUniforms = { uColor: { value: hexToVec3(palette.glow) }, uStrength: { value: 0.3 } }
   const glow = new Mesh(
     new PlaneGeometry(1, 1),
     new ShaderMaterial({
@@ -175,9 +185,9 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
     uFire: { value: MOOD.idle.fire },
     uFlash: { value: 1 },
     uWavePeriod: { value: new Vector4(...WAVE_PERIOD) },
-    uCool: { value: hexToVec3(GL_PALETTE.particleCool) },
-    uWarm: { value: hexToVec3(GL_PALETTE.particleWarm) },
-    uHighlight: { value: hexToVec3(GL_PALETTE.particleHighlight) },
+    uCool: { value: hexToVec3(palette.particleCool) },
+    uWarm: { value: hexToVec3(palette.particleWarm) },
+    uHighlight: { value: hexToVec3(palette.particleHighlight) },
   }
   const particles = new Points(
     geometry,
@@ -189,7 +199,7 @@ ${particlesVert}`,
       transparent: true,
       depthTest: false,
       depthWrite: false,
-      blending: AdditiveBlending,
+      blending: palette.additive ? AdditiveBlending : NormalBlending,
       premultipliedAlpha: true,
     }),
   )
@@ -251,7 +261,8 @@ ${somaVert}`,
     uRimPower: { value: 3.2 },
     uBody: { value: 0.02 },
     uSpecular: { value: 0.9 },
-    uWarm: { value: hexToVec3(GL_PALETTE.particleWarm) },
+    uWarm: { value: hexToVec3(palette.particleWarm) },
+    uTint: { value: hexToVec3(palette.glassTint) },
   }
   const glass = new Mesh(
     new SphereGeometry(GLASS_RADIUS, 96, 64),
@@ -268,6 +279,20 @@ ${somaVert}`,
   )
   glass.renderOrder = 4
   light.add(glass)
+
+  const particleMaterial = particles.material as ShaderMaterial
+  /** The other theme's colours, in place (uniforms are read every frame; blending is draw state). */
+  const applyPalette = (next: GlTheme): void => {
+    theme = next
+    palette = GL_PALETTES[next]
+    glowUniforms.uColor.value.copy(hexToVec3(palette.glow))
+    particleUniforms.uCool.value.copy(hexToVec3(palette.particleCool))
+    particleUniforms.uWarm.value.copy(hexToVec3(palette.particleWarm))
+    particleUniforms.uHighlight.value.copy(hexToVec3(palette.particleHighlight))
+    glassUniforms.uWarm.value.copy(hexToVec3(palette.particleWarm))
+    glassUniforms.uTint.value.copy(hexToVec3(palette.glassTint))
+    particleMaterial.blending = palette.additive ? AdditiveBlending : NormalBlending
+  }
 
   // State
   const governor = new FrameGovernor()
@@ -380,14 +405,14 @@ ${somaVert}`,
 
     particleUniforms.uTime.value = elapsed
     particleUniforms.uBreath.value = breathing
-    particleUniforms.uIntensity.value = intensity * density
+    particleUniforms.uIntensity.value = intensity * density * palette.intensity
     particleUniforms.uSizeScale.value = Math.min(1.2, Math.max(0.6, Math.sqrt(ratio)))
     particleUniforms.uFire.value = fire
     somaUniforms.uOpacity.value = intensity
     glass.scale.setScalar(1 + breathing * 0.012)
     glass.rotation.set(0.25, elapsed * 0.05, 0)
     glassUniforms.uTime.value = elapsed
-    glowUniforms.uStrength.value = glowLevel + flash * 0.12
+    glowUniforms.uStrength.value = (glowLevel + flash * 0.12) * palette.glowStrength
 
     const renderStart = performance.now()
     renderer.render(scene, camera)
@@ -444,6 +469,15 @@ ${somaVert}`,
   canvas.addEventListener('webglcontextlost', onLost)
   canvas.addEventListener('webglcontextrestored', onRestored)
 
+  const onTheme = (event: Event): void => {
+    const next = (event as CustomEvent<unknown>).detail
+    if ((next !== 'light' && next !== 'dark') || next === theme) return
+    applyPalette(next)
+    // A paused scene keeps its last frame on screen: draw it once in the new colours.
+    if (!running && !lost && width > 0) renderer.render(scene, camera)
+  }
+  window.addEventListener(THEME_EVENT, onTheme)
+
   window.__lioraPresence = {
     stats: () => ({ tier: tier.name, particles: drawCount, pixelRatio, presence, fire, frames, fps, draws, width, height }),
   }
@@ -482,6 +516,7 @@ ${somaVert}`,
       window.removeEventListener('pageshow', onPageShow)
       canvas.removeEventListener('webglcontextlost', onLost)
       canvas.removeEventListener('webglcontextrestored', onRestored)
+      window.removeEventListener(THEME_EVENT, onTheme)
       dprQuery?.removeEventListener('change', onDprChange)
       resizeObserver.disconnect()
       scene.traverse((object) => {

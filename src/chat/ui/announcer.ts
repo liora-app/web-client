@@ -5,7 +5,8 @@
 //   end (the whole answer, the error line or «Відповідь зупинено»). Whatever else a turn would say
 //   is dropped; the visible countdowns and labels stay, they are aria-hidden anyway.
 // - Outside a turn each announcement is said once («Можна надіслати ще раз», «Тези готові: {n}»,
-//   «Збережено в щоденник»).
+//   «Збережено в щоденник», «Додано в поле повідомлення» where the focus stays off the field, another
+//   week of the diary: «12–18 жовтня. 1 збережений запис»).
 // - It keeps the last announcement, which may be a whole AI reply, so it is emptied ≈ 5 s after each
 //   one and at once whenever the conversation is wiped (saved, ended, crisis, signed out, account
 //   deleted, pageshow → 401) and on pagehide. Emptying is silent and is not one of the two writes.

@@ -1,4 +1,5 @@
-import { AdditiveBlending, BufferGeometry, DoubleSide, Float32BufferAttribute, Group, Mesh, ShaderMaterial } from 'three'
+import { AdditiveBlending, BufferGeometry, DoubleSide, Float32BufferAttribute, Group, Mesh, NormalBlending, ShaderMaterial, Vector3 } from 'three'
+import { type ScenePalette, setRgb } from './core/palette'
 
 /** One continuous drawing: thought → dialogue → three notes → a chosen note.
  * All four shapes share the same closed strands, so scrolling reshapes the drawing.
@@ -25,7 +26,11 @@ export function createConversationFlow(low: boolean) {
   geometry.setAttribute('aFlow', new Float32BufferAttribute(flows, 2))
   geometry.setAttribute('aSide', new Float32BufferAttribute(sides, 1))
   geometry.setIndex(indices)
-  const uniforms = { uTime: { value: 0 }, uStage: { value: 0 }, uOpacity: { value: 0 }, uStroke: { value: 0.7 }, uGlow: { value: 0 } }
+  const uniforms = {
+    uTime: { value: 0 }, uStage: { value: 0 }, uOpacity: { value: 0 }, uStroke: { value: 0.7 }, uGlow: { value: 0 },
+    // The theme (setPalette, core/palette.ts ScenePalette.conversation).
+    uFlowCyan: { value: new Vector3() }, uFlowGold: { value: new Vector3() }, uFlowFlash: { value: new Vector3() }, uFlowAlpha: { value: 1 },
+  }
   const material = new ShaderMaterial({
     uniforms, side: DoubleSide, forceSinglePass: true, transparent: true,
     depthTest: false, depthWrite: false, blending: AdditiveBlending, premultipliedAlpha: true,
@@ -87,20 +92,22 @@ export function createConversationFlow(low: boolean) {
       uniform float uStage;
       uniform float uOpacity;
       uniform float uGlow;
+      uniform vec3 uFlowCyan;
+      uniform vec3 uFlowGold;
+      uniform vec3 uFlowFlash;
+      uniform float uFlowAlpha;
       varying vec2 vFlow;
       varying float vEdge;
       varying float vDepth;
       void main() {
         float edge = exp(-vEdge * vEdge * 4.0) * (1.0 - smoothstep(0.8, 1.0, abs(vEdge)));
         float pulse = pow(max(0.0, sin(vFlow.x * 6.283185 - uTime * 0.65 + vFlow.y * 2.0)), 18.0);
-        vec3 cyan = vec3(0.13, 0.78, 0.91);
-        vec3 gold = vec3(1.0, 0.68, 0.32);
         float warm = smoothstep(0.35, 0.9, vFlow.y);
         float chosen = 1.0 - abs(floor(vFlow.y * 3.0) - 1.0);
         warm = mix(warm, chosen, smoothstep(1.1, 2.0, uStage));
-        vec3 color = mix(cyan, gold, warm);
-        color = mix(color, vec3(0.94, 1.0, 0.97), pulse * 0.6);
-        float alpha = edge * (0.32 + pulse * 0.65) * vDepth * uOpacity;
+        vec3 color = mix(uFlowCyan, uFlowGold, warm);
+        color = mix(color, uFlowFlash, pulse * 0.6);
+        float alpha = edge * (0.32 + pulse * 0.65) * vDepth * uOpacity * uFlowAlpha;
         alpha *= mix(1.0, 0.065, uGlow);
         gl_FragColor = vec4(color * alpha, alpha);
       }
@@ -114,8 +121,16 @@ export function createConversationFlow(low: boolean) {
   glow.frustumCulled = false
   const root = new Group()
   root.add(glow, lines)
+  /** The theme in place: colours (shared by the glow's copy of the uniforms) and both blendings. */
+  const setPalette = ({ additive, conversation }: ScenePalette): void => {
+    setRgb(uniforms.uFlowCyan.value, conversation.cyan)
+    setRgb(uniforms.uFlowGold.value, conversation.gold)
+    setRgb(uniforms.uFlowFlash.value, conversation.flash)
+    uniforms.uFlowAlpha.value = conversation.alpha
+    for (const each of [material, glowMaterial]) each.blending = additive ? AdditiveBlending : NormalBlending
+  }
   return {
-    root, uniforms, vertices: positions.length / 3,
+    root, uniforms, setPalette, vertices: positions.length / 3,
     dispose() { geometry.dispose(); material.dispose(); glowMaterial.dispose() },
   }
 }

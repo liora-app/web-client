@@ -3,32 +3,62 @@
 // the server's English `error.message` never reaches the page (spec §4.1).
 
 import type { UiError } from '../core/errors'
-import { maskPausedLine } from '../core/helplines'
+import { maskPausedLine, maskPausedLineInline } from '../core/helplines'
 import type { AuthCode, AuthNotice } from '../core/state'
+import type { BreathPhase } from '../core/selfhelp'
 import type { ScenarioId, ScenarioOut } from '../core/types'
 
-/** Scenario descriptions (spec §3.6). The server's own `situation` text names a psychotherapy
- *  method, which must not stand next to «не терапія»; unknown ids fall back to the server text. */
+/** Scenario descriptions, one line each (spec §3.6). The server's own `situation` text names a
+ *  psychotherapy method, which must not stand next to «не терапія»; an id the page does not know
+ *  yet (a scenario the server added later) falls back to the server's own description. */
 const SCENARIO_ABOUT: Readonly<Record<string, string>> = {
-  free: 'Будь-яка тема. Можна просто виговоритися, а AI ставитиме уточнювальні запитання.',
-  situation: 'Що сталося, що ви подумали й відчули — і як ще можна на це подивитися. Вправа для роздумів, а не терапія.',
-  day: 'Що сталося за день, що ви відчували і що з цього варте уваги.',
-  revisit: 'Поверніться до теми зі свого щоденника: AI отримає тези, які ви оберете.',
+  free: 'Будь-яка тема: можна просто виговоритися, а AI ставитиме запитання.',
+  situation: 'Що сталося, що ви подумали й відчули — і як ще на це подивитися.',
+  day: 'Що було за день, що ви відчували і що з цього варте уваги.',
+  revisit: 'Повернутися до теми зі щоденника: AI отримає тези, які ви оберете.',
+  worry: 'Коли всередині неспокійно: назвати, що саме турбує, і що з цим у ваших руках.',
+  hard_talk: 'Підготуватися до непростої розмови: що сказати, чого ви хочете і чого боїтеся.',
+  gratitude: 'Помітити, що було добре — навіть дрібне — і що це для вас означає.',
+  evening: 'Спокійно завершити день: що відпустити і з чим іти спати.',
 }
 
 export function scenarioAbout(scenario: ScenarioOut): string {
   return SCENARIO_ABOUT[scenario.id] ?? scenario.description
 }
 
+/** Ways to begin, per scenario (spec §3.6): a chip puts the words into the field — the person
+ *  edits them and sends, nothing goes by itself. An id without its own list shows none. */
+const STARTERS: Readonly<Record<string, readonly string[]>> = {
+  free: ['Хочу виговоритися', 'Мене дещо зачепило', 'Не йде з голови'],
+  situation: ['Сьогодні сталося ось що:', 'Мене зачепили слова', 'Досі не можу відпустити'],
+  day: ['Найбільше сил забрало', 'Найкраще за день', 'Досі думаю про'],
+  revisit: ['Відтоді змінилося', 'Досі повертаюся до', 'Хочу глянути ще раз'],
+  worry: ['Мене турбує', 'Думки крутяться довкола', 'Найбільше боюся, що'],
+  hard_talk: ['Мені треба поговорити з', 'Хочу, щоб мене почули', 'Найважче буде сказати'],
+  gratitude: ['Сьогодні порадувало', 'Я ціную', 'Мені допомогло'],
+  evening: ['Сьогодні вдалося', 'Хочу відпустити', 'Завтра хочу'],
+}
+
+export function starters(scenario: ScenarioId): readonly string[] {
+  return STARTERS[scenario] ?? []
+}
+
 export const REVISIT_EMPTY =
   'Тут можна повернутися до тем зі щоденника. Поки що в ньому немає записів — вони зʼявляться, коли ви збережете тези після розмови.'
 export const REVISIT_FAILED = 'Не вдалося завантажити збережені тези.'
 
+// One line in the field at 320 px too (measured: 182 px of room for a 16 px placeholder there, the widest
+// below 158 px): a placeholder that wraps makes an empty field two lines tall and pushes a new
+// conversation under it.
 const PLACEHOLDER: Readonly<Record<string, string>> = {
-  free: 'Пишіть так, як думаєте…',
+  free: 'Пишіть, як думаєте…',
   situation: 'Що сталося?',
   day: 'Як минув день?',
   revisit: 'Що змінилося?',
+  worry: 'Що зараз турбує?',
+  hard_talk: 'З ким ця розмова?',
+  gratitude: 'Що було добре?',
+  evening: 'Що зараз на думці?',
 }
 
 export function placeholder(scenario: ScenarioId, firstMessage: boolean): string {
@@ -57,6 +87,9 @@ export function signInBanner(notice: AuthNotice): BannerText {
     case 'delete-relogin':
       // No sign-in failed here: the session ended. The label belongs to a failed return from Google.
       return { label: null, text: 'Вхід завершився. Увійдіть, щоб видалити акаунт.' }
+    case 'edit-lost':
+      // The same: the session ended under the diary, and what was typed into a record went with it.
+      return { label: null, text: 'Вхід завершився, тож зміни в записі щоденника не збереглися. Увійдіть знову, щоб внести їх ще раз.' }
     case 'auth-error': {
       const code = notice.code === 'not_invited' ? 'unknown' : notice.code
       return { label: 'Вхід не відбувся', text: AUTH_TEXT[code] }
@@ -323,15 +356,20 @@ export function requestIdLine(id: string | null): string | null {
 
 // ── Presence (§3.1 «Під кулею», §9.2) ────────────────────────────────────────────────────────
 
-export type Presence = 'idle' | 'thinking' | 'speaking' | 'summary' | 'saved' | 'quiet'
+export type Presence = 'idle' | 'listening' | 'thinking' | 'speaking' | 'summary' | 'saved' | 'quiet' | 'breathing'
 
 export const PRESENCE_LABEL: Readonly<Record<Presence, string>> = {
   idle: 'Чекає на ваше повідомлення',
+  // The person is typing. Honest about where the words are: nothing goes out before «Надіслати».
+  listening: 'Ви пишете…',
   thinking: 'Думає над відповіддю',
   speaking: 'Відповідає',
   summary: 'Складає тези',
   saved: 'Тези збережено',
   quiet: 'Розмову зупинено',
+  // «Подихати хвилину» is open (spec §3.13): the light holds still beside the circle; the label
+  // names the exercise, whichever breathing is chosen (slow or the cyclic sigh).
+  breathing: 'Дихальна вправа',
 }
 
 // ── Announcer (§5.7) ─────────────────────────────────────────────────────────────────────────
@@ -349,16 +387,25 @@ export function secondsWord(n: number): string {
 export const sayRetry = (seconds: number): string => `Пробуємо ще раз через ${seconds} ${secondsWord(seconds)}`
 export const sayTheses = (n: number): string => `Тези готові: ${n}`
 export const SAY_SAVED = 'Збережено в щоденник'
+/** A starter or «Додати до розмови» on a touch screen: the words went into the field, the focus did
+ *  not follow them (it would pop the keyboard), so this is all a screen reader hears of it. */
+export const SAY_INSERTED = 'Додано в поле повідомлення'
+/** The same words pressed again: they end the field already and are not put twice. */
+export const SAY_ALREADY = 'Ці слова вже є в полі повідомлення'
+/** Another week of the diary, once it is in: its range (or «Цей тиждень») and its count —
+ *  «12–18 жовтня. 2 збережені записи», «Цей тиждень. Збережених записів немає.» */
+export const sayWeek = (title: string, count: string): string => `${title}. ${count}`
 
 // ── Copying (§3.8) ───────────────────────────────────────────────────────────────────────────
 
 export const COPIED = 'Скопійовано'
 /** On the button for 2 s; copyFailed() is what the live region says. */
 export const COPY_FAILED_LABEL = 'Не вдалося скопіювати'
-export function copyFailed(kind: 'talk' | 'theses'): string {
-  return kind === 'theses'
-    ? 'Не вдалося скопіювати. Виділіть тези вручну.'
-    : 'Не вдалося скопіювати. Виділіть текст розмови вручну.'
+export function copyFailed(kind: 'talk' | 'theses' | 'reply' | 'entry'): string {
+  if (kind === 'theses') return 'Не вдалося скопіювати. Виділіть тези вручну.'
+  if (kind === 'entry') return 'Не вдалося скопіювати. Виділіть запис вручну.'
+  if (kind === 'reply') return 'Не вдалося скопіювати. Виділіть текст відповіді вручну.'
+  return 'Не вдалося скопіювати. Виділіть текст розмови вручну.'
 }
 
 // ── Dates ────────────────────────────────────────────────────────────────────────────────────
@@ -389,6 +436,13 @@ export function longDateTime(iso: string): string {
   return `${day}, ${time}`
 }
 
+const CLOCK = new Intl.DateTimeFormat('uk', { hour: '2-digit', minute: '2-digit' })
+
+/** «14:52» — the time under a message (spec §3.7.2). */
+export function clock(ms: number): string {
+  return CLOCK.format(new Date(ms))
+}
+
 /** дд.мм */
 export function dayMonth(iso: string): string {
   const date = new Date(iso)
@@ -399,4 +453,124 @@ export function dayMonth(iso: string): string {
 /** «7 жовтня 2026» — the first line of a copied conversation (§3.8). */
 export function today(now: Date = new Date()): string {
   return new Intl.DateTimeFormat('uk', { day: 'numeric', month: 'long', year: 'numeric' }).format(now).replace(/\s*р\.$/, '')
+}
+
+// ── The diary (§7.7) ─────────────────────────────────────────────────────────────────────────
+
+export const JOURNAL_BACK = 'До розмови'
+export const JOURNAL_NEW = 'Нова розмова'
+export const JOURNAL_EMPTY = 'Тут зʼявляться тези, які ви збережете після розмови.'
+export const JOURNAL_LOADING = 'Завантажуємо записи…'
+export const JOURNAL_FAILED = 'Не вдалося завантажити записи.'
+export const JOURNAL_SAVED = 'Зміни збережено.'
+export const JOURNAL_DELETED = 'Запис видалено.'
+export const JOURNAL_GONE = 'Цього запису вже немає в щоденнику.'
+export const WEEK_THIS = 'Цей тиждень'
+export const WEEK_FAILED = 'Не вдалося завантажити огляд тижня.'
+/** Under the themes field of an edit: a wrong theme, whichever rule it broke. */
+export const THEMES_ISSUE = 'Теми: до 10, кожна до 40 символів.'
+
+/** Nothing for this search or this theme (the diary itself is not empty). */
+export function journalNothing(q: string): string {
+  return q !== '' ? `За запитом «${q}» нічого не знайшлося.` : 'Записів із цією темою немає.'
+}
+
+const RECORDS: Readonly<Record<string, string>> = { one: 'збережений запис', few: 'збережені записи', many: 'збережених записів', other: 'збережених записів' }
+
+/** The week in one line: the saved records counted, nothing compared, nothing judged. */
+export function weekCount(n: number): string {
+  if (n <= 0) return 'Збережених записів немає.'
+  return `${n} ${RECORDS[plural.select(n)] ?? RECORDS.many}`
+}
+
+export function weekThemes(names: readonly string[]): string {
+  return names.length === 0 ? '' : `Теми: ${names.map(maskPausedLineInline).join(', ')}`
+}
+
+const DAY_MONTH_UTC = new Intl.DateTimeFormat('uk', { day: 'numeric', month: 'long', timeZone: 'UTC' })
+const DAY_UTC = new Intl.DateTimeFormat('uk', { day: 'numeric', timeZone: 'UTC' })
+const noon = (day: string): Date => new Date(`${day}T12:00:00Z`)
+
+/** «13–19 жовтня», «29 вересня – 5 жовтня», with the year when it is not this week's year.
+ *  `last` is the Sunday (the server's week_end is the next Monday). */
+export function weekRange(first: string, last: string, currentYear: string | null): string {
+  const a = noon(first)
+  const b = noon(last)
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return ''
+  const year = currentYear !== null && last.slice(0, 4) !== currentYear ? ` ${last.slice(0, 4)}` : ''
+  if (first.slice(0, 7) === last.slice(0, 7)) return `${DAY_UTC.format(a)}–${DAY_MONTH_UTC.format(b)}${year}`
+  return `${DAY_MONTH_UTC.format(a)} – ${DAY_MONTH_UTC.format(b)}${year}`
+}
+
+const ENTRY_DAY = new Intl.DateTimeFormat('uk', { day: 'numeric', month: 'long', year: 'numeric' })
+
+/** «7 жовтня 2026» — the day a record was saved, on the page's clock. */
+export function entryDay(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  return ENTRY_DAY.format(date).replace(/\s*р\.$/, '')
+}
+
+/** «7 жовтня 2026 · змінено» */
+export function entryMeta(iso: string, edited: boolean): string {
+  const day = entryDay(iso)
+  return edited ? `${day} · змінено` : day
+}
+
+/** Under «Зберегти» of an edit (§7.7). A 422 that maps to a field is shown on the field. */
+export function editError(error: UiError, csrfFailures: number): ErrorText {
+  switch (error.code) {
+    case 'network':
+      return line(NO_CONNECTION)
+    case 'timeout':
+      return line('Відповідь не прийшла. Спробуйте ще раз — ваші правки на місці.')
+    case 'validation_error':
+      return line(GENERIC, true)
+    default:
+      return shared(error, csrfFailures) ?? line('Не вдалося зберегти зміни. Спробуйте ще раз.', true)
+  }
+}
+
+/** The line of the diary after a failed «Видалити». */
+export function deleteError(error: UiError, csrfFailures: number): ErrorText {
+  if (error.code === 'network') return line(NO_CONNECTION)
+  return shared(error, csrfFailures) ?? line('Не вдалося видалити запис. Спробуйте ще раз.', true)
+}
+
+// ── The self-help tools (§3.13; research selfhelp.md §3.1–3.6, §8) ─────────────────────────
+// Short, on «ви», no promise of an effect, no praise, no scores. Static copy is in chat/index.html.
+
+/** The step of «Подихати хвилину», on the screen and said once when it changes. */
+export const BREATH_PHASE: Readonly<Record<BreathPhase, string>> = { in: 'Вдих', top: 'Ще трохи', out: 'Видих' }
+/** The head button while the minute runs: it ends the exercise; «Закрити» otherwise. */
+export const BREATH_STOP = 'Стоп'
+export const BREATH_CLOSE = 'Закрити'
+export const BREATH_DONE = 'Хвилина минула.'
+
+export const groundProgress = (step: number, of: number): string => `Крок ${step} з ${of}`
+
+export const MOOD_TITLE: Readonly<Record<'before' | 'after', string>> = { before: 'Як ви зараз?', after: 'А зараз?' }
+/** «Додати до розмови»: into the field, never sent by itself. */
+export const moodSentence = (word: string): string => `Зараз у мене — ${word}.`
+/** The end of a conversation (§3.13): before → after in words, no «краще/гірше». */
+export const moodLine = (before: string, after: string | null): string =>
+  after === null ? `Спершу — ${before}.` : `Спершу — ${before}, зараз — ${after}.`
+
+// ── «→ У тези», the reminder to pause, the end (§3.7.2, §3.7.7, §7.2, §7.5) ────────────────────
+// No praise, no pressure, no streaks: what happened, in one short line.
+
+/** The words a screen reader hears after «Копіювати» / «У тези»: which reply — its number among
+ *  the AI's replies and its time (two replies often share a minute). */
+export const replyWhich = (n: number, time: string | null): string => (time === null ? ` відповідь ${n}` : ` відповідь ${n}, ${time}`)
+/** Said when a reply is marked or its mark taken off: how many of the five are taken. */
+export const sayMarked = (n: number, max: number): string => `Додано до тез · ${n} з ${max}`
+export const sayUnmarked = (n: number, max: number): string => `Прибрано з тез · ${n} з ${max}`
+export const sayMarksFull = (max: number): string => `У тезах уже ${max} з ${max}. Щоб додати цю, приберіть іншу.`
+/** The theses screen: the candidate is full of theses already. */
+export const MARKS_FULL = 'Тез уже пʼять — щоб додати цю, приберіть одну з них.'
+
+/** The reminder to pause: what is true — the time or the count — and the two ways on. */
+export const PAUSE_LINE: Readonly<Record<'time' | 'count', string>> = {
+  time: 'Ви тут уже 40 хвилин. Можна зробити паузу або зібрати тези.',
+  count: 'У розмові вже 60 реплік. Можна зробити паузу або зібрати тези.',
 }

@@ -16,7 +16,7 @@
 
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test as base, type Page, type Request, type Route } from '@playwright/test'
-import { NO_WEBGL2 } from './helpers'
+import { NO_WEBGL2, animationsDone, throttle } from './helpers'
 
 /** Kept in two halves so that no single literal in this file is the number itself. */
 export const PAUSED = '73' + '33'
@@ -132,6 +132,31 @@ export function record(i: number, init: Partial<Summary> = {}): Summary {
 }
 
 export const diary = (items: Summary[] = [], next: string | null = null): { items: Summary[]; next_cursor: string | null } => ({ items, next_cursor: next })
+
+/** The id of a diary theme (GET /tags, a record's tags) for the diary page's tests (1 ≤ i ≤ 99). */
+export const themeId = (i: number): string => `00000000-0000-4000-9000-0000000002${String(i).padStart(2, '0')}`
+
+/** GET /tags: each theme with the number of records that carry it. Not among the defaults: the
+ *  diary page asks for it only when it opens (spec §7.7), anywhere else it is an unexpected call. */
+export type TagCount = { id: string; name: string; count: number }
+
+/** GET /reviews/weekly for the week from Monday `start` (YYYY-MM-DD): `sessions` saved records and
+ *  the themes among them. week_end is the next Monday, as the server sends it. Not a default either. */
+export function weekly(start: string, sessions = 0, themes: readonly string[] = [], tz = 'Europe/Kyiv') {
+  const end = new Date(Date.parse(`${start}T12:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10)
+  return {
+    week_start: start,
+    week_end: end,
+    tz,
+    sessions,
+    prev_sessions: 0,
+    delta: sessions,
+    top_tags: themes.map((name) => ({ name, count: 1, prev_count: 0 })),
+    recurring_tags: [],
+    new_tags: themes.slice(),
+    faded_tags: [],
+  }
+}
 
 /** POST /summaries → 201: the record as the server would store it. */
 export function storedFrom(body: unknown): Summary {
@@ -558,6 +583,7 @@ export const test = base.extend<ChatFixtures>({
       const problems: string[] = []
       const foreign = new Set<string>()
       const own = new URL(baseURL ?? 'http://localhost:4173').origin
+      await throttle(page)
       if (!webgl) await page.addInitScript(NO_WEBGL2)
       await page.addInitScript(probes)
       page.on('console', (message) => {
@@ -651,6 +677,12 @@ export async function toReview(page: Page): Promise<void> {
 export const confirmDialog = (page: Page) => page.locator('#confirm-dialog')
 
 export async function axe(page: Page, label: string): Promise<void> {
+  // The screen and the messages rise in for a few hundred ms (spec §3.1): measuring contrast in the
+  // middle of a fade would read a colour the text never rests on. Endless loops (the orb's breath)
+  // are left alone — they never move the text's colour — and so is the breathing circle's scale:
+  // it follows the breath for a minute (4–6 s a step, retargeted each step) and moves no colour, so
+  // waiting on it only spent the cap. The cap (2.5 s) goes on past anything slower.
+  await animationsDone(page, { except: '.breathe__circle', cap: 2500 })
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze()
   const summary = results.violations.map((v) => `${v.id} (${v.impact}): ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
   expect(summary, `axe: ${label}`).toEqual([])
@@ -670,7 +702,7 @@ export async function storageAudit(page: Page, secret: string | null = null, con
     title: document.title,
     url: location.href,
   }))
-  expect(audit.local.every((key) => key === 'liora:motion' || key === 'liora:sky'), `storage keys: ${audit.local.join(', ')}`).toBe(true)
+  expect(audit.local.every((key) => key === 'liora:motion' || key === 'liora:sky' || key === 'liora:theme'), `storage keys: ${audit.local.join(', ')}`).toBe(true)
   expect(audit).toMatchObject({ session: 0, idb: 0, caches: 0, sw: 0, cookie: '' })
   if (secret !== null) {
     expect(audit.values.some((value) => value.includes(secret)), 'the message is in localStorage').toBe(false)

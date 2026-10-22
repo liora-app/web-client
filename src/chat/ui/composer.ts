@@ -3,9 +3,11 @@
 // - pointer: fine — Enter sends, Shift+Enter is a new line; pointer: coarse — Enter is a new line and
 //   only the button sends; Ctrl/Cmd+Enter always sends; never during IME composition.
 // - The button keeps the focus in the field on touch (pointerdown → preventDefault).
+// - A pill: «Інструменти» on the left and «Надіслати» / «Зупинити» on the right sit inside the field;
+//   the field grows with its text (field-sizing: content, the scrollHeight fallback below).
 
 import { CONTENT_COUNTER_FROM, MAX_CONTENT, codePoints } from '../core/limits'
-import { counter } from './copy'
+import { SAY_ALREADY, SAY_INSERTED, counter } from './copy'
 import { byEl, finePointer, setAttr, setText, show } from './dom'
 
 export type ComposerMode = 'send' | 'stop'
@@ -14,6 +16,11 @@ export type Composer = Readonly<{
   value(): string
   clear(): void
   put(text: string): void
+  /** A starter's words: into the field (after what is there), the caret at the end. The focus goes
+   *  there on a fine pointer only — on a phone it would pop the keyboard over the page, so there the
+   *  live region says where the words went (WCAG 4.1.3). Words the field already ends with are not
+   *  put twice. */
+  insert(text: string): void
   focus(): void
   setPlaceholder(text: string): void
   /** send: «Надіслати» (aria-disabled while empty or blocked); stop: «Зупинити відповідь». */
@@ -21,7 +28,13 @@ export type Composer = Readonly<{
   element: HTMLElement
 }>
 
-export function createComposer(root: HTMLElement, onSend: () => void, onStop: () => void): Composer {
+export function createComposer(
+  root: HTMLElement,
+  onSend: () => void,
+  onStop: () => void,
+  onType: () => void = () => {},
+  say: (text: string) => void = () => {},
+): Composer {
   const input = root.querySelector<HTMLTextAreaElement>('textarea')!
   const button = byEl<HTMLButtonElement>('composer-send', root)
   const count = byEl('composer-count', root)
@@ -67,6 +80,7 @@ export function createComposer(root: HTMLElement, onSend: () => void, onStop: ()
   input.addEventListener('input', () => {
     grow()
     refresh()
+    onType()
   })
   input.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return
@@ -98,6 +112,19 @@ export function createComposer(root: HTMLElement, onSend: () => void, onStop: ()
       grow()
       refresh()
       input.focus()
+    },
+    insert(text) {
+      const before = input.value.trimEnd()
+      const already = before.endsWith(text)
+      if (!already) input.value = before === '' ? text : `${before} ${text}`
+      grow()
+      refresh()
+      if (finePointer()) {
+        input.focus()
+        input.setSelectionRange(input.value.length, input.value.length)
+      } else {
+        say(already ? SAY_ALREADY : SAY_INSERTED)
+      }
     },
     focus: () => input.focus(),
     setPlaceholder(text) {

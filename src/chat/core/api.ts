@@ -28,8 +28,13 @@ import {
   type SummaryDraftOut,
   type SummaryList,
   type SummaryOut,
+  type SummaryPatch,
   type SummaryTagOut,
+  type TagCountOut,
+  type TagSource,
+  type TagTrend,
   type TurnRequest,
+  type WeeklyReviewOut,
 } from './types'
 
 export const API_BASE = '/api/v1'
@@ -44,7 +49,10 @@ export type ApiOk<T> = Readonly<{ ok: true; data: T; status: number; requestId: 
 export type ApiFail = Readonly<{ ok: false; error: ApiError }>
 export type ApiResult<T> = ApiOk<T> | ApiFail
 
-export type SummariesQuery = Readonly<{ limit?: number; cursor?: string | null; q?: string | null }>
+export type SummariesQuery = Readonly<{ limit?: number; cursor?: string | null; q?: string | null; tag?: string | null }>
+/** GET /reviews/weekly: `weekStart` any day of the week (the server moves it to Monday), absent
+ *  for the week of today in `tz`; `tz` an IANA zone, absent for the server's Europe/Kyiv. */
+export type WeeklyQuery = Readonly<{ weekStart?: string | null; tz?: string | null }>
 
 export type Api = Readonly<{
   me(signal?: AbortSignal): Promise<ApiResult<MeOut>>
@@ -57,6 +65,12 @@ export type Api = Readonly<{
   turn(body: TurnRequest, signal: AbortSignal): Promise<Response>
   summarize(body: SummarizeRequest, signal?: AbortSignal): Promise<ApiResult<SummaryDraftOut>>
   saveSummary(body: SummaryCreate, signal?: AbortSignal): Promise<ApiResult<SummaryOut>>
+  /** PATCH /summaries/{id}: only the fields given, each replacing the stored one. */
+  patchSummary(id: string, body: SummaryPatch, signal?: AbortSignal): Promise<ApiResult<SummaryOut>>
+  /** DELETE /summaries/{id} → 204. */
+  deleteSummary(id: string, signal?: AbortSignal): Promise<ApiResult<null>>
+  tags(signal?: AbortSignal): Promise<ApiResult<readonly TagCountOut[]>>
+  weekly(query: WeeklyQuery, signal?: AbortSignal): Promise<ApiResult<WeeklyReviewOut>>
   deleteMe(signal?: AbortSignal): Promise<ApiResult<null>>
   logout(signal?: AbortSignal): Promise<ApiResult<null>>
   /** Already sanitized: the raw payload never leaves this call. */
@@ -94,11 +108,41 @@ export function summaryBody(body: SummaryCreate): SummaryCreate {
   }
 }
 
+/** SummaryPatch field by field: a field left out stays as stored (an explicit null would mean the
+ *  same, but nothing is simpler than not sending it). Tags keep their source. */
+export function patchBody(body: SummaryPatch): SummaryPatch {
+  const out: { title?: string; bullets?: string[]; tags?: { name: string; source: TagSource }[] } = {}
+  if (body.title !== undefined) out.title = body.title
+  if (body.bullets !== undefined) out.bullets = [...body.bullets]
+  if (body.tags !== undefined) out.tags = body.tags.map((t) => ({ name: t.name, source: t.source }))
+  return out
+}
+
+/** The query of GET /summaries, in this order: limit, cursor, q, tag. A blank `q` is not sent —
+ *  the server would read «   » as a search that matches everything. */
+export function summariesPath(query: SummariesQuery): string {
+  const params = new URLSearchParams()
+  params.set('limit', String(query.limit ?? 20))
+  if (query.cursor) params.set('cursor', query.cursor)
+  if (query.q && query.q.trim() !== '') params.set('q', query.q)
+  if (query.tag) params.set('tag', query.tag)
+  return `/summaries?${params.toString()}`
+}
+
+export function weeklyPath(query: WeeklyQuery): string {
+  const params = new URLSearchParams()
+  if (query.weekStart) params.set('week_start', query.weekStart)
+  if (query.tz) params.set('tz', query.tz)
+  const search = params.toString()
+  return search === '' ? '/reviews/weekly' : `/reviews/weekly?${search}`
+}
+
 // ── Response checks (light: enough that the state machine never reads a wrong type) ──────────
 
 type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
 const isStr = (v: unknown): v is string => typeof v === 'string'
+const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0
 const kindsOf = (v: unknown): ConsentKind[] =>
   Array.isArray(v) ? v.filter((k): k is ConsentKind => (CONSENT_KINDS as readonly unknown[]).includes(k)) : []
 
@@ -191,6 +235,45 @@ function parseSummaryList(raw: unknown): SummaryList | null {
   }
 }
 
+function parseTagCounts(raw: unknown): readonly TagCountOut[] | null {
+  if (!Array.isArray(raw)) return null
+  const out: TagCountOut[] = []
+  for (const t of raw) {
+    if (!isObj(t) || !isStr(t.id) || t.id === '' || !isStr(t.name) || t.name.trim() === '') continue
+    if (out.some((o) => o.id === t.id)) continue
+    out.push({ id: t.id, name: t.name, count: isCount(t.count) ? t.count : 0 })
+  }
+  return out
+}
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
+const names = (v: unknown): string[] => (Array.isArray(v) ? v.filter((n): n is string => isStr(n) && n.trim() !== '') : [])
+
+function parseWeekly(raw: unknown): WeeklyReviewOut | null {
+  if (!isObj(raw) || !isStr(raw.week_start) || !ISO_DAY.test(raw.week_start) || !isStr(raw.week_end) || !ISO_DAY.test(raw.week_end)) return null
+  if (!isCount(raw.sessions)) return null
+  const top: TagTrend[] = []
+  if (Array.isArray(raw.top_tags)) {
+    for (const t of raw.top_tags) {
+      if (!isObj(t) || !isStr(t.name) || t.name.trim() === '') continue
+      top.push({ name: t.name, count: isCount(t.count) ? t.count : 0, prev_count: isCount(t.prev_count) ? t.prev_count : 0 })
+    }
+  }
+  const prev = isCount(raw.prev_sessions) ? raw.prev_sessions : 0
+  return {
+    week_start: raw.week_start,
+    week_end: raw.week_end,
+    tz: isStr(raw.tz) ? raw.tz : '',
+    sessions: raw.sessions,
+    prev_sessions: prev,
+    delta: typeof raw.delta === 'number' && Number.isInteger(raw.delta) ? raw.delta : raw.sessions - prev,
+    top_tags: top,
+    recurring_tags: names(raw.recurring_tags),
+    new_tags: names(raw.new_tags),
+    faded_tags: names(raw.faded_tags),
+  }
+}
+
 function parseDraft(raw: unknown): SummaryDraftOut | null {
   if (!isObj(raw) || !isStr(raw.title) || !Array.isArray(raw.bullets)) return null
   const bullets = raw.bullets.filter(isStr)
@@ -275,13 +358,7 @@ export function createApi(deps: ApiDeps): Api {
       call('POST', '/consents', { body: grantBody(body.policy_version, body.kinds), signal, parse: parseConsents }),
     revoke: (kind, signal) => call('DELETE', `/consents/${encodeURIComponent(kind)}`, { signal, parse: parseConsents }),
     scenarios: (signal) => call('GET', '/scenarios', { signal, parse: parseScenarios }),
-    summaries: (query, signal) => {
-      const params = new URLSearchParams()
-      params.set('limit', String(query.limit ?? 20))
-      if (query.cursor) params.set('cursor', query.cursor)
-      if (query.q) params.set('q', query.q)
-      return call('GET', `/summaries?${params.toString()}`, { signal, parse: parseSummaryList })
-    },
+    summaries: (query, signal) => call('GET', summariesPath(query), { signal, parse: parseSummaryList }),
     turn: (body, signal) =>
       fetchFn(
         `${API_BASE}/chat/turn`,
@@ -290,6 +367,11 @@ export function createApi(deps: ApiDeps): Api {
     summarize: (body, signal) =>
       call('POST', '/chat/summarize', { body: summarizeBody(body.scenario, body.messages), signal, parse: parseDraft }),
     saveSummary: (body, signal) => call('POST', '/summaries', { body: summaryBody(body), signal, parse: parseSummary }),
+    patchSummary: (id, body, signal) =>
+      call('PATCH', `/summaries/${encodeURIComponent(id)}`, { body: patchBody(body), signal, parse: parseSummary }),
+    deleteSummary: (id, signal) => call('DELETE', `/summaries/${encodeURIComponent(id)}`, { signal, parse: 'empty' }),
+    tags: (signal) => call('GET', '/tags', { signal, parse: parseTagCounts }),
+    weekly: (query, signal) => call('GET', weeklyPath(query), { signal, parse: parseWeekly }),
     deleteMe: (signal) => call('DELETE', '/me', { signal, parse: 'empty' }),
     logout: (signal) => call('POST', '/auth/logout', { signal, parse: 'empty' }),
     helplines: (signal) => call('GET', '/helplines', { signal, parse: sanitizeHelplines }),

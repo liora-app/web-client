@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import { FORBIDDEN, clinicalOffenders } from './chat-fixtures'
-import { SECTION_IDS, centre, cutOffAtEdges, watchConsole } from './helpers'
+import { NO_WEBGL2, SECTION_IDS, centre, cutOffAtEdges, watchConsole } from './helpers'
 
 test.describe('content and structure', () => {
   test('renders the Ukrainian page without console problems', async ({ page }) => {
@@ -61,6 +61,14 @@ test.describe('content and structure', () => {
     expect(text).toMatch(/не терапі|не замін|не психолог|не медичн/)
   })
 
+  test('the privacy chapter says «only» of the conversation, not of everything stored', async ({ page }) => {
+    await page.goto('/')
+    // Email, sub, consents and sessions are stored too (ADR-005; the FAQ «Що саме ви зберігаєте?» lists them).
+    await expect(page.locator('#privacy .lead')).toHaveText('Із розмови в нашій базі залишаються лише тези, які ви вирішили зберегти.')
+    const first = page.locator('#privacy .principles > li').first()
+    await expect(first).toContainText('Із розмови в базу даних потрапляє лише підсумок, який ви переглянули й зберегли.')
+  })
+
   test('copy stays inside the product frame (stop-list)', async ({ page }) => {
     await page.goto('/')
     // innerText skips closed <details> (their content is display-locked): open every FAQ answer.
@@ -103,9 +111,14 @@ test.describe('content and structure', () => {
   test('the footer says which cookies exist once the chat signs in', async ({ page }) => {
     await page.goto('/')
     const note = page.locator('.site-footer__note')
-    await expect(note).toContainText('Лендінг сам не ставить файли cookie і не має аналітики.')
-    await expect(note).toContainText('браузер тримає файл cookie сесії, недоступний скриптам сторінки')
-    await expect(note).toContainText('тимчасовий файл cookie входу')
+    // The disclosure itself stays whole: not "not a substitute for professional help", which would make Liora a kind of help.
+    await expect(note).toContainText('Liora — застосунок для саморефлексії з AI, а не психологічна, медична чи екстрена допомога.')
+    await expect(note).not.toContainText('не заміна')
+    await expect(note).toContainText('Лендінг не ставить cookie і не має аналітики.')
+    await expect(note).toContainText('Після входу чат тримає cookie сесії, недоступний скриптам')
+    await expect(note).toContainText('тимчасовий cookie входу')
+    // The three choices this page keeps (liora:motion, liora:theme; liora:sky comes from the chat).
+    await expect(note).toContainText('Пауза, тема й фон запамʼятовуються лише в цьому браузері.')
     await expect(note).not.toContainText('не використовує файли cookie')
   })
 
@@ -229,8 +242,7 @@ test.describe('navigation and keyboard', () => {
     await expect(page.locator('[data-hud-name]')).toHaveText('Щоденник')
   })
 
-  test('the example session follows the step in the middle of the screen', async ({ page, isMobile }) => {
-    test.skip(isMobile, 'on one column the example comes after the steps and is not dimmed')
+  test('the example session follows the step in the middle of a wide screen; on one column it is read in full', async ({ page, isMobile }) => {
     await page.goto('/')
     const transcript = page.locator('[data-transcript]')
     const firstLine = transcript.locator('.said p').first() // data-for="1 2"
@@ -242,6 +254,12 @@ test.describe('navigation and keyboard', () => {
     await centre(page, '[data-step="3"]')
     await expect(transcript).toHaveAttribute('data-active-step', '3')
     await expect(page.locator('[data-step][data-current]')).toHaveAttribute('data-step', '3')
+    if (isMobile) {
+      // One column: the example comes after the steps, not beside them, so no line steps back.
+      await expect(firstLine).toHaveCSS('color', TEXT)
+      await expect(thesis).toHaveCSS('color', TEXT)
+      return
+    }
     await expect(firstLine).toHaveCSS('color', DIM)
     await expect(thesis).toHaveCSS('color', TEXT)
     await expect(page.locator('[data-step="3"] .step__index')).toHaveCSS('color', LIGHT)
@@ -261,6 +279,58 @@ test.describe('navigation and keyboard', () => {
     // preventScroll: the block stays out of view, so only the focus can reveal it.
     await page.locator('.final__meta .arrow-link').evaluate((element) => (element as HTMLElement).focus({ preventScroll: true }))
     await expect(page.locator('.final__meta')).toHaveCSS('opacity', '1', { timeout: 300 })
+  })
+
+  // Progressive enhancement: the hidden start state comes with the observer's first answer, so an
+  // observer that never answers (a frozen tab, a print layout, a broken engine) hides nothing.
+  test('an IntersectionObserver that never answers hides nothing', async ({ page }) => {
+    await page.addInitScript(NO_WEBGL2)
+    await page.addInitScript(() => {
+      window.IntersectionObserver = class {
+        observe(): void {}
+        unobserve(): void {}
+        disconnect(): void {}
+        takeRecords(): IntersectionObserverEntry[] {
+          return []
+        }
+      } as unknown as typeof IntersectionObserver
+    })
+    await page.goto('/')
+    await expect(page.locator('html')).toHaveAttribute('data-motion', 'on')
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    await expect(page.locator('html')).not.toHaveClass(/\bjs-reveal\b/)
+    const waiting = await page.locator('[data-reveal]').evaluateAll((all) =>
+      all.filter((element) => getComputedStyle(element).opacity !== '1' || getComputedStyle(element).transform !== 'none').map((element) => element.id || element.className),
+    )
+    expect(waiting).toEqual([])
+  })
+
+  test('once the observer answers, what is below the fold waits for the scroll (without fading out to it) and then comes in', async ({ page }) => {
+    await page.addInitScript(NO_WEBGL2)
+    // Every transition a reveal block starts: none before a scroll — the start state comes in one frame.
+    await page.addInitScript(() => {
+      const runs: string[] = []
+      ;(window as unknown as { __runs: string[] }).__runs = runs
+      document.addEventListener(
+        'transitionrun',
+        (event) => {
+          if (event.target instanceof Element && event.target.matches('[data-reveal]')) runs.push(`${event.target.id || event.target.className}:${event.propertyName}`)
+        },
+        true,
+      )
+    })
+    await page.goto('/')
+    await expect(page.locator('html')).toHaveAttribute('data-motion', 'on')
+    await expect(page.locator('html')).toHaveClass(/\bjs-reveal\b/)
+    await expect(page.locator('html')).not.toHaveClass(/js-reveal-start/)
+    const title = page.locator('#faq-title')
+    await expect(title).not.toHaveClass(/is-visible/)
+    await expect(title).toHaveCSS('opacity', '0')
+    await page.waitForTimeout(300)
+    expect(await page.evaluate(() => (window as unknown as { __runs: string[] }).__runs)).toEqual([])
+    await title.scrollIntoViewIfNeeded()
+    await expect(title).toHaveClass(/is-visible/)
+    await expect(title).toHaveCSS('opacity', '1')
   })
 
   test('faq answers open and close', async ({ page }) => {
@@ -464,6 +534,20 @@ test.describe('layers', () => {
     // Nothing waits for a scroll to appear.
     const waiting = await page.locator('[data-reveal]').evaluateAll((all) => all.filter((element) => getComputedStyle(element).opacity !== '1').length)
     expect(waiting).toBe(0)
+  })
+
+  test('with reduced motion and «Увімкнути анімацію» stored the labels still do not decode: the flicker is JS, the CSS cannot still it', async ({ page }) => {
+    // The stored «on» starts only the light (boot.ts); kept off here, nothing renders WebGL.
+    await page.addInitScript(NO_WEBGL2)
+    await page.addInitScript(() => localStorage.setItem('liora:motion', 'on'))
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto('/')
+    await expect(page.locator('html')).toHaveAttribute('data-motion', 'on')
+    // Two frames: an IntersectionObserver callback would have run by now.
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    const tag = page.locator('.hero__tag')
+    await expect(tag.locator('.visually-hidden')).toHaveCount(0)
+    await expect(tag).toHaveText('Саморефлексія з AI')
   })
 
   test('filled buttons stay sharp when the WebGL scene is on', async ({ page }) => {
