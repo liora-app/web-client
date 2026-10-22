@@ -5229,13 +5229,20 @@ test.describe('what the review of phase C3 found', () => {
     const focused = await page.evaluate(() => document.activeElement?.id ?? '')
     await page.clock.fastForward('40:00')
     await expect(pauseText(page)).not.toHaveText('')
+    // Read at once, as the line comes: hold() moves the page by the line in the same task
+    // ('instant'). A plain scrollBy would follow html { scroll-behavior: smooth } and show the end
+    // covered for a few frames first; a read after the line's fade (240 ms, opacity only) could
+    // miss that. Then again at rest: the fade moves no box.
+    const atOnce = await pageEnd(page)
     await animationsDone(page)
     const after = await pageEnd(page)
     // The field grew by the line; the end is still above it, the gap it had kept, no «↓» pill.
-    expect(after.field).toBeLessThan(before.field - 20)
-    expect(after.end).toBeLessThanOrEqual(after.field + 4)
-    expect(Math.abs(after.field - after.end - (before.field - before.end))).toBeLessThanOrEqual(1)
-    expect(after.pill).toBe(false)
+    for (const [when, read] of [['at once', atOnce], ['at rest', after]] as const) {
+      expect(read.field, when).toBeLessThan(before.field - 20)
+      expect(read.end, when).toBeLessThanOrEqual(read.field + 4)
+      expect(Math.abs(read.field - read.end - (before.field - before.end)), when).toBeLessThanOrEqual(1)
+      expect(read.pill, when).toBe(false)
+    }
     expect(await page.evaluate(() => document.activeElement?.id ?? '')).toBe(focused)
   })
 
