@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { NO_WEBGL2, watchConsole } from './helpers'
+import { NO_WEBGL2, animationsDone, throttle, watchConsole } from './helpers'
 
 // The landing's two themes (ADR-012): «Вигляд» in the header (the chat's control, plain buttons —
 // no inputs on this page), the choice on <html> before the first frame (public/theme-init.js), the
@@ -12,6 +12,7 @@ const NIGHT = 'rgb(4, 7, 8)' // --color-bg, dark (the landing's own night)
 const STILL = /-still\.png/
 
 test.beforeEach(async ({ page }) => {
+  await throttle(page)
   await page.addInitScript(NO_WEBGL2)
 })
 
@@ -277,16 +278,9 @@ test.describe('the light theme without WebGL', () => {
     await run('the page')
     await toggle(page).click()
     await expect(menu(page)).toBeVisible()
-    // Finite animations on the document's clock only: a scroll-driven one (#mind) finishes with the
-    // scroll, not with time, and would hold this wait for ever.
-    await page.evaluate(() =>
-      Promise.all(
-        document
-          .getAnimations()
-          .filter((animation) => animation.timeline instanceof DocumentTimeline && animation.effect?.getComputedTiming().iterations !== Infinity)
-          .map((animation) => animation.finished.catch(() => undefined)),
-      ),
-    )
+    // Finite animations only (helpers.ts): a scroll-driven one (#mind) ends with the scroll, not with
+    // time — its end is a percentage, not a number of ms — and would hold this wait for ever.
+    await animationsDone(page)
     await run('the menu open')
   })
 })

@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
-import { NO_WEBGL2, centre, cutOffAtEdges, throttle, watchConsole } from './helpers'
+import { NO_WEBGL2, animationsDone, centre, cutOffAtEdges, throttle, watchConsole } from './helpers'
 
 // The landing's motion between chapters (spec §9.4 п. 8, ADR-012 «Рух»): the hero's cascade, the
 // reveals of steps, privacy rows and FAQ answers, #mind's copy unfolding with the scroll and its
@@ -99,12 +99,22 @@ const ink = (page: Page, token: string): Promise<string> =>
 /** #mind's copy: the texts its scroll timeline moves. */
 const MIND_TEXT = ['.mind__copy .tag', '#mind-title', '#mind-title span', '.mind__note'] as const
 
-/** «Пауза» in the header, then the pointer leaves it (its own hover colours are not motion). */
+/** «Пауза» in the header, then the pointer leaves it (its own hover colours are not motion): they
+ *  ease out, and only then do the checks of what still runs look (400 ms of a timer did not always
+ *  cover that on a slow runner). */
 async function pause(page: Page): Promise<void> {
-  await page.locator('[data-motion-toggle]').click()
+  const toggle = page.locator('[data-motion-toggle]')
+  await toggle.click()
   await expect(page.locator('html')).toHaveAttribute('data-motion', 'off')
   await page.mouse.move(1, 300)
-  await page.waitForTimeout(400)
+  await expect.poll(() => toggle.evaluate((node) => node.matches(':hover'))).toBe(false)
+  await animationsDone(page.locator('.media'))
+}
+
+/** The hero's cascade is over: src/ui/intro.ts takes html.js-intro off once it is (600 ms + 100) —
+ *  the state itself, where a 700 ms timer only guessed at it. */
+async function cascadeOver(page: Page): Promise<void> {
+  await expect(page.locator('html')).not.toHaveClass(/\bjs-intro\b/)
 }
 
 test.describe('without motion everything is there at once', () => {
@@ -140,7 +150,7 @@ test.describe('without motion everything is there at once', () => {
     await page.goto('/')
     await settled(page)
     await expect(page.locator('html')).toHaveAttribute('data-motion', 'on')
-    await page.waitForTimeout(700) // the hero's cascade is over
+    await cascadeOver(page)
 
     // Paused half-way through #mind's pin: its height and the scroll position stay as they are.
     await pinAt(page, 0.15)
@@ -191,7 +201,7 @@ test.describe('without motion everything is there at once', () => {
       await page.goto('/')
       await settled(page)
       await expect(page.locator('html')).toHaveAttribute('data-motion', 'on')
-      await page.waitForTimeout(700)
+      await cascadeOver(page)
       await expect(page.locator('html')).not.toHaveClass(/js-reveal/)
       expect(await notAtRest(page, ['[data-reveal]', '.hero__title', '.hero__aside', '.hero__links'])).toEqual([])
       for (const where of ['#how', '#privacy', '#faq', '#final']) {
@@ -474,20 +484,39 @@ test.describe('motion', () => {
     test.skip(!supported, 'this engine opens <details> at once')
     await centre(page, '#faq')
     await page.waitForTimeout(500) // the answers' own reveal is over
-    // Click from the page itself, then two frames: the height is on its way, not there yet.
+    // Click from the page itself, then the first frame the height moves in: on its way, not there
+    // yet. Two frames were not always enough — a transition waits a frame or more for its start
+    // time, and under a slowed CPU the height still stood closed then.
     const open = (index: number): Promise<{ closed: number; early: number }> =>
       page.evaluate(async (at) => {
         const details = document.querySelectorAll('#faq details')[at]!
         const closed = details.getBoundingClientRect().height
         details.querySelector('summary')!.click()
-        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-        return { closed, early: details.getBoundingClientRect().height }
+        let early = closed
+        for (let frame = 0; frame < 120 && early === closed; frame++) {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+          early = details.getBoundingClientRect().height
+        }
+        return { closed, early }
       }, index)
     const height = (index: number): Promise<number> => page.locator('#faq details').nth(index).evaluate((element) => element.getBoundingClientRect().height)
+    /** The height a frame apart is the same: the opening is over (not a timer's guess at it). */
+    const still = async (index: number): Promise<number> => {
+      let last = -1
+      await expect
+        .poll(async () => {
+          const now = await height(index)
+          await frames(page)
+          const after = await height(index)
+          last = after
+          return now === after
+        })
+        .toBe(true)
+      return last
+    }
 
     const smooth = await open(0)
-    await page.waitForTimeout(600)
-    const full = await height(0)
+    const full = await still(0)
     expect(smooth.early).toBeGreaterThan(smooth.closed)
     expect(smooth.early).toBeLessThan(full - 4)
 
