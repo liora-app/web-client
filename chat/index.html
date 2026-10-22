@@ -69,6 +69,13 @@
             <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-theme-choice="dark">Темна</button>
           </div>
         </div>
+        <!-- «Персонаж» (src/ui/character.ts): the character shown or hidden, remembered in this browser. A
+             toggle with a fixed name (aria-pressed="true": shown), hidden without JS. -->
+        <button class="character-toggle" type="button" data-character-toggle aria-pressed="true" aria-label="Персонаж" hidden>
+          <svg class="character-toggle__icon character-toggle__on" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="6" r="3.25" /><path d="M2.75 14.25c.7-2.7 2.75-4.25 5.25-4.25s4.55 1.55 5.25 4.25" /><path d="M3.5 3.75 2.75 3M12.5 3.75l.75-.75" /></svg>
+          <svg class="character-toggle__icon character-toggle__off" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="5.75" /><path d="M3.95 3.95l8.1 8.1" /></svg>
+          <span class="header-word" aria-hidden="true">Персонаж</span>
+        </button>
         <!-- Shown only with a session. Same size and place as the landing's «Меню». -->
         <button class="account-toggle" type="button" data-act="account" aria-haspopup="dialog" aria-controls="account-dialog" aria-label="Акаунт" hidden>
           <svg class="account-toggle__icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="5.5" r="2.75" /><path d="M2.75 14c.6-2.9 2.7-4.5 5.25-4.5s4.65 1.6 5.25 4.5" /></svg>
@@ -256,7 +263,7 @@
                         <li>Ваші згоди: яка саме, версія умов, коли дано й коли відкликано.</li>
                         <li>Технічні журнали сервера без тексту розмов: який запит надійшов і коли, чим завершився, скільки тривав і скільки тексту обробив AI (у токенах). Замість вашого акаунта в них псевдонім. Журнали з часом перезаписуються.</li>
                         <li>Після видалення акаунта — його номер і дата видалення, щоб видалення не скасувалося при відновленні даних із резервної копії.</li>
-                        <li>У вашому браузері — файл cookie сесії (скриптам сторінки він недоступний) і ваш вибір паузи анімації, теми та фону.</li>
+                        <li>У вашому браузері — файл cookie сесії (скриптам сторінки він недоступний) і ваш вибір паузи анімації, теми, фону та персонажа.</li>
                       </ul>
                     </div>
                   </details>

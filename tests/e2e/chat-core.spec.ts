@@ -107,6 +107,7 @@ import { conversationText, entryMarkdown, thesesText } from '../../src/chat/ui/c
 import { moodLine, moodSentence, sayAnswer, sayRetry } from '../../src/chat/ui/copy'
 import { KEYBOARD_DROP, keyboardInset, keyboardShown } from '../../src/chat/ui/keyboard'
 import { presenceOf } from '../../src/chat/ui/presence'
+import { CHARACTER_KEY, parseCharacter } from '../../src/ui/character'
 import { SKY_KEY, parseSky, skyAttribute } from '../../src/ui/sky'
 import { block, checkAll, colour, fieldsMeet, grounds, hexOf, lum, over, props, ratio, sampled, sectionGrounds, sectionSky, sky, themes, worst, type Check, type Ground, type Rgb } from './sky-contrast'
 
@@ -4031,6 +4032,16 @@ test.describe('sky presets', () => {
     expect(skyAttribute('dawn', true)).toBeNull()
   })
 
+  // ADR-013: «Персонаж» is on unless the person hid it; only the stored 'off' hides it, so an old,
+  // odd or hand-edited value never takes the character away.
+  test('the character: only "off" hides it; anything else, a missing key included, is on', () => {
+    expect(CHARACTER_KEY).toBe('liora:character')
+    expect(parseCharacter('off')).toBe('off')
+    for (const other of [null, undefined, '', 'on', 'OFF', 'Off', ' off', 'false', '0', '{"character":"off"}', 1, 0, false]) {
+      expect(parseCharacter(other), String(other)).toBe('on')
+    }
+  })
+
   // ADR-013 («Аврора»): the threshold of luminance (ADR-012: dark ≤ L 0.023, light ≥ L 0.76) became a
   // list of pairs. Every text token keeps 4.5:1, and every sole boundary of a control (its stroke, a
   // field's border, the focus ring, the edge of the primary fill) keeps 3:1, on every ground of every
@@ -4246,9 +4257,11 @@ test.describe('source rules', () => {
     }
   })
 
-  test('localStorage.setItem only in src/ui/motion.ts, src/ui/sky.ts and src/ui/theme.ts', () => {
+  // ADR-013 adds the fourth writer, «Персонаж» (liora:character); the list stays closed.
+  test('localStorage.setItem only in src/ui/motion.ts, src/ui/sky.ts, src/ui/theme.ts and src/ui/character.ts', () => {
     const writers = offenders(sources(''), /localStorage\s*\.\s*setItem\b/).map((o) => o.split(':')[0])
-    const allowed = ['src/ui/motion.ts', 'src/ui/sky.ts', 'src/ui/theme.ts']
+    expect(writers).toContain('src/ui/character.ts')
+    const allowed = ['src/ui/motion.ts', 'src/ui/sky.ts', 'src/ui/theme.ts', 'src/ui/character.ts']
     expect(writers.every((p) => allowed.includes(p!)), writers.join(', ')).toBe(true)
   })
 
@@ -4295,8 +4308,8 @@ test.describe('source rules', () => {
 
   test('chat/index.html: every text field is left out of the browser’s form restore (autocomplete="off")', () => {
     // Firefox's session store keeps a textarea's text on disk unless it has autocomplete="off"; the
-    // consent screen promises the browser keeps only the session cookie and three choices (motion,
-    // theme, sky; §3.5).
+    // consent screen promises the browser keeps only the session cookie and four choices (motion,
+    // theme, sky, character; §3.5).
     const repo = resolve(test.info().project.testDir, '..', '..')
     const chat = readFileSync(join(repo, 'chat', 'index.html'), 'utf8')
     const tags = [...chat.matchAll(/<textarea\b[^>]*>/g), ...chat.matchAll(/<input\b[^>]*>/g)].map((m) => m[0])
@@ -4321,6 +4334,38 @@ test.describe('source rules', () => {
     const radios = [...chat.matchAll(/<input[^>]*name="sky"[^>]*value="([a-z]+)"/g)].map((m) => m[1])
     expect(radios).toEqual(['night', 'dusk', 'dawn'])
     expect(chat).toContain('data-sky-pick')
+  })
+
+  test('the character: one module knows the key; the landing has no toggle and never reads it; /chat/ has one toggle with a state', () => {
+    const keyHolders = offenders(sources(''), /liora:character/).map((o) => o.split(':')[0])
+    expect(keyHolders.length).toBeGreaterThan(0)
+    expect(keyHolders.every((p) => p === 'src/ui/character.ts'), keyHolders.join(', ')).toBe(true)
+    const repo = resolve(test.info().project.testDir, '..', '..')
+    expect(readFileSync(join(repo, 'src', 'main.ts'), 'utf8')).not.toMatch(/ui\/character/)
+    expect(readFileSync(join(repo, 'index.html'), 'utf8')).not.toMatch(/data-character/)
+    expect(readFileSync(join(repo, 'public', 'theme-init.js'), 'utf8')).not.toMatch(/character/)
+    const chat = readFileSync(join(repo, 'chat', 'index.html'), 'utf8')
+    const toggles = chat.match(/<button\b[^>]*\bdata-character-toggle\b[^>]*>/g) ?? []
+    expect(toggles).toHaveLength(1)
+    // A toggle with a fixed name (APG): its state is aria-pressed, «true» (shown) before the module
+    // reads the choice, and the button is hidden until the module wires it.
+    expect(toggles[0]).toMatch(/\saria-pressed="true"/)
+    expect(toggles[0]).toMatch(/\saria-label="Персонаж"/)
+    expect(toggles[0]).toMatch(/\shidden(?:\s|>)/)
+    expect(chat.match(/data-character-toggle/g)).toHaveLength(1)
+    // Hidden, the light's chunk (three.js) is never fetched: the choice is read before bootGL, and
+    // setActive(false) follows it in the same task, before the scene starts loading (gl/core/boot.ts).
+    // A static guard: a headless run never loads that chunk anyway (no GPU), so no test sees it.
+    const main = readFileSync(join(repo, 'src', 'chat', 'ui', 'main.ts'), 'utf8')
+    const read = main.indexOf('initCharacter(')
+    const boot = main.search(/\bbootGL\s*(?:<[^>]*>)?\s*\(/)
+    const hold = main.indexOf('if (!character.shown()) gl?.setActive(false)')
+    expect(read).toBeGreaterThan(0)
+    expect(boot).toBeGreaterThan(read)
+    expect(hold).toBeGreaterThan(boot)
+    expect(main.slice(boot, hold)).not.toMatch(/\bawait\b|\.then\(/)
+    // And every render keeps it so: «live» in render.ts asks the character.
+    expect(readFileSync(join(repo, 'src', 'chat', 'ui', 'render.ts'), 'utf8')).toMatch(/const live = \(character\?\.shown\(\) \?\? true\) && /)
   })
 
   test('theme: one module knows the key; public/theme-init.js only reads storage, sets two attributes and the theme-color, first in <head> of both pages', () => {

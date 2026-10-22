@@ -2219,8 +2219,21 @@ async function tabTo(page: Page, from: Locator, target: Locator, key: 'Tab' | 'S
 
 const LAYERS = ['.site-header', '[data-el="session"]', '[data-el="composer"]'] as const
 
+/** ADR-013: «Персонаж» shown (the default) and hidden. The layout's promises hold in both. */
+const CHARACTERS = ['on', 'off'] as const
+type CharacterState = (typeof CHARACTERS)[number]
+/** The title's tail: none for the default, so the tests keep their names. */
+const hiddenTitle = (character: CharacterState): string => (character === 'off' ? ' — the character hidden' : '')
+/** The choice already stored when the page loads (as src/ui/character.ts stores it). */
+async function storeCharacter(page: Page, character: CharacterState): Promise<void> {
+  if (character === 'off') await page.addInitScript(() => window.localStorage.setItem('liora:character', 'off'))
+}
+const characterToggle = (page: Page): Locator => page.locator('[data-character-toggle]')
+
 test.describe('layout', () => {
-  test('#43 the composer stays in view at 1440 × 900 and on a Pixel 7; «Надіслати» sits in the middle of a one-line field', async ({ page }, testInfo) => {
+  for (const character of CHARACTERS)
+    test(`#43 the composer stays in view at 1440 × 900 and on a Pixel 7; «Надіслати» sits in the middle of a one-line field${hiddenTitle(character)}`, async ({ page }, testInfo) => {
+    await storeCharacter(page, character)
     await openChat(page)
     await expect(composer(page)).toBeInViewport()
     // 6 px above and below the 44 px button on a desktop, 4 px on the phone (§3.7.3).
@@ -2244,7 +2257,9 @@ test.describe('layout', () => {
     await expect(composer(page)).toBeInViewport()
   })
 
-  test('#43 Pixel 7 (412 × 839), a new conversation: «Не зберігати» is in view above the composer, not under its fade', async ({ page }, testInfo) => {
+  for (const character of CHARACTERS)
+    test(`#43 Pixel 7 (412 × 839), a new conversation: «Не зберігати» is in view above the composer, not under its fade${hiddenTitle(character)}`, async ({ page }, testInfo) => {
+    await storeCharacter(page, character)
     test.skip(testInfo.project.name !== 'mobile', 'a phone layout')
     await openChat(page)
     await page.evaluate(() => document.fonts.ready)
@@ -2374,7 +2389,9 @@ test.describe('layout', () => {
     }
   })
 
-  test('#43 Tab never leaves the focus under the header, the session row or the composer', async ({ page, api }) => {
+  for (const character of CHARACTERS)
+    test(`#43 Tab never leaves the focus under the header, the session row or the composer${hiddenTitle(character)}`, async ({ page, api }) => {
+    await storeCharacter(page, character)
     const long = Array.from({ length: 12 }, (_, i) => `Абзац ${i + 1}: синтетична відповідь, досить довга, щоб сторінка прокручувалася.\n\n`)
     api.on('POST /chat/turn', { sse: reply(long) }, { sse: meta() + streamError('llm_failed') })
     await openChat(page)
@@ -2415,16 +2432,16 @@ test.describe('layout', () => {
   })
 
   // ADR-013: the phone's header is two rows in one capsule — the mark and «Якщо важко», then the tiles
-  // «Щоденник», «Пауза», «Звук», «Вигляд», «Акаунт» (and «Персонаж»): every one inside 320 px, none
-  // over another.
-  test('#43b the /chat/ header fits at 320 px: wordmark, «Якщо важко», «Щоденник», motion and sound, «Вигляд», «Акаунт», none over another', async ({ page }, testInfo) => {
+  // «Щоденник», «Пауза», «Звук», «Вигляд», «Персонаж», «Акаунт»: every one inside 320 px, none over
+  // another.
+  test('#43b the /chat/ header fits at 320 px: wordmark, «Якщо важко», «Щоденник», motion and sound, «Вигляд», «Персонаж», «Акаунт», none over another', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile', 'one engine is enough for the fit')
     await page.setViewportSize({ width: 320, height: 640 })
     await openChat(page)
     await exchange(page)
     await page.evaluate(() => document.fonts.ready)
     await expect(accountToggle(page)).toBeVisible()
-    const selectors = ['.brand', '.help-link', '.journal-toggle', '.motion-toggle', '.sound-toggle', '.theme-toggle', '.account-toggle']
+    const selectors = ['.brand', '.help-link', '.journal-toggle', '.motion-toggle', '.sound-toggle', '.theme-toggle', '.character-toggle', '.account-toggle']
     const boxes: { x: number; y: number; width: number; height: number }[] = []
     for (const selector of selectors) {
       const box = await page.locator(`.site-header ${selector}`).boundingBox()
@@ -2453,7 +2470,7 @@ test.describe('layout', () => {
       const boxes = await page
         .locator('.chat-header :is(.brand, .ai-chip--header, .help-link, .journal-toggle, .media, .theme-toggle, .character-toggle, .account-toggle):visible')
         .evaluateAll((items) => items.map((item) => item.getBoundingClientRect()).map(({ left, right }) => ({ left, right })))
-      expect(boxes.length, `${width} px`).toBeGreaterThanOrEqual(7)
+      expect(boxes.length, `${width} px`).toBeGreaterThanOrEqual(8)
       for (let i = 1; i < boxes.length; i++) expect(boxes[i]!.left, `${width} px: item ${i}`).toBeGreaterThanOrEqual(boxes[i - 1]!.right)
       // Inside the capsule, not only the window.
       const capsule = await page.evaluate(() => {
@@ -5043,7 +5060,9 @@ async function borderOnlyControls(page: Page): Promise<string[]> {
 }
 
 test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the names, the borders', () => {
-  test('#93 at rest no line of the conversation sits half under the top fade; the person’s bubble has its own edge; «+» comes before the field in Tab order', async ({ page }, testInfo) => {
+  for (const character of CHARACTERS)
+    test(`#93 at rest no line of the conversation sits half under the top fade; the person’s bubble has its own edge; «+» comes before the field in Tab order${hiddenTitle(character)}`, async ({ page }, testInfo) => {
+    await storeCharacter(page, character)
     await openChat(page)
     // At rest also means with the page's own faces in: line heights are theirs.
     await page.evaluate(async () => {
@@ -5094,7 +5113,9 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     }
   })
 
-  test('#93b without motion the first message lands where it should too: the anchor scrolls once the render is through, and the transcript’s size never transitions', async ({ page }) => {
+  for (const character of CHARACTERS)
+    test(`#93b without motion the first message lands where it should too: the anchor scrolls once the render is through, and the transcript’s size never transitions${hiddenTitle(character)}`, async ({ page }) => {
+    await storeCharacter(page, character)
     // prefers-reduced-motion: base.css gives every property a 0.01 ms transition and the scroll is
     // instant — the anchor used to land short on the first message, the opening line under the fade.
     await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -5108,10 +5129,13 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
       const root = getComputedStyle(document.documentElement)
       return Math.round(li.getBoundingClientRect().top - parseFloat(root.scrollPaddingTop) - parseFloat(getComputedStyle(li).scrollMarginTop))
     })
-    expect(placed).toBe(0)
+    // Within half a pixel, either way: Math.round gives -0 for a hair above, and toBe tells -0 from 0.
+    expect(Math.abs(placed)).toBe(0)
   })
 
-  test('#94 the session row says «AI, не людина» only where its small light is the light (the phone); the chip «AI · не людина» stands at both widths, with the line under the field', async ({ page }, testInfo) => {
+  for (const character of CHARACTERS)
+    test(`#94 the session row says «AI, не людина» only where its small light is the light (the phone); the chip «AI · не людина» stands at both widths, with the line under the field${hiddenTitle(character)}`, async ({ page }, testInfo) => {
+    await storeCharacter(page, character)
     await openChat(page)
     await exchange(page, USER)
     const row = page.locator('[data-el="session"] .session__ai')
@@ -5129,7 +5153,9 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
       await expect(page.locator('[data-el="session"] .session__label')).toHaveText('Вільна розмова', { useInnerText: true })
     } else {
       await expect(row).toBeVisible()
-      await expect(page.locator('.session .orb--mini')).toBeVisible()
+      // The small light goes with the character; the words stay.
+      if (character === 'on') await expect(page.locator('.session .orb--mini')).toBeVisible()
+      else await expect(page.locator('.session .orb--mini')).toBeHidden()
     }
   })
 
@@ -5972,6 +5998,287 @@ test.describe('what the theme and motion review found', () => {
     const still = await moves()
     expect(still.filter((m) => m === 'view-transition' || m === 'animate talk' || m === 'scroll smooth')).toEqual([])
     expect(still).toContain('scroll instant')
+  })
+})
+
+// ADR-013 §6: «Персонаж» — the person may hide the character (the light above the conversation and
+// the small one in the session row). On by default, remembered in this browser as liora:character
+// ('off'; shown = no key), written by src/ui/character.ts alone. What answers stays said without it.
+test.describe('the character', () => {
+  const stored = (page: Page): Promise<string | null> => page.evaluate(() => window.localStorage.getItem('liora:character'))
+  /** The scene and the session row's small light: in the layout at all (display), and seen. */
+  const lights = (page: Page) =>
+    page.evaluate(() =>
+      ['.chat__scene', '.session .orb--mini'].map((selector) => {
+        const node = document.querySelector(selector)
+        if (!node) return { selector, display: 'absent', boxes: 0 }
+        const style = getComputedStyle(node)
+        return { selector, display: style.display, boxes: node.getClientRects().length }
+      }),
+    )
+
+  test('#131 on by default; a press hides the character at once and stores "off", another shows it again and removes the key', async ({ page }, testInfo) => {
+    await openChat(page)
+    const toggle = characterToggle(page)
+    await expect(toggle).toBeVisible()
+    await expect(toggle).toHaveAccessibleName('Персонаж')
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(html(page)).toHaveAttribute('data-character', 'on')
+    await expect(page.locator('.chat__scene')).toBeVisible()
+    await expect(page.locator('.presence .orb')).toBeVisible()
+    // A visit without a choice writes nothing.
+    expect(await stored(page)).toBeNull()
+
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    // Out of the layout, not only unseen: no box keeps its place.
+    for (const light of await lights(page)) expect(light, light.selector).toMatchObject({ display: 'none', boxes: 0 })
+    expect(await stored(page)).toBe('off')
+    await expect(toggle).toHaveAccessibleName('Персонаж')
+
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(html(page)).toHaveAttribute('data-character', 'on')
+    await expect(page.locator('.chat__scene')).toBeVisible()
+    await expect(page.locator('.presence .orb')).toBeVisible()
+    expect(await stored(page)).toBeNull()
+    if (!isDesktop(testInfo)) {
+      // The phone's session row has its small light back once a conversation runs.
+      await exchange(page)
+      await expect(page.locator('.session .orb--mini')).toBeVisible()
+      await toggle.click()
+      await expect(page.locator('.session .orb--mini')).toBeHidden()
+    }
+  })
+
+  test('#132 the choice survives a reload: "off" is on <html> before the first screen, and the character is never seen on the way', async ({ page }) => {
+    await openChat(page)
+    await characterToggle(page).click()
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    // Every frame from the document's start: which screen, what <html> says, whether the scene shows.
+    await page.addInitScript(() => {
+      const frames: { screen: string | null; character: string | null; seen: boolean; styled: boolean }[] = []
+      ;(window as unknown as { __frames: typeof frames }).__frames = frames
+      const tick = (): void => {
+        const root = document.documentElement
+        const scene = document.querySelector('.chat__scene')
+        const style = scene ? getComputedStyle(scene) : null
+        frames.push({
+          screen: root.getAttribute('data-screen'),
+          character: root.getAttribute('data-character'),
+          seen: style !== null && style.display !== 'none' && style.visibility !== 'hidden' && scene!.getClientRects().length > 0,
+          // Before the page's styles apply nothing of it is painted: those frames do not count.
+          styled: getComputedStyle(root).getPropertyValue('--color-bg').trim() !== '',
+        })
+        if (frames.length < 600) window.requestAnimationFrame(tick)
+      }
+      window.requestAnimationFrame(tick)
+    })
+    await page.reload()
+    await onScreen(page, 'chat')
+    await expect(characterToggle(page)).toHaveAttribute('aria-pressed', 'false')
+    expect(await stored(page)).toBe('off')
+    const frames = await page.evaluate(() => (window as unknown as { __frames: { screen: string | null; character: string | null; seen: boolean; styled: boolean }[] }).__frames)
+    const painted = frames.filter((frame) => frame.styled)
+    expect(painted.length).toBeGreaterThan(0)
+    expect(painted.filter((frame) => frame.seen)).toEqual([])
+    // Any screen past booting is shown with the choice already on <html> (no data-screen yet is the
+    // markup's own booting section: the module has not rendered).
+    expect(painted.filter((frame) => frame.screen !== null && frame.screen !== 'booting' && frame.character !== 'off')).toEqual([])
+    // And the first screen past booting is there at all in what was recorded.
+    expect(painted.some((frame) => frame.screen === 'chat' && frame.character === 'off')).toBe(true)
+    for (const light of await lights(page)) expect(light, light.selector).toMatchObject({ display: 'none', boxes: 0 })
+  })
+
+  test('#133 what answers is said in both states: the chip, «AI» beside every reply, the line under the field (and the phone’s session row)', async ({ page }, testInfo) => {
+    await openChat(page)
+    await exchange(page, USER)
+    await exchange(page, 'Друге синтетичне повідомлення.')
+    for (const character of CHARACTERS) {
+      if (character === 'off') await characterToggle(page).click()
+      await expect(html(page)).toHaveAttribute('data-character', character)
+      const chip = page.locator('.ai-chip:visible')
+      await expect(chip, character).toHaveCount(1)
+      await expect(chip, character).toHaveText('AI · не людина')
+      await expect(page.locator('.composer__ai'), character).toHaveText('AI, не людина · може помилятися · не терапія')
+      const replies = aiMessages(page)
+      const count = await replies.count()
+      expect(count, character).toBeGreaterThanOrEqual(3)
+      for (let i = 0; i < count; i++) await expect(replies.nth(i).locator('.said__who'), `${character}: reply ${i}`).toHaveText('AI')
+      if (!isDesktop(testInfo)) await expect(page.locator('[data-el="session"] .session__ai'), character).toBeVisible()
+    }
+  })
+
+  test('#134 from the keyboard: Tab reaches «Персонаж», Space and Enter press it, the focus stays; its label names the press, and Esc hides the label', async ({ page }) => {
+    await openChat(page)
+    const toggle = characterToggle(page)
+    await tabTo(page, page.locator('.site-header .brand'), toggle)
+    const label = (): Promise<{ text: string; opacity: number }> =>
+      toggle.evaluate((node) => {
+        const style = getComputedStyle(node, '::after')
+        return { text: style.content, opacity: Number(style.opacity) }
+      })
+    await expect.poll(label).toEqual({ text: '"Сховати персонажа"', opacity: 1 })
+    await page.keyboard.press('Space')
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await expect(toggle).toBeFocused()
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    await expect.poll(label).toEqual({ text: '"Показати персонажа"', opacity: 1 })
+    await page.keyboard.press('Enter')
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(toggle).toBeFocused()
+    await expect(html(page)).toHaveAttribute('data-character', 'on')
+    // WCAG 1.4.13 (src/ui/tips.ts): Esc hides the label, the focus stays.
+    await page.keyboard.press('Escape')
+    await expect.poll(label).toEqual({ text: '"Сховати персонажа"', opacity: 0 })
+    await expect(toggle).toHaveAttribute('data-tip', 'off')
+    await expect(toggle).toBeFocused()
+  })
+
+  test('#135 with storage blocked (reads, writes and removals throw) the toggle works for this page, and nothing reaches the console', async ({ page }) => {
+    await page.addInitScript(() => {
+      for (const name of ['getItem', 'setItem', 'removeItem'] as const) {
+        Storage.prototype[name] = () => {
+          throw new DOMException('The storage is blocked (a synthetic test).', 'SecurityError')
+        }
+      }
+    })
+    await openChat(page)
+    const toggle = characterToggle(page)
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(html(page)).toHaveAttribute('data-character', 'on')
+    // «Сховати» goes through setItem, «Показати» through removeItem: both throw, both still work.
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    for (const light of await lights(page)) expect(light, light.selector).toMatchObject({ display: 'none', boxes: 0 })
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(html(page)).toHaveAttribute('data-character', 'on')
+    await expect(page.locator('.chat__scene')).toBeVisible()
+    // The fixture fails the test on any console error, warning or uncaught exception.
+  })
+
+  test('#136 the crisis: no character in either state, the toggle still works, and a new conversation keeps the choice', async ({ page, api }) => {
+    api.on('POST /chat/turn', { sse: meta() + crisis('keyword') })
+    await openChat(page)
+    await send(page, CRISIS_TEXT)
+    await onScreen(page, 'crisis')
+    const toggle = characterToggle(page)
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('.chat__scene')).toBeHidden()
+    expect((await lights(page))[0]).toMatchObject({ display: 'none', boxes: 0 })
+    await expect(html(page)).toHaveAttribute('data-slot', 'still')
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    await expect(page.locator('.chat__scene')).toBeHidden()
+    await expect(page.locator('#crisis-title')).toBeVisible()
+
+    await page.locator('[data-act="new-after-crisis"]').click()
+    await confirmDialog(page).getByRole('button', { name: 'Почати нову', exact: true }).click()
+    await onScreen(page, 'chat')
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    await expect(page.locator('.chat__scene')).toBeHidden()
+    expect(await stored(page)).toBe('off')
+    await toggle.click()
+    await expect(page.locator('.chat__scene')).toBeVisible()
+  })
+
+  test('#137 the layout without the character: no empty place where it stood, the text right under the header, a new conversation still one screen', async ({ page }, testInfo) => {
+    const where = () =>
+      page.evaluate(() => {
+        const header = document.querySelector('.site-header')!.getBoundingClientRect()
+        const text = document.querySelector('.chat__text')!.getBoundingClientRect()
+        // The page's own width: <html> keeps a stable gutter for the scrollbar (scrollbar-gutter).
+        const page = document.querySelector('.chat')!.getBoundingClientRect()
+        // The band under the field (.composer::before, absolutely placed: its insets resolve to px).
+        const composer = document.querySelector('[data-el="composer"]')!
+        const band = getComputedStyle(composer, '::before')
+        const box = composer.getBoundingClientRect()
+        return {
+          headerBottom: header.bottom,
+          textTop: text.top,
+          leftGap: text.left - page.left,
+          rightGap: page.right - text.right,
+          // A negative inset reaches past the composer's box: left edge = box.left + left, right = box.right - right.
+          bandCovers: box.left + parseFloat(band.left) <= page.left + 0.5 && box.right - parseFloat(band.right) >= page.right - 0.5,
+          scrollY: window.scrollY,
+          extra: document.documentElement.scrollHeight - window.innerHeight,
+        }
+      })
+    await openChat(page)
+    await page.evaluate(() => document.fonts.ready)
+    const shown = await where()
+    await characterToggle(page).click()
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    const hidden = await where()
+    // Never under the header.
+    expect(hidden.textTop, JSON.stringify(hidden)).toBeGreaterThanOrEqual(hidden.headerBottom - 0.5)
+    if (isDesktop(testInfo)) {
+      // The column stands in the middle of the window, not beside an empty one; still one screen.
+      expect(Math.abs(hidden.leftGap - hidden.rightGap), JSON.stringify(hidden)).toBeLessThanOrEqual(1)
+      expect(shown.leftGap, JSON.stringify(shown)).toBeLessThan(hidden.leftGap)
+      // The band under the field no longer stops where the light's column began: edge to edge.
+      expect(shown.bandCovers, JSON.stringify(shown)).toBe(false)
+      expect(hidden.bandCovers, JSON.stringify(hidden)).toBe(true)
+      expect(hidden.scrollY, JSON.stringify(hidden)).toBe(0)
+      expect(hidden.extra, JSON.stringify(hidden)).toBeLessThanOrEqual(1)
+    } else {
+      // The light's place above the text is given back to the text.
+      expect(hidden.textTop, JSON.stringify({ shown, hidden })).toBeLessThan(shown.textTop - 64)
+    }
+    await expect(composer(page)).toBeInViewport()
+  })
+
+  test('#138 axe in both themes with the character hidden; the storage audit knows the key', async ({ page, consoleLines }) => {
+    await storeCharacter(page, 'off')
+    await openChat(page)
+    await exchange(page, USER)
+    await expect(characterToggle(page)).toHaveAttribute('aria-pressed', 'false')
+    for (const scheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme: scheme })
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
+      await axe(page, `${scheme}: the character hidden`)
+    }
+    await storageAudit(page, USER, consoleLines)
+    expect(await stored(page)).toBe('off')
+  })
+
+  test('#139 with reduced motion and with «Пауза» the toggle moves nothing: the character goes and comes back in one frame', async ({ page }) => {
+    // What moves after a press: anything but a colour settling, longer than the reduced-motion
+    // 0.01 ms (base.css), outside the toggle itself.
+    const pressAndLook = async () => {
+      // What was moving before the press (a label fading in under the pointer) is not the press's.
+      await expect.poll(() => page.evaluate(() => document.getAnimations().filter((a) => a.playState === 'running').length)).toBe(0)
+      return page.evaluate(() => {
+        document.querySelector<HTMLButtonElement>('[data-character-toggle]')!.click()
+        return document
+          .getAnimations()
+          .filter((a) => a.playState === 'running' && Number(a.effect?.getTiming().duration ?? 0) > 1)
+          .map((a) => (a instanceof CSSTransition ? a.transitionProperty : a instanceof CSSAnimation ? `animation ${a.animationName}` : 'script'))
+          .filter((what) => !/^(color|background-color|border-color|outline-color|box-shadow)$/.test(what))
+      })
+    }
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await openChat(page)
+    await expect(html(page)).toHaveAttribute('data-motion', 'off')
+    expect(await pressAndLook(), 'reduced motion: hide').toEqual([])
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    expect(await pressAndLook(), 'reduced motion: show').toEqual([])
+    await expect(html(page)).toHaveAttribute('data-character', 'on')
+
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.reload()
+    await onScreen(page, 'chat')
+    await page.locator('[data-motion-toggle]').click()
+    await expect(html(page)).toHaveAttribute('data-motion', 'off')
+    expect(await pressAndLook(), '«Пауза»: hide').toEqual([])
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    expect(await pressAndLook(), '«Пауза»: show').toEqual([])
+    await expect(html(page)).toHaveAttribute('data-character', 'on')
   })
 })
 

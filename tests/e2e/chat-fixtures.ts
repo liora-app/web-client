@@ -702,7 +702,11 @@ export async function storageAudit(page: Page, secret: string | null = null, con
     title: document.title,
     url: location.href,
   }))
-  expect(audit.local.every((key) => key === 'liora:motion' || key === 'liora:sky' || key === 'liora:theme'), `storage keys: ${audit.local.join(', ')}`).toBe(true)
+  // ADR-013 adds liora:character, and it only ever holds 'off' (shown = no key).
+  const KEYS = ['liora:motion', 'liora:sky', 'liora:theme', 'liora:character']
+  expect(audit.local.every((key) => KEYS.includes(key)), `storage keys: ${audit.local.join(', ')}`).toBe(true)
+  const character = audit.local.indexOf('liora:character')
+  if (character >= 0) expect(audit.values[character], 'liora:character').toBe('off')
   expect(audit).toMatchObject({ session: 0, idb: 0, caches: 0, sw: 0, cookie: '' })
   if (secret !== null) {
     expect(audit.values.some((value) => value.includes(secret)), 'the message is in localStorage').toBe(false)

@@ -319,6 +319,105 @@ html[data-talk='on'] {
   }
 }
 
+/* «Персонаж» (src/ui/character.ts): a round pill like «Вигляд». Its state is a shape, not colour
+   alone: a figure while the character is shown, a crossed circle once hidden, and a filled pill. */
+.character-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--dur-1) var(--ease-standard);
+}
+
+.character-toggle[hidden] {
+  display: none;
+}
+
+.character-toggle:hover {
+  background: var(--color-hover);
+}
+
+.character-toggle[aria-pressed='false'] {
+  background: var(--color-pressed);
+}
+
+.character-toggle__icon {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.character-toggle[aria-pressed='true'] .character-toggle__off,
+.character-toggle[aria-pressed='false'] .character-toggle__on {
+  display: none;
+}
+
+/* Its small label names what a press does (layout.css draws the box; WCAG 1.4.13 in tips.ts). */
+.character-toggle::after {
+  content: 'Сховати персонажа';
+}
+
+.character-toggle[aria-pressed='false']::after {
+  content: 'Показати персонажа';
+}
+
+.character-toggle:is(:hover, :focus-visible):not([data-tip='off'])::after {
+  opacity: 1;
+}
+
+@media (min-width: 80em) {
+  .character-toggle:has(.header-word) {
+    padding: 0 0.8rem 0 0.7rem;
+  }
+}
+
+/* The character hidden: no light above the conversation, no small light in the session row — at
+   once, both ways (no animated height, ADR-012). Until the module has said either way, the light
+   waits unseen: no flash of a character the person hid. */
+html:not([data-character]) .chat__scene {
+  visibility: hidden;
+}
+
+html[data-character='off'] :is(.chat__scene, .orb--mini) {
+  display: none;
+}
+
+/* The crisis: no light at any width, whatever the choice — the numbers first (ADR-013). */
+html[data-screen='crisis'] .chat__scene {
+  display: none;
+}
+
+/* With no light beside it the text column stands alone in the middle of the frame, not beside an
+   empty column. */
+@media (min-width: 64em) {
+  html:is([data-character='off'], [data-screen='crisis']) .chat__frame {
+    grid-template-columns: minmax(0, 42rem);
+    justify-content: center;
+  }
+
+  /* No light to keep clear: the band under the field runs to both edges, as on a phone. */
+  html[data-character='off'] .composer::before {
+    right: -100vmax;
+  }
+}
+
 /* A phone: two rows in one capsule (ADR-013) — the mark and «Якщо важко · 112 · 103», then the
    tiles «Щоденник», «Пауза», «Звук», «Вигляд», «Персонаж», «Акаунт», each an icon over its word.
    The actions' box steps aside (display: contents: it is a plain div) so its buttons are the grid's. */
@@ -710,8 +809,7 @@ html[data-screen='crisis'] .vignette {
     margin-top: 0;
   }
 
-  html[data-talk='on'] .chat__scene,
-  html[data-screen='crisis'] .chat__scene {
+  html[data-talk='on'] .chat__scene {
     display: none;
   }
 
@@ -4493,6 +4591,8 @@ html:has(dialog[open]:is(.sheet--shelter, .sheet--tool[data-shelter])) {
   .button,
   .pill,
   .account-toggle,
+  .journal-toggle,
+  .character-toggle,
   .composer__input,
   .composer__send,
   .field__input,

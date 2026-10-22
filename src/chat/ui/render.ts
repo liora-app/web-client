@@ -6,6 +6,7 @@
 
 import type { GlControl } from '../../gl/core/boot'
 import type { PresenceHandle } from '../../gl/presence'
+import type { CharacterControl } from '../../ui/character'
 import type { SkyControl } from '../../ui/sky'
 import type { SoundControl } from '../../ui/sound'
 import { skipThemeTransition } from '../../ui/theme'
@@ -46,6 +47,8 @@ const WIDE = window.matchMedia('(min-width: 64em)')
 
 export type ViewDeps = Readonly<{
   gl: GlControl<PresenceHandle> | null
+  /** «Персонаж»: hidden, the light runs nowhere (src/ui/character.ts). */
+  character: CharacterControl | null
   sound: SoundControl | null
   sky: SkyControl | null
   theme: ThemePicker | null
@@ -54,7 +57,7 @@ export type ViewDeps = Readonly<{
   say: (text: string) => void
 }>
 
-export function createView(dispatch: (action: Action) => void, { gl, sound, sky, theme, say }: ViewDeps): View {
+export function createView(dispatch: (action: Action) => void, { gl, character, sound, sky, theme, say }: ViewDeps): View {
   const html = document.documentElement
   const main = document.querySelector<HTMLElement>('main')!
   const account = document.querySelector<HTMLElement>('.account-toggle')!
@@ -96,18 +99,23 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky,
   /** Where the WebGL light runs (§3.1, §9.2 item 6). Desktop: always, in the scene column. Phone:
    *  only in a new conversation, until the first message — after «Надіслати» it pauses, a new
    *  conversation resumes it; on the other screens the slot shows the still CSS orb
-   *  (html[data-slot="still"]), and in the crisis there is no light at all. A hidden tab pauses
-   *  the scene by itself (gl/presence.ts). */
+   *  (html[data-slot="still"]), and in the crisis there is no light at all, at any width (ADR-013:
+   *  chat.css takes the scene out too). A hidden tab pauses the scene by itself (gl/presence.ts).
+   *  With «Персонаж» off it runs nowhere: the one place that says so, or the next render would
+   *  start it again. */
   const syncSlot = (model: Model): void => {
     const { state } = model
     const talking = state.s === 'chat' && hasUserMessage(state.session, state.pending)
-    const live = WIDE.matches || (state.s === 'chat' && !talking)
+    const live = (character?.shown() ?? true) && state.s !== 'crisis' && (WIDE.matches || (state.s === 'chat' && !talking))
     gl?.setActive(live)
     // Renders come with every token: touch the attributes only when they change.
     setAttr(html, 'data-talk', talking ? 'on' : 'off')
     setAttr(html, 'data-slot', live ? 'live' : 'still')
   }
   WIDE.addEventListener('change', () => {
+    if (lastModel) syncSlot(lastModel)
+  })
+  character?.onChange(() => {
     if (lastModel) syncSlot(lastModel)
   })
 
