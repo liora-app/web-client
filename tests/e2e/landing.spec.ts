@@ -232,12 +232,14 @@ test.describe('navigation and keyboard', () => {
       await expect(page.locator('[data-nav-link][aria-current]')).toHaveCount(1)
       await expect(page.locator('[data-hud-index]')).toHaveText(index)
       await expect(page.locator('[data-hud-name]')).toHaveText(name) // retries past the decode
-      // The crisis link is marked like the current nav item while its chapter is on screen.
-      if (id === 'safety') await expect(page.locator('.site-header .help-link')).toHaveCSS('border-top-color', 'rgb(255, 197, 143)')
+      // The crisis link is marked like the current nav item while its chapter is on screen. ADR-013:
+      // the pill keeps its peach outline at all times; the mark is an inner ring of the same colour.
+      if (id === 'safety') await expect(page.locator('.site-header .help-link')).toHaveCSS('box-shadow', 'rgb(255, 197, 143) 0px 0px 0px 1px inset')
     }
     // A chapter without a header link clears the mark; the HUD still follows.
     await centre(page, '#diary')
     await expect(page.locator('[data-nav-link][aria-current]')).toHaveCount(0)
+    await expect(page.locator('.site-header .help-link')).toHaveCSS('box-shadow', 'none')
     await expect(page.locator('[data-hud-index]')).toHaveText('03')
     await expect(page.locator('[data-hud-name]')).toHaveText('Щоденник')
   })
@@ -247,8 +249,9 @@ test.describe('navigation and keyboard', () => {
     const transcript = page.locator('[data-transcript]')
     const firstLine = transcript.locator('.said p').first() // data-for="1 2"
     const thesis = transcript.locator('.theses__list li').first() // data-for="3 4"
-    const DIM = 'rgb(132, 145, 141)' // --color-text-dim #84918d
-    const TEXT = 'rgb(238, 242, 238)' // --color-text #eef2ee
+    // ADR-013: one palette with the chat — the night's text and its muted tone.
+    const DIM = 'rgb(184, 201, 198)' // --color-text-dim #b8c9c6
+    const TEXT = 'rgb(243, 239, 232)' // --color-text #f3efe8
     const LIGHT = 'rgb(255, 197, 143)' // --color-light #ffc58f
 
     await centre(page, '[data-step="3"]')

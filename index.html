@@ -53,21 +53,24 @@
 
       <nav class="site-nav" aria-label="Розділи сторінки">
         <a href="#how" data-nav-link>Як це працює</a>
+        <a href="#scenarios" data-nav-link>Сценарії</a>
         <a href="#privacy" data-nav-link>Приватність</a>
         <a href="#faq" data-nav-link>Запитання</a>
       </nav>
 
       <div class="site-header__actions">
-        <a class="help-link" href="#safety" data-nav-link>Якщо важко<span class="visually-hidden">: контакти допомоги, 112 і 103</span></a>
+        <a class="help-link" href="#safety" data-nav-link><svg class="help-link__icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5.2 2.5 3.6 2.8c-.6.1-1 .6-1 1.2.2 5.3 4.1 9.2 9.4 9.4.6 0 1.1-.4 1.2-1l.3-1.6c.1-.5-.2-1-.7-1.2l-1.9-.7c-.4-.2-.9 0-1.2.3l-.7.8a8 8 0 0 1-3.5-3.5l.8-.7c.3-.3.5-.8.3-1.2l-.7-1.9c-.2-.5-.7-.8-1.2-.7Z" /></svg>Якщо важко<span class="help-link__numbers" aria-hidden="true">112 · 103</span><span class="visually-hidden">: контакти допомоги, 112 і 103</span></a>
         <!-- One control for what moves and what sounds. «Пауза» is required (WCAG 2.2.2); «Звук» is off on
              every visit until pressed. Both buttons stay hidden without JS (motion.ts, sound.ts). -->
         <div class="media" role="group" aria-label="Анімація і звук">
           <button class="media__button motion-toggle" type="button" data-motion-toggle aria-pressed="false" aria-label="Пауза анімації" hidden>
             <svg class="media__icon motion-toggle__pause" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 3.5v9M11 3.5v9" /></svg>
             <svg class="media__icon motion-toggle__play" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5.5 3.5l7 4.5-7 4.5z" /></svg>
+            <span class="header-word" aria-hidden="true">Пауза</span>
           </button>
           <button class="media__button sound-toggle" type="button" data-sound-toggle aria-pressed="false" aria-label="Звук" hidden>
             <span class="sound-toggle__wave" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+            <span class="header-word" aria-hidden="true">Звук</span>
           </button>
         </div>
         <!-- «Вигляд» (src/ui/theme-picker.ts), the chat's control: a menu button outside .media (that group is
@@ -77,6 +80,7 @@
             <svg class="theme-toggle__icon theme-toggle__auto" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="5.25" /><path class="theme-toggle__half" d="M8 2.75a5.25 5.25 0 0 1 0 10.5z" /></svg>
             <svg class="theme-toggle__icon theme-toggle__sun" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="2.75" /><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.06 1.06M11.54 11.54l1.06 1.06M3.4 12.6l1.06-1.06M11.54 4.46l1.06-1.06" /></svg>
             <svg class="theme-toggle__icon theme-toggle__moon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M13.25 9.6A5.5 5.5 0 0 1 6.4 2.75a5.5 5.5 0 1 0 6.85 6.85z" /></svg>
+            <span class="header-word" aria-hidden="true">Вигляд</span>
           </button>
           <div class="theme-menu" id="theme-menu" role="menu" aria-label="Вигляд" data-theme-menu hidden>
             <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="true" tabindex="-1" data-theme-choice="system">Як у системі</button>

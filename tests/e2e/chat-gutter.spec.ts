@@ -13,8 +13,13 @@ import { confirmDialog, expect, openChat, test } from './chat-fixtures'
 
 test.use({ launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] } })
 
-const PAPER = 'rgb(246, 241, 234)' // --color-bg, light
-const LAMP = 'rgb(18, 26, 27)' // --color-bg, dark
+// ADR-013: the page stands on the sky (--color-bg: its top stop by day, the night), and a sheet that
+// covers the window is opaque glass (--color-sheet-solid), no longer the page's own colour: the root
+// takes the sheet's tone while it covers the window, the scrim's where the scrim is in view.
+const SKY_TOP = 'rgb(70, 180, 170)' // --color-bg, light
+const NIGHT = 'rgb(4, 7, 8)' // --color-bg, dark
+const SHEET_L = 'rgb(255, 246, 236)' // --color-sheet-solid, light
+const SHEET_D = 'rgb(18, 26, 27)' // --color-sheet-solid, dark
 const isDesktop = (testInfo: TestInfo): boolean => testInfo.project.name === 'desktop'
 const accountToggle = (page: Page): Locator => page.locator('.account-toggle')
 const accountSheet = (page: Page): Locator => page.locator('#account-dialog')
@@ -39,7 +44,7 @@ test.describe('a classic scrollbar', () => {
     const beside = (root: string) => ({ gutter: true, root, bar: root })
     const help = page.locator('#help-dialog')
     for (const scheme of ['dark', 'light'] as const) {
-      const [own, scrim] = scheme === 'dark' ? [LAMP, 'rgb(11, 16, 17)'] : [PAPER, 'rgb(209, 202, 194)']
+      const [own, sheet, scrim] = scheme === 'dark' ? [NIGHT, SHEET_D, 'rgb(3, 5, 6)'] : [SKY_TOP, SHEET_L, 'rgb(53, 141, 134)']
       await page.emulateMedia({ colorScheme: scheme })
       // Under 48em — a window on half a screen, a 200 % zoom: every sheet covers the window, its scrim
       // out of sight. The gutter kept the scrim's colour there: a strip down the window's right edge.
@@ -48,25 +53,25 @@ test.describe('a classic scrollbar', () => {
       expect((await look()).gutter, 'a classic scrollbar keeps its gutter').toBe(true)
       await page.locator('.help-link').click()
       await expect(help).toBeVisible()
-      await expect.poll(look).toEqual(beside(own))
+      await expect.poll(look).toEqual(beside(sheet))
       await page.keyboard.press('Escape')
       await expect(help).toBeHidden()
       await openTool(page, 'Подихати хвилину')
       await expect(breatheDialog(page)).toBeVisible()
-      await expect.poll(look).toEqual(beside(own))
+      await expect.poll(look).toEqual(beside(sheet))
       await page.keyboard.press('Escape')
       await expect(breatheDialog(page)).toBeHidden()
       // «Акаунт» covers it too; a confirm over it, a bottom sheet here, leaves its scrim in view — and
       // the browser's bar follows the root there as well (it kept the sheet's colour).
       await accountToggle(page).click()
       await expect(accountSheet(page)).toBeVisible()
-      await expect.poll(look).toEqual(beside(own))
+      await expect.poll(look).toEqual(beside(sheet))
       await accountSheet(page).getByRole('button', { name: 'Видалити акаунт…' }).click()
       await expect(confirmDialog(page)).toBeVisible()
       await expect.poll(look).toEqual(beside(scrim))
       await confirmDialog(page).getByRole('button', { name: 'Скасувати', exact: true }).click()
       await expect(confirmDialog(page)).toBeHidden()
-      await expect.poll(look).toEqual(beside(own))
+      await expect.poll(look).toEqual(beside(sheet))
       await page.keyboard.press('Escape')
       await expect(accountSheet(page)).toBeHidden()
       await expect.poll(look).toEqual(beside(own))

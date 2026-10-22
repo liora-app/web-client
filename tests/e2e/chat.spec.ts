@@ -2444,7 +2444,7 @@ test.describe('layout', () => {
   test('#44 forced colors draw every control’s border; without them the fields’ borders are --color-field-border', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'one engine is enough for computed styles')
     // --color-field-border of the dark theme (#6f7c78, ≥ 3:1 on its surface and its sky).
-    const FIELD_BORDER = 'rgb(111, 124, 120)'
+    const FIELD_BORDER = 'rgb(148, 170, 165)'
     const border = (selector: string) =>
       page.locator(selector).first().evaluate((node) => {
         const style = getComputedStyle(node)
@@ -2936,8 +2936,10 @@ test.describe('accessibility', () => {
 
 // ── The theme (ADR-012): «Як у системі», «Світла», «Темна» ───────────────────────────────────
 
-const PAPER = 'rgb(246, 241, 234)' // --color-bg, light: #f6f1ea
-const LAMP = 'rgb(18, 26, 27)' // --color-bg, dark: #121a1b
+const SKY_TOP = 'rgb(70, 180, 170)' // --color-bg, light: #46b4aa, the day's first stop (ADR-013)
+const NIGHT = 'rgb(4, 7, 8)' // --color-bg, dark: #040708, the night of both pages
+const SHEET_L = 'rgb(255, 246, 236)' // --color-sheet-solid, light: a sheet that covers the window
+const LAMP = 'rgb(18, 26, 27)' // --color-sheet-solid, dark, and «В укритті» (--color-shelter-bg)
 const themeToggle = (page: Page): Locator => page.locator('[data-theme-toggle]')
 const themeMenu = (page: Page): Locator => page.getByRole('menu', { name: 'Вигляд' })
 const themeItem = (page: Page, name: string): Locator => themeMenu(page).getByRole('menuitemradio', { name })
@@ -2963,7 +2965,7 @@ test.describe('theme', () => {
     await expect(toggle).toHaveAccessibleName('Вигляд: як у системі')
     // The suite emulates a dark system: no choice, the evening.
     await expect(html(page)).not.toHaveAttribute('data-theme')
-    await expect(html(page)).toHaveCSS('background-color', LAMP)
+    await expect(html(page)).toHaveCSS('background-color', NIGHT)
     expect(await storedTheme(page)).toBeNull()
 
     await toggle.click()
@@ -2976,16 +2978,16 @@ test.describe('theme', () => {
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
     await expect(toggle).toBeFocused()
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
-    await expect(html(page)).toHaveCSS('background-color', PAPER)
+    await expect(html(page)).toHaveCSS('background-color', SKY_TOP)
     await expect(toggle).toHaveAccessibleName('Вигляд: світла')
     expect(await storedTheme(page)).toBe('light')
     // One theme-color, following the page.
     await expect(page.locator('meta[name="theme-color"]')).toHaveCount(1)
-    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', PAPER)
+    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', SKY_TOP)
 
     await page.reload()
     await onScreen(page, 'chat')
-    expect(await atDcl()).toEqual({ theme: 'light', bg: PAPER })
+    expect(await atDcl()).toEqual({ theme: 'light', bg: SKY_TOP })
 
     // By keyboard (WAI-ARIA menu button): ↓ opens on the chosen item, End, Enter.
     await toggle.focus()
@@ -2995,7 +2997,7 @@ test.describe('theme', () => {
     await expect(themeItem(page, 'Темна')).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(html(page)).toHaveAttribute('data-theme', 'dark')
-    await expect(html(page)).toHaveCSS('background-color', LAMP)
+    await expect(html(page)).toHaveCSS('background-color', NIGHT)
     expect(await storedTheme(page)).toBe('dark')
 
     // «Як у системі» forgets the choice: no key, no attribute, the system decides (dark here).
@@ -3005,7 +3007,7 @@ test.describe('theme', () => {
     expect(await storedTheme(page)).toBeNull()
     await page.reload()
     await onScreen(page, 'chat')
-    expect(await atDcl()).toEqual({ theme: null, bg: LAMP })
+    expect(await atDcl()).toEqual({ theme: null, bg: NIGHT })
     await storageAudit(page)
   })
 
@@ -3064,8 +3066,15 @@ test.describe('theme', () => {
     await expect(themeMenu(page)).toBeHidden()
     await expect(page.locator('#crisis-title')).toBeFocused()
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
-    await expect(html(page)).toHaveCSS('background-color', PAPER)
+    await expect(html(page)).toHaveCSS('background-color', SKY_TOP)
     for (const decoration of ['.stage__haze--teal', '.stage__grain', '.vignette']) await expect(page.locator(decoration)).toBeHidden()
+    // ADR-013: the sky goes quiet everywhere it is painted — the stage and the header's band: its stops
+    // alone, from the day's first stop, no field (radial-gradient) and no star.
+    const skies = await page.evaluate(() => [getComputedStyle(document.querySelector('.stage')!).backgroundImage, getComputedStyle(document.querySelector('.chat-header')!, '::before').backgroundImage])
+    for (const image of skies) {
+      expect(image).not.toContain('radial-gradient')
+      expect(image).toContain('linear-gradient(rgb(70, 180, 170) 0%')
+    }
     await storageAudit(page)
   })
 })
@@ -3102,7 +3111,7 @@ test.describe('theme: a light system', () => {
     await openChat(page, '/chat/', 'signed-out')
     // No choice stored: the CSS follows the system.
     await expect(html(page)).not.toHaveAttribute('data-theme')
-    await expect(html(page)).toHaveCSS('background-color', PAPER)
+    await expect(html(page)).toHaveCSS('background-color', SKY_TOP)
     await settled(page)
     await axe(page, 'light: signed-out')
 
@@ -3166,7 +3175,7 @@ test.describe('theme: a light system', () => {
     await send(page, CRISIS_TEXT)
     await onScreen(page, 'crisis')
     await expect(html(page)).not.toHaveAttribute('data-sky')
-    await expect(html(page)).toHaveCSS('background-color', PAPER)
+    await expect(html(page)).toHaveCSS('background-color', SKY_TOP)
     await settled(page)
     await axe(page, 'light: the crisis')
   })
@@ -3632,7 +3641,7 @@ test.describe('diary', () => {
     await openDiary(page)
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
-      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
       await settled(page)
       await axe(page, `${scheme}: the diary`)
       const row = entries(page).first()
@@ -4264,7 +4273,7 @@ test.describe('tools', () => {
   test('#81 «В укритті»: safety first, dark and silent in the light theme too, large controls; breathing and grounding over it come back to it on Esc', async ({ page, api }) => {
     await page.emulateMedia({ colorScheme: 'light' })
     await openChat(page)
-    await expect(html(page)).toHaveCSS('background-color', PAPER)
+    await expect(html(page)).toHaveCSS('background-color', SKY_TOP)
     const dialog = shelterDialog(page)
     await openTool(page, 'В укритті')
     await expect(dialog).toBeVisible()
@@ -4279,7 +4288,7 @@ test.describe('tools', () => {
     // Dark whatever the theme: the dark theme's background and text, and the gutter beside it.
     expect(await dialog.evaluate((node) => ({ bg: getComputedStyle(node).backgroundColor, text: getComputedStyle(node).color }))).toEqual({
       bg: LAMP,
-      text: 'rgb(236, 241, 237)',
+      text: 'rgb(243, 239, 232)',
     })
     await expect(html(page)).toHaveCSS('background-color', LAMP)
     // The browser's own bar goes dark with it (the one theme-color, still theme.ts's).
@@ -4308,8 +4317,8 @@ test.describe('tools', () => {
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
     await expect(toolsButton(page)).toBeFocused()
-    await expect(html(page)).toHaveCSS('background-color', PAPER)
-    await expect(themeColor).toHaveAttribute('content', PAPER)
+    await expect(html(page)).toHaveCSS('background-color', SKY_TOP)
+    await expect(themeColor).toHaveAttribute('content', SKY_TOP)
     await expect(breatheDialog(page)).not.toHaveAttribute('data-shelter', '')
     expect(api.count('GET /helplines')).toBe(0)
   })
@@ -4339,10 +4348,10 @@ test.describe('tools', () => {
       await animationsDone(dialog, { except: '.breathe__circle' })
       // The page under it says which theme is on: its text is --color-text of that theme.
       await page.emulateMedia({ colorScheme: 'dark' })
-      await expect(page.locator('body')).toHaveCSS('color', 'rgb(236, 241, 237)')
+      await expect(page.locator('body')).toHaveCSS('color', 'rgb(243, 239, 232)')
       const dark = await colours(dialog)
       await page.emulateMedia({ colorScheme: 'light' })
-      await expect(page.locator('body')).toHaveCSS('color', 'rgb(28, 38, 38)')
+      await expect(page.locator('body')).toHaveCSS('color', 'rgb(11, 39, 41)')
       expect(await colours(dialog), label).toEqual(dark)
       expect(Object.keys(dark).length, label).toBeGreaterThan(8)
     }
@@ -4436,7 +4445,7 @@ test.describe('tools', () => {
       test.slow()
       await page.emulateMedia({ colorScheme: scheme })
       await openChat(page)
-      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
       await openTool(page, 'Подихати хвилину')
       await axe(page, `${scheme}: breathing, ready`)
       await breatheDialog(page).getByRole('button', { name: 'Почати' }).click()
@@ -4486,7 +4495,7 @@ test.describe('tools', () => {
     await expect(page.locator('section[data-screen="review"] [data-el="mood-line"]')).toHaveText('Спершу — цікавість.')
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
-      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
       await axe(page, `${scheme}: the theses with «А зараз?»`)
     }
   })
@@ -5077,15 +5086,15 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     await page.emulateMedia({ colorScheme: 'light' })
     await page.goto('/chat/')
     await expect(themeColor).toHaveCount(1)
-    await expect(themeColor).toHaveAttribute('content', PAPER)
+    await expect(themeColor).toHaveAttribute('content', SKY_TOP)
     await page.emulateMedia({ colorScheme: 'dark' })
     await page.reload()
-    await expect(themeColor).toHaveAttribute('content', LAMP)
+    await expect(themeColor).toHaveAttribute('content', NIGHT)
     // A stored choice wins over the system.
     await page.evaluate(() => localStorage.setItem('liora:theme', 'light'))
     await page.reload()
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
-    await expect(themeColor).toHaveAttribute('content', PAPER)
+    await expect(themeColor).toHaveAttribute('content', SKY_TOP)
     await page.evaluate(() => localStorage.removeItem('liora:theme'))
   })
 
@@ -5118,13 +5127,13 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     await expect.poll(rootBg).toBe(LAMP)
     await page.keyboard.press('Escape')
     await expect(accountSheet(page)).toBeHidden()
-    await expect.poll(rootBg).toBe(LAMP)
+    await expect.poll(rootBg).toBe(NIGHT)
     await page.locator('.help-link').click()
     await expect(page.locator('#help-dialog')).toBeVisible()
-    await expect.poll(rootBg).toBe(gutter ? 'rgb(11, 16, 17)' : LAMP)
+    await expect.poll(rootBg).toBe(gutter ? 'rgb(3, 5, 6)' : NIGHT)
     await page.keyboard.press('Escape')
     await expect(page.locator('#help-dialog')).toBeHidden()
-    await expect.poll(rootBg).toBe(LAMP)
+    await expect.poll(rootBg).toBe(NIGHT)
 
     await page.emulateMedia({ colorScheme: 'light' })
     await accountToggle(page).click()
@@ -5133,16 +5142,16 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     await expect(accountSheet(page).getByRole('radio', { name: 'Вечір' })).toHaveValue('dusk')
     await expect(accountSheet(page).getByRole('radio', { name: 'Ранок' })).toHaveValue('dawn')
     await expect(accountSheet(page).getByRole('radio', { name: 'Сутінки' })).toHaveCount(0)
-    await expect.poll(rootBg).toBe(PAPER)
+    await expect.poll(rootBg).toBe(SHEET_L)
     // A confirm stacked over the sheet scrims both: the gutter takes the scrim's colour again.
     await accountSheet(page).getByRole('button', { name: 'Видалити акаунт…' }).click()
     await expect(confirmDialog(page)).toBeVisible()
-    await expect.poll(rootBg).toBe(gutter ? 'rgb(209, 202, 194)' : PAPER)
+    await expect.poll(rootBg).toBe(gutter ? 'rgb(53, 141, 134)' : SHEET_L)
     await confirmDialog(page).getByRole('button', { name: 'Скасувати', exact: true }).click()
     await expect(confirmDialog(page)).toBeHidden()
-    await expect.poll(rootBg).toBe(PAPER)
+    await expect.poll(rootBg).toBe(SHEET_L)
     // The scrollbar's thumb is its only shape: the fields' border colour, ≥ 3:1.
-    expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollbarColor)).toMatch(/^rgb\(120, 130, 127\) /)
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollbarColor)).toMatch(/^rgb\(12, 74, 74\) /)
   })
 
   test('#97 WCAG 1.4.11: no control relies on a border under 3:1 — in both themes, on the conversation, the theses, the sheets and the tools', async ({ page }, testInfo) => {
@@ -5190,7 +5199,7 @@ const LONG_REPLY = ['Можна почати з одного речення. ', 
 test.describe('what the review of phase C3 found', () => {
   test('#99 the browser’s bar comes back to the page’s colour when a dialog closes: a theme picked in «Акаунт», the shelter over «Якщо важко»', async ({ page }) => {
     await openChat(page)
-    expect(await themeColor(page)).toBe(LAMP)
+    expect(await themeColor(page)).toBe(NIGHT)
     await accountToggle(page).click()
     await expect(accountSheet(page)).toBeVisible()
     await accountSheet(page).getByRole('radio', { name: 'Світла' }).check()
@@ -5198,8 +5207,8 @@ test.describe('what the review of phase C3 found', () => {
     await page.keyboard.press('Escape')
     await expect(accountSheet(page)).toBeHidden()
     // It used to keep the scrim's grey (rgb(209, 202, 194)) read under the open sheet.
-    await expect.poll(() => themeColor(page)).toBe(PAPER)
-    expect(await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)).toBe(PAPER)
+    await expect.poll(() => themeColor(page)).toBe(SKY_TOP)
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)).toBe(SKY_TOP)
     // The shelter over «Якщо важко»: dark while it is open; the help under it, then nothing.
     await page.locator('.help-link').click()
     await expect(page.locator('#help-dialog')).toBeVisible()
@@ -5211,7 +5220,7 @@ test.describe('what the review of phase C3 found', () => {
     await expect(page.locator('#help-dialog')).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.locator('#help-dialog')).toBeHidden()
-    await expect.poll(() => themeColor(page)).toBe(PAPER)
+    await expect.poll(() => themeColor(page)).toBe(SKY_TOP)
     await page.evaluate(() => localStorage.removeItem('liora:theme'))
   })
 
@@ -5366,30 +5375,58 @@ test.describe('what the final review found', () => {
     await page.emulateMedia({ forcedColors: 'none' })
   })
 
-  test('#114 every screen but a running conversation stands on a solid band under the header (nothing of the text shows through), then a 12 px tail', async ({ page }, testInfo) => {
+  // ADR-013: the band under the header is the sky itself — the stage's very layers, fixed to the
+  // window — over the root's opaque colour, from the top of the window to the capsule's bottom edge,
+  // on every screen. It replaced a band of --color-bg with a 12 px tail (--header-tail), and the
+  // pin of that tail with the scroll padding's own formula.
+  test('#114 every screen stands on an opaque band of the sky under the header: nothing of the text shows through', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'computed styles: one engine is enough')
     const band = () =>
       page.evaluate(() => {
+        const root = getComputedStyle(document.documentElement)
         const style = getComputedStyle(document.querySelector('.chat-header')!, '::before')
-        return { bottom: style.bottom, image: style.backgroundImage, root: getComputedStyle(document.documentElement).backgroundColor }
+        const px = (name: string): number => parseFloat(root.getPropertyValue(name)) * (root.getPropertyValue(name).trim().endsWith('rem') ? 16 : 1)
+        return {
+          top: style.top,
+          bottom: style.bottom,
+          colour: style.backgroundColor,
+          root: root.backgroundColor,
+          image: style.backgroundImage,
+          attachment: style.backgroundAttachment,
+          sky: getComputedStyle(document.querySelector('.stage')!).backgroundImage,
+          padding: parseFloat(root.scrollPaddingTop),
+          formula: px('--header-h') + px('--session-h') + Math.max(8, px('--fade-top') - 8),
+        }
       })
+    const check = (b: Awaited<ReturnType<typeof band>>, label: string): void => {
+      expect([b.top, b.bottom], label).toEqual(['0px', '0px'])
+      expect(b.colour, `${label}: opaque, the root's colour`).toBe(b.root)
+      expect(b.root, label).toMatch(/^rgb\(\d+, \d+, \d+\)$/)
+      expect(b.image.endsWith(b.sky), `${label}: the stage's own sky`).toBe(true)
+      expect(b.attachment.split(',').every((a) => a.trim() === 'fixed'), label).toBe(true)
+      expect(Math.abs(b.padding - b.formula), `${label}: scroll-padding-top ${b.padding} = ${b.formula}`).toBeLessThanOrEqual(1)
+    }
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
       await openChat(page)
-      // A new conversation: the page's own colour, opaque, as far as the header goes.
-      let b = await band()
-      expect(b.bottom).toBe('-12px')
-      expect(b.image.startsWith(`linear-gradient(${b.root} calc(100% - 12px),`), b.image).toBe(true)
-      // A running conversation: the band ends flat at the header's edge; the session row carries it on.
+      check(await band(), `${scheme}: a new conversation`)
       await exchange(page)
-      b = await band()
-      expect(b.bottom).toBe('0px')
-      // The theses: the solid band again.
+      check(await band(), `${scheme}: a running conversation`)
       await toReview(page)
-      b = await band()
-      expect(b.image.startsWith(`linear-gradient(${b.root} calc(100% - 12px),`), b.image).toBe(true)
-      // What the page scrolls to stops below the tail too.
-      expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--header-tail').trim())).toBe('.75rem')
+      check(await band(), `${scheme}: the theses`)
+      // In pixels: with the theses scrolled under the header, the header's strip looks the same as with
+      // the page's text hidden — no line of it shows through the band.
+      await page.evaluate(() => window.scrollTo({ top: 260, behavior: 'instant' }))
+      await settled(page)
+      const height = await page.evaluate(() => Math.floor(document.querySelector('.chat-header')!.getBoundingClientRect().bottom))
+      const clip = { x: 0, y: 0, width: 1440, height }
+      const shown = await page.screenshot({ clip })
+      await page.evaluate(() => {
+        document.querySelector<HTMLElement>('main')!.style.visibility = 'hidden'
+      })
+      const hidden = await page.screenshot({ clip })
+      await page.evaluate(() => document.querySelector<HTMLElement>('main')!.style.removeProperty('visibility'))
+      expect(shown.equals(hidden), `${scheme}: the band hides what scrolled under it`).toBe(true)
     }
   })
 
@@ -5493,10 +5530,10 @@ test.describe('what the final review found', () => {
     // It was rgb(53, 55, 49): green above red, an olive grey.
     expect(r - g, `${r}, ${g}, ${b}`).toBeGreaterThanOrEqual(5)
     expect(g - b, `${r}, ${g}, ${b}`).toBeGreaterThanOrEqual(5)
-    // The light theme keeps its peach.
+    // The light theme keeps its peach (ADR-013: the coral of the day's sky, #ff9a78).
     await page.emulateMedia({ colorScheme: 'light' })
     await settled(page)
-    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent-tint').trim())).toMatch(/181,? 83,? 42|b5532a/i)
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent-tint').trim())).toMatch(/255,? 154,? 120|ff9a78/i)
   })
 })
 
@@ -5655,7 +5692,7 @@ test.describe('what the accessibility review found', () => {
     // The page's colour is read with no dialog open (under one the root takes the scrim's).
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
-      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
       await openTool(page, 'Як ви зараз?')
       await page.keyboard.press('ArrowDown')
       await page.keyboard.press('Tab')
@@ -5675,7 +5712,7 @@ test.describe('what the accessibility review found', () => {
     await expect(group.getByRole('button')).toHaveText(['Подихати хвилину', 'Заземлення 5-4-3-2-1', 'Як ви зараз?', 'В укритті'])
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
-      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
       await axe(page, `${scheme}: the tools menu, open`)
     }
   })
@@ -5739,7 +5776,7 @@ test.describe('what the accessibility review found', () => {
     await expect.poll(() => label(motion)).toBe(1)
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
-      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
       await expect.poll(() => label(motion)).toBe(1)
       await axe(page, `${scheme}: the header with a label shown`)
     }
@@ -5768,7 +5805,7 @@ test.describe('what the accessibility review found', () => {
     // The page's colour is read with no dialog open (under one the root takes the scrim's).
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
-      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
       await entryTitled(page, ENTRIES[0]!.title).getByRole('button', { name: 'Видалити' }).click()
       await expect(confirm.getByRole('button', { name: 'Залишити' })).toBeFocused()
       await expect(confirm).toHaveAccessibleName('Видалити запис?')
@@ -5874,7 +5911,7 @@ test.describe('what the theme and motion review found', () => {
     // The CSS stands still under reduce whatever data-motion says (base.css); so does the JS now.
     await choose('Темна')
     await expect(html(page)).toHaveAttribute('data-theme', 'dark')
-    await expect(html(page)).toHaveCSS('background-color', LAMP)
+    await expect(html(page)).toHaveCSS('background-color', NIGHT)
     // The words come as text, every 300 ms (§5.7), not as spans that fade.
     expect(await firstAnswer()).toBe(0)
     const still = await moves()

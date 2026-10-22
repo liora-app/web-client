@@ -7,7 +7,7 @@
 //   pointer (layout.css), so moving onto the label keeps the button hovered;
 // - persistent: nothing else hides it.
 
-const TIPPED = '.media__button, .theme-toggle'
+const TIPPED = '.media__button, .theme-toggle, .character-toggle'
 
 /** Hides the label of this button until the pointer and the keyboard focus have both left it. */
 export function hideTip(button: HTMLElement): void {

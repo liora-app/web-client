@@ -1,110 +1,28 @@
 /* Landing art direction. Loaded only by main.ts: the chat keeps its own UI scale.
    Onest carries the voice; mono is reserved for small wayfinding details. */
 :root {
-  --gutter: clamp(1.5rem, 5.5vw, 5.5rem);
-  --frame: 80rem;
+  --gutter: clamp(1rem, 4vw, 3rem);
+  --frame: 90rem;
   --chapter-space: clamp(5rem, 12vw, 10rem);
   --leading-display: 1.06;
   --display-2: clamp(2.4rem, 4.5vw, 4.5rem);
 }
 
-/* ---------- The landing's two themes (ADR-012) ----------
-   Light is the chat's «ранковий папір»: the same tokens with the same values. Dark is the night the
-   landing was drawn in, not the chat's «вечірня лампа»: every token of tokens.css whose dark side
-   differs from the night of its :root is restated here as light-dark(<the chat's light>, <the
-   night>), with the same selector — this file loads after tokens.css, on this page only.
-   tests/e2e/chat-core.spec.ts derives both sides from tokens.css and checks every one, and the list.
-   The --landing-* tokens are this page's own: its sky, its pale button, the soft title line, the
-   example's card and the footer. */
+/* ---------- The landing's own tokens (ADR-013) ----------
+   One palette for both pages: this file restates no token of tokens.css (the night of the dark theme is
+   the chat's too). Its own colours are the footer's ground and the wordmark's glow; the skies of its
+   sections are images (explicit blocks below), which light-dark() cannot hold. */
 :root:not([data-theme-lock]) {
-  --color-bg: light-dark(#f6f1ea, #040708);
-  --color-sky: light-dark(#f6f1ea, #0b1a1e);
-  --color-surface: light-dark(#fffcf7, rgb(4 8 9 / 0.82));
-  --color-bubble-you: light-dark(#dce9e4, #0b1416);
-  --color-panel: light-dark(rgb(255 252 247 / 0.62), rgb(4 8 9 / 0.62));
-  --color-text: light-dark(#1c2626, #eef2ee);
-  --color-text-soft: light-dark(#36423f, #c2ccc8);
-  --color-text-muted: light-dark(#4f5b58, #8e9b97);
-  --color-text-dim: light-dark(#58635f, #84918d);
-  --color-line: light-dark(rgb(28 38 38 / 0.13), rgb(238 242 238 / 0.13));
-  --color-line-strong: light-dark(rgb(28 38 38 / 0.26), rgb(238 242 238 / 0.26));
-  --color-on-accent: light-dark(#ffffff, #040708);
-  --color-accent-line: light-dark(#c2714f, rgb(255 197 143 / 0.45));
-  --color-accent-tint: light-dark(rgb(181 83 42 / 0.08), rgb(255 197 143 / 0.12));
-  --color-accent-tint-strong: light-dark(rgb(181 83 42 / 0.12), rgb(255 197 143 / 0.14));
-  --color-hover: light-dark(rgb(28 38 38 / 0.06), rgb(238 242 238 / 0.08));
-  --color-pressed: light-dark(rgb(28 38 38 / 0.1), rgb(238 242 238 / 0.14));
-  --color-field-border: light-dark(#78827f, #84918d);
-  --color-scrim: light-dark(rgb(60 48 36 / 0.2), rgb(4 7 8 / 0.6));
-  --color-band-top: light-dark(rgb(246 241 234 / 0.97), rgb(4 7 8 / 0.97));
-  --color-band-mid: light-dark(rgb(246 241 234 / 0.9), rgb(4 7 8 / 0.9));
-  --color-band-tail: light-dark(rgb(246 241 234 / 0.45), rgb(4 7 8 / 0.45));
-  --color-fade-0: light-dark(rgb(246 241 234 / 0), rgb(4 7 8 / 0));
-  --color-field-shadow: light-dark(rgb(60 44 28 / 0.07), rgb(0 0 0 / 0));
-  --color-vignette: light-dark(rgb(120 96 70 / 0.04), rgb(3 5 5 / 0.62));
-  --color-vignette-0: light-dark(rgb(120 96 70 / 0), rgb(3 5 5 / 0));
-
-  /* The sky: paper with a cool light top right and a warm one lower down (text ≥ 4.5:1 on each). */
-  --landing-sky: light-dark(#f6f1ea, #050b10);
-  --landing-sky-cool: light-dark(#e4eeea, #101b21);
-  --landing-sky-warm: light-dark(#f5e6d7, #18140f);
-  /* The second line of a big title: a soft teal ink by day (≥ 5.2:1), a pale teal at night. */
-  --landing-title-soft: light-dark(#346661, #a9c4c5);
-  /* The filled button: terracotta with white by day (the chat's accent), pale paper at night. */
-  --landing-cta: light-dark(#b5532a, #e9e6de);
-  --landing-cta-hover: light-dark(#9a4318, #fff9ed);
-  --landing-cta-ink: light-dark(#ffffff, #111817);
-  /* The example session's card. */
-  --landing-card: light-dark(#fffcf7, #101916);
-  --landing-card-line: light-dark(#e2dbd1, #35413b);
-  --landing-card-shadow: light-dark(rgb(60 44 28 / 0.08), rgb(0 0 0 / 0.16));
-  --landing-footer: light-dark(#efe9e0, #060b0a);
-  --landing-mark-glow: light-dark(rgb(217 119 58 / 0.18), rgb(255 190 120 / 0.16));
+  --landing-footer: light-dark(#0b2729, #060b0a);
+  --landing-mark-glow: light-dark(rgb(255 177 133 / 0.45), rgb(143 227 212 / 0.22));
 }
 
-/* An engine without light-dark() would drop every colour above: it keeps the night (themes need
-   light-dark(), and «Вигляд» stays hidden there). Both selectors of tokens.css's own fallback. */
+/* An engine without light-dark() would drop both: it keeps the night. */
 @supports not (color: light-dark(#000, #fff)) {
   :root:not([data-theme-lock]),
   :root[data-theme]:not([data-theme-lock]) {
-    --color-bg: #040708;
-    --color-sky: #0b1a1e;
-    --color-surface: rgb(4 8 9 / 0.82);
-    --color-bubble-you: #0b1416;
-    --color-panel: rgb(4 8 9 / 0.62);
-    --color-text: #eef2ee;
-    --color-text-soft: #c2ccc8;
-    --color-text-muted: #8e9b97;
-    --color-text-dim: #84918d;
-    --color-line: rgb(238 242 238 / 0.13);
-    --color-line-strong: rgb(238 242 238 / 0.26);
-    --color-on-accent: #040708;
-    --color-accent-line: rgb(255 197 143 / 0.45);
-    --color-accent-tint: rgb(255 197 143 / 0.12);
-    --color-accent-tint-strong: rgb(255 197 143 / 0.14);
-    --color-hover: rgb(238 242 238 / 0.08);
-    --color-pressed: rgb(238 242 238 / 0.14);
-    --color-field-border: #84918d;
-    --color-scrim: rgb(4 7 8 / 0.6);
-    --color-band-top: rgb(4 7 8 / 0.97);
-    --color-band-mid: rgb(4 7 8 / 0.9);
-    --color-band-tail: rgb(4 7 8 / 0.45);
-    --color-fade-0: rgb(4 7 8 / 0);
-    --color-field-shadow: rgb(0 0 0 / 0);
-    --color-vignette: rgb(3 5 5 / 0.62);
-    --color-vignette-0: rgb(3 5 5 / 0);
-    --landing-sky: #050b10;
-    --landing-sky-cool: #101b21;
-    --landing-sky-warm: #18140f;
-    --landing-title-soft: #a9c4c5;
-    --landing-cta: #e9e6de;
-    --landing-cta-hover: #fff9ed;
-    --landing-cta-ink: #111817;
-    --landing-card: #101916;
-    --landing-card-line: #35413b;
-    --landing-card-shadow: rgb(0 0 0 / 0.16);
     --landing-footer: #060b0a;
-    --landing-mark-glow: rgb(255 190 120 / 0.16);
+    --landing-mark-glow: rgb(143 227 212 / 0.22);
   }
 }
 
@@ -175,14 +93,8 @@
   }
 }
 
-.stage {
-  background:
-    radial-gradient(ellipse at 84% 28%, var(--landing-sky-cool), transparent 57%),
-    radial-gradient(ellipse at 78% 72%, var(--landing-sky-warm), transparent 46%),
-    var(--landing-sky);
-}
-.stage__haze,
-.stage__grain { display: none; }
+/* The sections paint their own sky; the stage is the page's plain colour behind them. */
+.stage { background-image: none; }
 
 /* A disposed/lost GPU buffer can become white. Hide it immediately on fallback,
    rather than fading that invalid buffer over otherwise readable content. */
@@ -216,25 +128,8 @@ html[data-gl='on'] .chapter { text-shadow: none; }
 .row { padding-block: 2rem; }
 .arrow-link { font-family: var(--font-body); text-transform: none; letter-spacing: 0; }
 
-/* A light, predictable header. Playback controls recede beside navigation. */
-.site-header { min-height: 5.5rem; gap: clamp(2rem, 5vw, 5rem); }
-.site-header::before { bottom: -1rem; }
-.brand { gap: 0.65rem; font-size: 1.6rem; font-weight: 500; letter-spacing: -0.065em; }
-.brand__mark { width: 0.8rem; height: 0.8rem; box-shadow: 0 0 12px var(--landing-mark-glow); }
-.site-nav { gap: clamp(1rem, 2.4vw, 2.25rem); }
-.site-nav a { font-size: 0.8125rem; }
-.site-header__actions { gap: 0.75rem; }
-.site-header .help-link { border-color: transparent; background: transparent; padding-inline: 0.5rem; color: var(--color-text-soft); font-size: 0.8125rem; }
-.site-header .help-link:hover { color: var(--color-light-strong); }
-.site-header .help-link[aria-current] { border-color: var(--color-light); color: var(--color-light); }
-.media { border-color: transparent; background: transparent; }
-/* «Вигляд» (the chat's menu button) as quiet as «Пауза» and «Звук» beside it: no ring, the icon says it. */
-.theme-toggle { width: 2.25rem; height: 2.25rem; border-color: transparent; background: transparent; }
-.theme-toggle:hover,
-.theme-toggle[aria-expanded='true'] { background: var(--color-hover); }
-.cta { background: var(--landing-cta); color: var(--landing-cta-ink); font-weight: 500; text-shadow: none; }
-.cta:hover { background: var(--landing-cta-hover); }
-.site-header__cta { font-size: 0.8125rem; }
+/* The header is the shared glass capsule (layout.css); the landing's wordmark glows a little. */
+.brand__mark { box-shadow: inset 0 0 0 1.5px var(--brand-ring), 0 0 12px var(--landing-mark-glow); }
 .hud { display: none; }
 
 /* Hero: a woven light form occupies the space beside the title. */
@@ -255,7 +150,7 @@ html[data-gl='on'] .chapter { text-shadow: none; }
   max-width: 100%;
   text-shadow: none;
 }
-.hero__title-soft { color: var(--landing-title-soft); }
+.hero__title-soft { color: var(--color-text); }
 .hero__orb { border-radius: 0; background: none; box-shadow: none; }
 .hero__orb::after { display: none; }
 .hero__orb::before,
@@ -307,7 +202,7 @@ html[data-gl='on'] .chapter { text-shadow: none; }
 .mind__copy { position: relative; padding-top: clamp(10rem, 25vh, 18rem); }
 .mind__copy .tag { color: var(--color-text-muted); }
 .mind__copy h2 { margin-block: 2rem; font-size: clamp(3.4rem, 7.3vw, 7.5rem); line-height: 1.04; letter-spacing: -0.065em; font-weight: 400; }
-.mind__copy h2 span { color: var(--landing-title-soft); }
+.mind__copy h2 span { color: var(--color-text); }
 .mind__note { font-size: 1rem; line-height: 1.8; color: var(--color-text-soft); }
 .mind__foot { position: absolute; bottom: 3rem; left: 0; right: 0; display: flex; justify-content: space-between; padding-top: 1.5rem; border-top: 1px solid var(--color-line); font-size: 0.6875rem; color: var(--color-text-muted); }
 .mind__still { position: absolute; width: min(45vw, 75vh); aspect-ratio: 1; right: 5%; top: 15%; background-image: var(--still-portrait); background-position: center; background-size: contain; background-repeat: no-repeat; mask-image: var(--still-fade, none); }
@@ -356,10 +251,10 @@ html[data-gl='on'] .how__motion { background-image: none; }
 .transcript {
   gap: 1.75rem;
   padding: clamp(1.25rem, 2.5vw, 2.5rem);
-  border: 1px solid var(--landing-card-line);
+  border: 1px solid var(--color-line);
   border-radius: 1.25rem;
-  background: var(--landing-card);
-  box-shadow: 0 24px 80px var(--landing-card-shadow);
+  background: var(--color-sheet-solid);
+  box-shadow: var(--shadow-sheet);
   text-shadow: none;
 }
 .transcript__heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--color-line); }
@@ -455,7 +350,6 @@ html[data-gl='on'] .final__art::before { visibility: hidden; }
 }
 
 @media (max-width: 63.999em) {
-  .site-header { min-height: 4.75rem; padding-top: 0.75rem; padding-bottom: 0.75rem; }
   .hero { justify-content: flex-start; min-height: 56rem; padding-top: 22rem; padding-bottom: 9rem; }
   .hero__frame { gap: 1.5rem; }
   .hero__title { font-size: clamp(3.1rem, 8vw, 5.75rem); }
@@ -484,13 +378,13 @@ html[data-gl='on'] .final__art::before { visibility: hidden; }
 @media (max-width: 35em) {
   .brand { font-size: 1.4rem; }
   .brand__name { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
-  .site-header { gap: 0.5rem; }
   .site-header__actions { gap: 0.125rem; }
-  .site-header .help-link { padding-inline: 0.35rem; font-size: 0.75rem; }
-  .site-header .media { padding: 0; gap: 0; }
+  .site-header .help-link { padding-inline: 0.6rem; font-size: 0.8125rem; }
+  .site-header .media { padding: 0; gap: 0; border-color: transparent; }
   .media__button,
-  .theme-toggle { width: 2rem; }
-  .menu-toggle { width: 2.25rem; height: 2.5rem; border-color: transparent; background: transparent; }
+  .theme-toggle { min-width: 2.1rem; }
+  .theme-toggle { border-color: transparent; }
+  .menu-toggle { width: 2.25rem; height: 2.5rem; border-color: transparent; }
   .hero { min-height: 52rem; padding-top: 20rem; }
   .hero__title { font-size: clamp(2.55rem, 10.6vw, 3.6rem); }
   .hero__tag { top: 6.5rem; font-size: 0.625rem; }
@@ -511,19 +405,26 @@ html[data-gl='on'] .final__art::before { visibility: hidden; }
 }
 
 @media (max-width: 23em) {
-  .brand__mark { display: none; }
-  /* With «Вигляд» the row is full at 320 px: the wordmark's hit area stops where «Якщо важко» starts. */
+  /* With «Вигляд» the row is full at 320 px: the sun mark alone (the name stays for screen readers, as
+     on the chat), and the wordmark's hit area stops where «Якщо важко» starts. */
+  .site-header { gap: 0.5rem; }
+  .brand__name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
   .brand { padding-inline: 0.25rem; margin-inline: -0.25rem; }
   /* The crisis chapter in view: a ring round «Якщо важко» came 3 px from «Liora» here. The current
      chapter is a small light under the words instead, as in the navigation — still not colour alone
      (SC 1.4.1). */
-  .site-header .help-link[aria-current] { position: relative; border-color: transparent; }
-  .site-header .help-link[aria-current]::after { content: ''; position: absolute; left: 50%; bottom: 0.3rem; width: 4px; height: 4px; border-radius: 50%; background: var(--color-light); translate: -50% 0; }
-  .site-header { gap: 0.25rem; }
+  .site-header .help-link[aria-current] { position: relative; border-color: transparent; box-shadow: none; }
+  .site-header .help-link[aria-current]::after { content: ''; position: absolute; left: 50%; bottom: 0.3rem; width: 4px; height: 4px; border-radius: 50%; background: currentColor; translate: -50% 0; }
   .hero__links { gap: 0.75rem; }
   .hero__links .cta--primary { padding-inline: 1rem; gap: 0.65rem; font-size: 0.8125rem; }
   .hero__links .text-link { font-size: 0.75rem; }
   .transcript { padding: 1rem; }
+}
+
+/* Beside the sections (64em–90em) the crisis pill keeps its words and its icon; the numbers come back
+   where the capsule has room (the name says them in any case). */
+@media (min-width: 64em) and (max-width: 89.99em) {
+  .site-header .help-link__numbers { display: none; }
 }
 
 /* ---------- Motion between the chapters (ADR-012 «Рух», spec §9.4 п. 8) ----------
@@ -686,13 +587,13 @@ html:not([data-motion='on']) .qa summary::after {
 .stage::before {
   left: -34vmax;
   top: -10vh;
-  background: radial-gradient(closest-side, var(--landing-sky-cool), transparent);
+  background: none;
 }
 
 .stage::after {
   right: -38vmax;
   top: 40vh;
-  background: radial-gradient(closest-side, var(--landing-sky-warm), transparent);
+  background: none;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -736,7 +637,6 @@ html:not([data-motion='on']) .qa summary::after {
   .hero__title-soft { color: CanvasText; }
   .transcript { background: Canvas; border-color: CanvasText; }
   .cta { background: ButtonFace; color: ButtonText; border-color: ButtonText; }
-  .site-header .help-link { border-color: LinkText; }
   /* The small light of a narrow header is a background, which forced colours drop: the ring again. */
   .site-header .help-link[aria-current] { border-color: Highlight; }
 }

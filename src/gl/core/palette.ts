@@ -1,5 +1,5 @@
 // WebGL colours, one palette per theme (ADR-012). Keep in sync with the CSS tokens in
-// src/styles/tokens.css. Values are sRGB and reach the shaders unconverted: ShaderMaterial without
+// src/styles/tokens.css («Аврора», ADR-013). Values are sRGB and reach the shaders unconverted: ShaderMaterial without
 // <colorspace_fragment> writes them to the sRGB canvas as they are.
 // The canvas is transparent and premultiplied (rgb <= alpha); the sky behind it is CSS
 // (src/styles/stage.css). On the dark page the light adds up (AdditiveBlending); on paper light
@@ -84,20 +84,21 @@ const NIGHT_SCENE: ScenePalette = {
   conversation: { cyan: [0.13, 0.78, 0.91], gold: [1.0, 0.68, 0.32], flash: [0.94, 1.0, 0.97], alpha: 1 },
 }
 
-/** Day, «ранковий папір»: a deep teal ink and a burnt terracotta, darker than the tokens'
- *  --color-ai #0e5c55 and --color-accent #b5532a so a single stroke reads on the paper; a deeper ink
- *  where the night flashes white; a paper head (#f6f1ea) drawn in ink; the atmosphere a light wash,
- *  not smoke. */
+/** Day, «світанок» (ADR-013): the strokes are --color-stroke #0c4a4a and the warm --color-light
+ *  #6b2208 — opaque ink, ≥ 3:1 to every stop of the day's sky and to the sun disc (the light
+ *  sphere's translucent lines had 1.53:1 and 1.29:1 on paper); the alpha is raised so a single stroke
+ *  is near opaque (the final's text column is protected in field.frag.glsl); a peach head (#ffb185, the
+ *  sky of #mind) drawn in ink; the atmosphere a light wash, not smoke. */
 const DAY_SCENE: ScenePalette = {
   additive: false,
-  field: { blue: [0.04, 0.2, 0.3], mint: [0.02, 0.3, 0.27], gold: [0.6, 0.25, 0.1], flash: [0.38, 0.14, 0.05], alpha: 2.4 },
+  field: { blue: [0.047, 0.29, 0.29], mint: [0.047, 0.29, 0.29], gold: [0.42, 0.133, 0.031], flash: [0.42, 0.133, 0.031], alpha: 3 },
   motes: { cool: [0.05, 0.3, 0.32], warm: [0.6, 0.27, 0.12], alpha: 1.4 },
   atmosphere: { cool: [0.82, 0.9, 0.88], warm: [0.98, 0.85, 0.72], alpha: 0.6 },
   portrait: {
-    cyan: [0.05, 0.36, 0.33],
-    violet: [0.27, 0.24, 0.5],
-    coral: [0.71, 0.3, 0.15],
-    skin: [0.89, 0.87, 0.83],
+    cyan: [0.047, 0.29, 0.29],
+    violet: [0.11, 0.24, 0.25],
+    coral: [0.42, 0.133, 0.031],
+    skin: [1.0, 0.694, 0.522],
     skinLit: [0.075, 0.07, 0.065],
     over: 1,
     lineGain: 0.7,
@@ -122,16 +123,18 @@ export const GL_PALETTES: Readonly<Record<GlTheme, GlPalette>> = {
     bokeh: ['#3fb8a8', '#e8a060', '#8f7cff', '#d97a9c', '#a6dde2'],
     scene: NIGHT_SCENE,
   },
+  // Day (ADR-013): ink and ember particles on the sun disc — --color-stroke, --color-light,
+  // --color-crisis-ink — near opaque; the halo the sun's own peach.
   light: {
-    glow: '#e8894a',
+    glow: '#ffb185',
     glowStrength: 0.8,
-    particleCool: '#2f8f86',
-    particleWarm: '#d9773a',
-    particleHighlight: '#c4622c',
-    glassTint: '#5b8f8a',
-    intensity: 0.55,
+    particleCool: '#0c4a4a',
+    particleWarm: '#6b2208',
+    particleHighlight: '#8f3414',
+    glassTint: '#0c4a4a',
+    intensity: 0.9,
     additive: false,
-    bokeh: ['#2f8f86', '#d9824a', '#7d6bd6', '#c46a8c', '#5aa9a4'],
+    bokeh: ['#0c4a4a', '#6b2208', '#1d3d3f', '#8f3414', '#0b3b3c'],
     scene: DAY_SCENE,
   },
 }
