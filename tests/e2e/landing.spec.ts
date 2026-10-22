@@ -242,8 +242,7 @@ test.describe('navigation and keyboard', () => {
     await expect(page.locator('[data-hud-name]')).toHaveText('Щоденник')
   })
 
-  test('the example session follows the step in the middle of the screen', async ({ page, isMobile }) => {
-    test.skip(isMobile, 'on one column the example comes after the steps and is not dimmed')
+  test('the example session follows the step in the middle of a wide screen; on one column it is read in full', async ({ page, isMobile }) => {
     await page.goto('/')
     const transcript = page.locator('[data-transcript]')
     const firstLine = transcript.locator('.said p').first() // data-for="1 2"
@@ -255,6 +254,12 @@ test.describe('navigation and keyboard', () => {
     await centre(page, '[data-step="3"]')
     await expect(transcript).toHaveAttribute('data-active-step', '3')
     await expect(page.locator('[data-step][data-current]')).toHaveAttribute('data-step', '3')
+    if (isMobile) {
+      // One column: the example comes after the steps, not beside them, so no line steps back.
+      await expect(firstLine).toHaveCSS('color', TEXT)
+      await expect(thesis).toHaveCSS('color', TEXT)
+      return
+    }
     await expect(firstLine).toHaveCSS('color', DIM)
     await expect(thesis).toHaveCSS('color', TEXT)
     await expect(page.locator('[data-step="3"] .step__index')).toHaveCSS('color', LIGHT)
