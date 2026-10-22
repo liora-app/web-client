@@ -2661,6 +2661,8 @@ web-client/
   chat/index.html                  усі екрани — <section data-screen hidden>; статичний текст; <template>-и реплік
   vite.config.ts                   multi-page, preview.headers, no-store для /chat/ (§9.5, §10.4)
   deploy/Caddyfile                 заголовки (§10.3)
+  public/theme-init.js             класичний скрипт першим у <head> обох сторінок: data-theme / data-sky і theme-color
+                                   до першого кадру; сховище лише читає (§3.1, §9.4 п. 7, ADR-012)
   src/
     main.ts                        лендінг (+ переадресація ?auth_error, §9.4)
     gl/
@@ -2677,6 +2679,10 @@ web-client/
       motion.ts                    liora:motion; motionAllowed() (WebGL-світло) і decorativeMotion() (решта JS-руху, §3.1)
       sound.ts                     + режим керування з чату (§9.3)
       sky.ts                       liora:sky: читає й пише лише після явного вибору; html[data-sky]
+      theme.ts                     єдиний writer liora:theme (лише після явного вибору; «Як у системі» ключ видаляє);
+                                   подія liora:theme; resolvedTheme(), themesSupported(), refreshThemeColor() (§9.4 п. 7)
+      theme-picker.ts              «Вигляд»: кнопка й меню в шапці обох сторінок, радіо в «Акаунті» (§8.3, §9.4 п. 7)
+      intro.ts                     каскад hero при завантаженні, html.js-intro (лендінг, §9.4 п. 8)
       tips.ts                      підписи під «Пауза», «Звук», «Вигляд»: Esc ховає (WCAG 1.4.13, §3.1)
     chat/
       core/                        без document/window/navigator/HTMLElement/localStorage/sessionStorage/indexedDB/three/../ui
@@ -2716,10 +2722,13 @@ web-client/
         screens/journal.ts         щоденник (§7.7): тиждень, пошук і теми, записи за id, правка на місці, фокус
         copy.ts                    динамічні рядки: помилки, відліки, анонси, словник описів сценаріїв
     styles/
-      tokens.css                   + --radius-field, --radius-dialog
-      stage.css                    кольори неба → custom properties; html[data-sky] (§9.2)
+      tokens.css                   + --radius-field, --radius-dialog; теми через light-dark(), фолбек без нього,
+                                   темний острів «В укритті» (§3.13, ADR-012)
+      stage.css                    кольори неба → custom properties; html[data-sky] (§9.2); світле небо — явні блоки
+      landing.css                  артнапрям лендінгу; його токени: світла — папір чату, темна — ніч (§9.4 п. 7)
       components.css               + .orb — спільний вигляд статичної кулі (.hero__orb і чат)
       chat.css                     сітка чату, рядок сесії, транскрипт, композер, діалоги, криза
+    assets/clear.svg               маска «×» поля пошуку щоденника (тест 116)
   tests/e2e/
     chat.spec.ts                   моки API; CI (desktop + mobile)
     chat-gutter.spec.ts            класичний жолоб смуги прокрутки (без --hide-scrollbars, тест 129)
@@ -2727,7 +2736,16 @@ web-client/
     chat.stack.spec.ts             @stack; лише локально
     chat-fixtures.ts               mockApi, sse(), fetch-shim, аудит сховищ, stop-list
     header.spec.ts, landing.spec.ts  + CTA, посилання кулі, футер, CSP (§11.7)
+    landing-theme.spec.ts          теми лендінгу без WebGL: меню, ключ, ранній скрипт, CSS-малюнки, axe (§9.4 п. 7, §11.7)
+    landing-motion.spec.ts         рух лендінгу без WebGL: reduce, «Пауза», каскад hero, поява, #mind (§9.4 п. 8, §11.7)
 ```
+
+`html[data-theme-lock]` — гачок, що закріплює сторінку за однією темою: його читають `public/theme-init.js` і
+`ui/theme.ts`, а селектори тем у `tokens.css`, `landing.css`, `stage.css` і `chat.css` мають
+`:not([data-theme-lock])`. Жодна сторінка його не ставить (`chat-core.spec.ts` перевіряє, що в `index.html` і
+`chat/index.html` його немає), тож у рантаймі він мертвий. Подальша робота (не в цій гілці): прибрати його разом
+із цими селекторами, гілками в обох скриптах і перевірками в `chat-core.spec.ts` — або дати йому сторінку
+(ADR-012 §1).
 
 **Що де лежить** [E]:
 - Статичний текст — у `chat/index.html`.
@@ -2741,7 +2759,7 @@ parameter properties.
 
 **Обмеження імпортів** перевіряє тест (§10.5):
 - `core` не залежить від `ui`;
-- `localStorage.setItem` є лише в `src/ui/motion.ts` і `src/ui/sky.ts`.
+- `localStorage.setItem` є лише в `src/ui/motion.ts`, `src/ui/sky.ts` і `src/ui/theme.ts`.
 
 Окремий `tsconfig` для `core` без `lib.dom` відкинуто [E]: довелося б вручну переписувати типи для
 `fetch`, `ReadableStream`, `AbortSignal` і `TextDecoder`. Grep-тест дешевший і ловить те саме.
@@ -2865,7 +2883,7 @@ parameter properties.
    | | Текст |
    |---|---|
    | Зараз | «Ця сторінка не використовує файли cookie й аналітику. Вибір паузи анімації зберігається лише в цьому браузері.» |
-   | Нове | «Лендінг сам не ставить файли cookie і не має аналітики. Після входу в розмову з AI браузер тримає файл cookie сесії, недоступний скриптам сторінки, а на час входу — ще й тимчасовий файл cookie входу. Вибір паузи анімації й фону зберігається лише в цьому браузері.» Фон — ключ `liora:sky` з меню «Акаунт» на `/chat/`; так само каже рядок 4 екрана згоди (§3.5). |
+   | Нове | «Лендінг сам не ставить файли cookie і не має аналітики. Після входу в розмову з AI браузер тримає файл cookie сесії, недоступний скриптам сторінки, а на час входу — ще й тимчасовий файл cookie входу. Вибір паузи анімації й фону зберігається лише в цьому браузері.» Фон — ключ `liora:sky` з меню «Акаунт» на `/chat/`; так само каже рядок 4 екрана згоди (§3.5). Пізніше фаза D1 додала сюди тему (`liora:theme`), а D2 скоротила речення: чинний текст — п. 7 і п. 8 нижче. |
 
 4. **Узгодити FAQ і приватність з `/chat/`.**
 
@@ -2894,9 +2912,10 @@ parameter properties.
    - Нове: «На `/` — жодних форм, cookies і звернень до API; `/chat/` — за ADR-007. Аналітики й сторонніх
      запитів немає ніде.»
 7. **Теми на лендінгу (ADR-012, фаза D1).**
-   - `index.html` без `data-theme-lock`: лендінг іде за `liora:theme` / системою, як чат. `public/theme-init.js`
-     першим у `<head>` ставить `data-theme` до першого кадру; `<meta name="color-scheme" content="light dark">`;
-     один `theme-color` (його веде `ui/theme.ts`).
+   - `index.html` без `data-theme-lock` (гачок тепер не ставить жодна сторінка — мертвий, §9.1): лендінг іде за
+     `liora:theme` / системою, як чат. `public/theme-init.js` першим у `<head>` ставить `data-theme` до першого
+     кадру; `<meta name="color-scheme" content="light dark">`; один `theme-color` (до першого кадру його ставить
+     `theme-init.js`, далі веде `ui/theme.ts`, §3.1).
    - **«Вигляд»** у шапці — та сама кнопка й меню, що в чаті (`ui/theme-picker.ts`, без радіо): три `<button
      role="menuitemradio">` (на лендінгу `input` заборонені), поза `.media`, між «Пауза / Звук» і CTA. На лендінгу
      кнопка без рамки, як «Пауза» і «Звук» (36 px; до 35em — 32 px), тож шапка на 320 px влазить (header.spec).
@@ -3203,7 +3222,9 @@ spa-fallback, тоді як Caddy на проді робить редирект.
 - немає прямих звернень до `localStorage`.
 
 **Хто пише в `localStorage`:** `liora:motion` — лише `src/ui/motion.ts`, `liora:sky` — лише
-`src/ui/sky.ts`.
+`src/ui/sky.ts`, `liora:theme` (`light` | `dark`; «Як у системі» ключ видаляє) — лише `src/ui/theme.ts`. Рядок
+`liora:theme` у `src/**` знає лише `src/ui/theme.ts`; `public/theme-init.js` ключ тільки читає (без `setItem` і
+`removeItem`).
 
 **`src/chat/core/**`:** немає `document`, `window`, `navigator`, `HTMLElement`, `localStorage`,
 `sessionStorage`, `indexedDB`, `three`, `../ui`.
@@ -3229,6 +3250,7 @@ spa-fallback, тоді як Caddy на проді робить редирект.
 |---|---|---|
 | `tests/e2e/chat.spec.ts` | Сторінку проти моків API: `page.route` і синтетичний SSE | CI: проєкти `desktop` і `mobile`, той самий job і `--grep-invert "@gpu\|@stack"`. Локально — ще й `iphone-webkit`. |
 | `tests/e2e/chat-core.spec.ts` | Чисте ядро, без фікстури `page` | Лише `desktop`: `test.skip(testInfo.project.name !== 'desktop')`. |
+| `tests/e2e/chat-gutter.spec.ts` | `/chat/` з класичною смугою прокрутки (браузер без `--hide-scrollbars`, `launchOptions` — тому окремий файл): колір жолоба поруч із діалогами (тест 129) | CI, як і решта файлів (`scripts/ci-e2e.sh`: `desktop` і `mobile`); тест пропускає `mobile`, бо на телефоні смуги накладні. |
 | `tests/e2e/chat.stack.spec.ts` | Справжній стек | Лише локально. Кожен тест має тег `@stack`, а `test.skip` спрацьовує, якщо `process.env.E2E_STACK !== '1'` або `baseURL` не `http://localhost:8088`. Тому в CI і проти проду ці тести не йдуть ніколи. |
 | `tests/e2e/chat-fixtures.ts` | Обвʼязка: `mockApi`, `sse()`, fetch-shim, аудит сховищ, спільний stop-list | — |
 
@@ -3398,7 +3420,7 @@ route.fulfill({
 
 **Чистота коду:** grep-правила §10.5. Плюс: кожен `<textarea>` і `<input>` типу `text`/`search` у
 `chat/index.html` має `autocomplete="off"` — Firefox зберігає на диск (sessionstore) текст полів без нього, а
-екран згоди обіцяє, що браузер тримає лише cookie сесії й два вибори.
+екран згоди обіцяє, що браузер тримає лише cookie сесії й три вибори (пауза анімації, тема, фон).
 
 ### 11.4 E2E з моками (`chat.spec.ts`)
 
@@ -3575,7 +3597,7 @@ const audit = await page.evaluate(async () => ({
   sw: (await navigator.serviceWorker?.getRegistrations())?.length ?? 0,
   cookie: document.cookie,
 }))
-expect(audit.local.every((k) => k === 'liora:motion' || k === 'liora:sky')).toBe(true)
+expect(audit.local.every((key) => key === 'liora:motion' || key === 'liora:sky' || key === 'liora:theme')).toBe(true)
 expect(audit).toMatchObject({ session: 0, idb: 0, caches: 0, sw: 0, cookie: '' })
 ```
 
@@ -3625,6 +3647,11 @@ expect(audit).toMatchObject({ session: 0, idb: 0, caches: 0, sw: 0, cookie: '' }
   - `cutOffAtEdges` на 1024 × 768 з CTA;
   - порушень CSP на `/` немає;
   - `/?auth_error=expired` → `/chat/`.
+- **Теми лендінгу (фаза D1, §9.4 п. 7):** `tests/e2e/landing-theme.spec.ts`, без WebGL (`NO_WEBGL2` до
+  навігації): меню «Вигляд» з клавіатури, вибір переживає перезавантаження, `data-theme` і смуга браузера на
+  `DOMContentLoaded` лише від `public/theme-init.js`, смуга темного лендингу — ніч від раннього скрипту з модулем і
+  без нього, «Як у системі» видаляє ключ, світлі CSS-малюнки без жодного `*-still.png`, axe у світлій (і з
+  відкритим меню), кольори ночі, а не «лампи» чату.
 - **Рух лендінгу (фаза D2, §9.4 п. 8):** `tests/e2e/landing-motion.spec.ts`, без WebGL.
 
 ### 11.8 `@stack` (`chat.stack.spec.ts`)
@@ -3700,7 +3727,7 @@ expect(audit).toMatchObject({ session: 0, idb: 0, caches: 0, sw: 0, cookie: '' }
 - [ ] `Retry-After` поважається: 429 — лише вручну, `llm_busy` — авто ×2.
 
 **A6. Приватність у браузері**
-- [ ] У сховищі лише `liora:motion` і `liora:sky`.
+- [ ] У сховищі лише `liora:motion`, `liora:sky` і `liora:theme`.
 - [ ] Транскрипт не потрапляє в URL, `title`, `console` чи storage.
 - [ ] `beforeunload` — за I7.
 - [ ] `pageshow` з `persisted` після виходу стирає розмову.
