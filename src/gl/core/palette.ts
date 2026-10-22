@@ -5,7 +5,7 @@
 // (src/styles/stage.css). On the dark page the light adds up (AdditiveBlending); on paper light
 // cannot add anything, so the light theme draws a pearl instead (the chat), or ink on paper (the
 // landing's scene, ScenePalette): mid-dark, saturated colours with NormalBlending, still
-// premultiplied, and less of them (intensity, alpha). The theme event swaps these values in place.
+// premultiplied. The theme event swaps these values in place.
 
 import { Vector3 } from 'three'
 
@@ -19,8 +19,10 @@ export type Rgb = readonly [number, number, number]
  *  (lines and their glow). The same formulas in both themes; only these numbers change.
  *  - additive: the night adds light (AdditiveBlending); by day ink covers the paper (NormalBlending,
  *    still premultiplied, rgb <= alpha).
- *  - *.alpha multiplies a layer's alpha: by day overlapping strokes add up to coverage, not to
- *    brightness, so they are thinner.
+ *  - *.alpha multiplies a layer's alpha. At night faint strokes sum to brightness; by day each stroke
+ *    only covers the paper, so the field and the motes need MORE alpha than at night (the shader
+ *    clamps each fragment at 1). At 0.55 the hero sphere measured 1.2 % of pixels at >= 1.5:1 to the
+ *    paper; at 2.4, 25.5 % (the night: 17.5 %), web-client#22.
  *  - portrait.over: 0 adds the lines and the rim to the skin (light on a dark head); 1 mixes the skin
  *    towards them (ink on a paper head). lineGain keeps that mix at or under 1. */
 export interface ScenePalette {
@@ -82,14 +84,15 @@ const NIGHT_SCENE: ScenePalette = {
   conversation: { cyan: [0.13, 0.78, 0.91], gold: [1.0, 0.68, 0.32], flash: [0.94, 1.0, 0.97], alpha: 1 },
 }
 
-/** Day, «ранковий папір»: the tokens' teal ink (--color-ai #0e5c55) and terracotta (--color-accent
- *  #b5532a), a deeper ink where the night flashes white; a paper head (#f6f1ea) drawn in ink; the
- *  atmosphere a pale wash, not smoke. */
+/** Day, «ранковий папір»: a deep teal ink and a burnt terracotta, darker than the tokens'
+ *  --color-ai #0e5c55 and --color-accent #b5532a so a single stroke reads on the paper; a deeper ink
+ *  where the night flashes white; a paper head (#f6f1ea) drawn in ink; the atmosphere a light wash,
+ *  not smoke. */
 const DAY_SCENE: ScenePalette = {
   additive: false,
-  field: { blue: [0.07, 0.29, 0.42], mint: [0.05, 0.42, 0.38], gold: [0.71, 0.33, 0.16], flash: [0.48, 0.2, 0.08], alpha: 0.55 },
-  motes: { cool: [0.08, 0.4, 0.42], warm: [0.71, 0.36, 0.18], alpha: 0.7 },
-  atmosphere: { cool: [0.82, 0.9, 0.88], warm: [0.98, 0.85, 0.72], alpha: 0.8 },
+  field: { blue: [0.04, 0.2, 0.3], mint: [0.02, 0.3, 0.27], gold: [0.6, 0.25, 0.1], flash: [0.38, 0.14, 0.05], alpha: 2.4 },
+  motes: { cool: [0.05, 0.3, 0.32], warm: [0.6, 0.27, 0.12], alpha: 1.4 },
+  atmosphere: { cool: [0.82, 0.9, 0.88], warm: [0.98, 0.85, 0.72], alpha: 0.6 },
   portrait: {
     cyan: [0.05, 0.36, 0.33],
     violet: [0.27, 0.24, 0.5],
