@@ -2938,6 +2938,16 @@ parameter properties.
      ловить `MutationObserver`).
      `playwright.config.ts`: `E2E_NO_WEBGL=1` вимикає WebGL у Chromium-проєктах (`--disable-webgl
      --disable-webgl2 --disable-3d-apis`), без змінної нічого не змінюється.
+     Пропуски в чотирьох специфікаціях лендингу з `E2E_NO_WEBGL=1 --grep-invert @gpu` — лише за проєктом, і кожен
+     пропущений тест проходить на іншому; живої сцени не вимагає жоден (ті, що вимагають, — `@gpu`, їх відсіяно).
+     Desktop пропускає 3 перевірки на 320 px, які робить mobile: header.spec «at 320 px the crisis chapter…» і «the
+     header fits at 320 px…», landing.spec «nothing is cut off at 320 px». Mobile пропускає 8 перевірок широкого
+     екрана й клавіатури, які робить desktop: header.spec «wide screens show the sections…», «wide screens lead to
+     the chat…», «the header holds the chat link at 1024 px…»; landing-theme.spec «the menu by keyboard…»;
+     landing.spec «skip link is the first tab stop…», «the chapter in the middle is marked…», «focus inside a reveal
+     block…», «the hero light stands beside the title…». Тест прикладу розмови на телефоні більше не пропускається:
+     причина пропуску («на одній колонці приклад не тьмяніє») сама була неперевіреною обіцянкою, тож mobile ставить
+     крок 3 посередині й чекає кожен рядок прикладу кольором `--color-text`.
    - **Поява глав (`ui/reveal.ts`) — прогресивне покращення.** Прихований стан `html.js-reveal` ставиться
      лише з першою відповіддю `IntersectionObserver`; те, що вже на екрані в цю мить, позначається видимим
      до класу. Спостерігач, що не відповідає ніколи (завислий фон, зламаний рушій), не ховає нічого
@@ -3008,7 +3018,14 @@ parameter properties.
      анімації на всій сторінці, висота `#mind` і скрол ті самі, каскад hero не повторюється; без
      `IntersectionObserver` (відсутній і «мовчазний») нічого не сховано; `#mind` посередині таймлайну — axe без
      порушень у темній і світлій, рядок, до якого «стрибнув» пошук, — `opacity` 1; каскад hero ≤ 600 мс, заголовок —
-     лише `opacity`; поява кроків/рядків/FAQ — 280 мс, 8 px, decelerate, один раз; `#mind` без WebGL —
+     лише `opacity`. Обидві гілки перевірки «вже намальовано» — без `test.skip`: чи встигне перше малювання до
+     модуля, вирішує машина, тож init-скрипт сам відповідає на питання `intro.ts`
+     (`performance.getEntriesByType('paint')` — порожній список або один `first-paint`). Порожній — каскад мусить
+     стартувати, інакше тест падає; один запис — `html.js-intro` не зʼявляється, hero у спокої, анімацій на ньому
+     нуль; в обох тестах `intro.ts` мусить спитати про малювання хоча б раз. Раніше тест пропускався, щойно клас не
+     зʼявлявся, — і так само, коли `initIntro()` прибрано, клас перейменовано чи перевірка завжди каже «намальовано»
+     (#29: з викликом `initIntro()`, заміненим на `void initIntro`, старий тест — `1 skipped`, нові — `2 failed`);
+     поява кроків/рядків/FAQ — 280 мс, 8 px, decelerate, один раз; `#mind` без WebGL —
      розгортання, поворот портрета, пін; гілка без scroll-driven animations; FAQ плавно з рухом і одразу на
      паузі; небо дрейфує й гасне біля `#safety`; 320 px — без горизонтального скролу й обрізань через увесь
      `#mind`. `landing-theme.spec` чекає лише скінченні анімації документного таймлайну (scroll-driven не
