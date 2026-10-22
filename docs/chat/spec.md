@@ -3269,8 +3269,8 @@ spa-fallback, тоді як Caddy на проді робить редирект.
 ```
 npm run build
 npx tsc --noEmit -p tsconfig.json
-# як у CI
-npx playwright test tests/e2e/chat.spec.ts tests/e2e/chat-core.spec.ts --project=desktop --project=mobile --grep-invert "@gpu|@stack"
+# як у CI, лише файли чату (scripts/ci-e2e.sh ганяє весь tests/e2e)
+npx playwright test tests/e2e/chat.spec.ts tests/e2e/chat-core.spec.ts tests/e2e/chat-gutter.spec.ts --project=desktop --project=mobile --grep-invert "@gpu|@stack"
 # локально: Origin у WebKit (§5.1)
 npx playwright test tests/e2e/chat.spec.ts --project=iphone-webkit
 # @stack, PowerShell
