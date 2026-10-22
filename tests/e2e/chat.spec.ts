@@ -5682,10 +5682,14 @@ test.describe('what the accessibility review found', () => {
     // Esc with the pointer still there: gone, the pointer has not moved.
     await page.keyboard.press('Escape')
     await expect.poll(() => label(motion)).toBe(0)
-    // Hidden, it takes no pointer: what lies under it gets the click.
+    // Hidden, it takes no pointer: with the pointer still on it, what lies under it is what a click
+    // there gets (the label takes the pointer only while it is shown: :not([data-tip='off'])).
+    const takes = ([px, py]: number[]): boolean => document.elementFromPoint(px!, py!)?.closest('[data-motion-toggle]') != null
+    expect(await page.evaluate(takes, [x, onLabel]), 'the hidden label under the pointer takes it').toBe(false)
+    // The pointer moves away: the label stays hidden and takes nothing there either.
     await page.mouse.move(x, box.y + box.height + 120, { steps: 4 })
     await expect.poll(() => label(motion)).toBe(0)
-    expect(await page.evaluate(([px, py]) => document.elementFromPoint(px!, py!)?.closest('[data-motion-toggle]') === null, [x, onLabel])).toBe(true)
+    expect(await page.evaluate(takes, [x, onLabel]), 'the hidden label with the pointer gone').toBe(false)
     // Back over the button: shown again.
     await motion.hover()
     await expect.poll(() => label(motion)).toBe(1)
