@@ -5513,6 +5513,28 @@ test.describe('what the accessibility review found', () => {
     expect((await saidSince(page, from)).filter((text) => text.includes('тиждень') || text.includes('жовтня'))).toHaveLength(2)
   })
 
+  test('#123b a step that failed, then a step back: the week shown again is said, though it is the one said before', async ({ page, api }) => {
+    let lastWeekAsked = 0
+    api.on('GET /summaries', (call) => ({ json: diary(found(call)) }))
+    api.on('GET /tags', { json: THEMES })
+    api.on('GET /reviews/weekly', (call) => {
+      const start = call.query.get('week_start') ?? THIS_WEEK
+      if (start === LAST_WEEK && lastWeekAsked++ === 0) return fail(500, 'internal')
+      return { json: start === LAST_WEEK ? weekly(LAST_WEEK, 1, ['сон']) : weekly(THIS_WEEK, 2, ['робота', 'сон']) }
+    })
+    await openChat(page)
+    const from = (await announced(page)).length
+    await openDiary(page)
+    const count = page.locator('[data-el="week-count"]')
+    await expect(count).toHaveText('2 збережені записи')
+    await page.getByRole('button', { name: 'Попередній тиждень' }).click()
+    await expect(page.locator('[data-el="week-status"]')).toHaveText(WEEK_FAILED)
+    await expect(page.locator('[data-el="week-title"]')).toHaveText('12–18 жовтня')
+    await page.getByRole('button', { name: 'Наступний тиждень' }).click()
+    await expect(count).toHaveText('2 збережені записи')
+    await expect.poll(() => saidSince(page, from)).toEqual(['Цей тиждень. 2 збережені записи'])
+  })
+
   test('#124 «Як ви зараз?»: the cells and the words are radio groups — one Tab stop each, the arrows move and choose, a second press keeps the choice', async ({ page }) => {
     await openChat(page)
     await openTool(page, 'Як ви зараз?')
