@@ -106,25 +106,32 @@ html[data-gutter] .chat-page .stage::after {
 }
 
 /* An open modal keeps the page inert; it should not scroll under the dialog either. The gutter of a
-   classic scrollbar is painted by the root's background alone, which no ::backdrop covers: under a
-   dialog's scrim it takes the scrim's colour over the page's, not a light strip (the shelter keeps
-   its own dark one, below). Only where there is such a gutter (html[data-gutter]): a phone's bar
-   follows the root's colour (src/ui/theme.ts), and under a full-screen sheet it stays the page's.
-   An image layer would not do — the gutter shows the root's colour alone (probed in Chromium).
-   The bar is read again whenever a dialog opens or closes (src/chat/ui/tools.ts). */
+   classic scrollbar is painted by the root's background alone, which no ::backdrop covers: where the
+   scrim is in view beside it, the gutter takes the scrim's colour over the page's, not a light strip.
+   Only where there is such a gutter (html[data-gutter]); a phone's bar follows the root's colour
+   (src/ui/theme.ts). An image layer would not do — the gutter shows the root's colour alone (probed
+   in Chromium). The bar is read again whenever the open dialogs change (src/chat/ui/tools.ts). */
 html:has(dialog[open]) {
   overflow: hidden;
 }
 
-html[data-gutter]:has(dialog[open]) {
+/* The scrim is in view only around a dialog that leaves some of the window to it:
+   - the confirm, at any width (a bottom sheet below 48em, centred from there), over the page or over
+     a sheet;
+   - from 48em, the centred sheets: «Якщо важко», the record picker, a tool.
+   Below 48em every sheet covers the window and its scrim is out of sight: the gutter keeps the
+   page's colour beside it (a strip of the scrim's colour ran down the right edge of a window under
+   48em — half a screen, a 200 % zoom). So it does beside «Акаунт» at any width, a sheet the height of
+   the window flush with the gutter. «В укритті» keeps its own dark one (below; it comes later, with
+   the same specificity, and wins). */
+html[data-gutter]:has(dialog.confirm[open]) {
   background-color: var(--color-bg-under-scrim);
 }
 
-/* «Акаунт» is a sheet the height of the window, flush with the gutter: beside it the gutter is the
-   sheet's own colour, not the scrim's — a strip of that ran down the window's right edge. A confirm
-   stacked over the sheet scrims both, and the gutter goes back to the scrim's colour with them. */
-html[data-gutter]:has(dialog.sheet--side[open]):not(:has(dialog[open]:not(.sheet--side))) {
-  background-color: var(--color-bg);
+@media (min-width: 48em) {
+  html[data-gutter]:has(dialog:is(.sheet--help, .sheet--pick, .sheet--tool)[open]) {
+    background-color: var(--color-bg-under-scrim);
+  }
 }
 
 /* ---------- Header: the landing's, with «Акаунт» in place of «Меню» ---------- */

@@ -262,9 +262,11 @@ export function createTools(dispatch: (action: Action) => void, composer: () => 
 
   // ── open, close, sync ──
 
-  /** What colours the root, and so the browser's bar: «В укритті» (or a tool over it) — dark;
-   *  another dialog — the scrim's colour where a classic scrollbar has a gutter; else the page. */
-  let rootLook: 'shelter' | 'dialog' | 'page' = 'page'
+  /** What colours the root, and so the browser's bar: «В укритті» (or a tool over it) — dark; the
+   *  open dialogs otherwise (chat.css: where a classic scrollbar has a gutter, the scrim's colour
+   *  beside a confirm or a centred sheet, the page's beside a sheet that covers the window — which
+   *  of them is open, not just whether one is: a confirm over «Акаунт» changes it); else the page. */
+  let rootLook = 'page'
 
   const tools: Tools = {
     open(overlay, model, overShelter) {
@@ -323,10 +325,12 @@ export function createTools(dispatch: (action: Action) => void, composer: () => 
       show(byEl('help-tools'), state.s !== 'crisis')
       if (mood.open) moodRender()
       // After dialogs.ts has opened or closed the dialogs of this render — the crisis closes the
-      // shelter in this same step, and the bar turns back with it. Any dialog counts, not only the
-      // shelter: under one a classic scrollbar's gutter takes the scrim's colour (chat.css), and a
-      // theme picked in «Акаунт» was read from it — the bar kept that grey once the sheet closed.
-      const look = model.overlay.some((o) => o.o === 'shelter') ? 'shelter' : document.querySelector('dialog[open]') !== null ? 'dialog' : 'page'
+      // shelter in this same step, and the bar turns back with it. Every dialog counts, not only the
+      // shelter: beside one a classic scrollbar's gutter may take the scrim's colour (chat.css), and
+      // a theme picked in «Акаунт» was read from it — the bar kept that grey once the sheet closed.
+      // Which ones are open counts too: a confirm over «Акаунт» turns the gutter to the scrim's.
+      const open = Array.from(document.querySelectorAll('dialog[open]'), (d) => d.id).join(' ')
+      const look = model.overlay.some((o) => o.o === 'shelter') ? 'shelter' : open !== '' ? `dialog ${open}` : 'page'
       if (look !== rootLook) {
         rootLook = look
         refreshThemeColor()
