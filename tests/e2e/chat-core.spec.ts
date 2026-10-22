@@ -2522,6 +2522,32 @@ test.describe('journal helpers', () => {
     ])
   })
 
+  test('a theme with a comma in its name: a title-only edit sends no themes; an edited line keeps it one theme, the AI’s still', () => {
+    const comma: SummaryOut = { ...SUMMARY, tags: [{ id: 'c', name: 'стосунки, родина', source: 'ai' }, { id: 'd', name: 'робота', source: 'user' }] }
+    const form = formOf(comma)
+    expect(form.tags).toBe('стосунки, родина, робота')
+    // Only the title changed: the stored themes stay as they are (no `tags` in the PATCH).
+    expect(patchOf({ ...form, title: 'Нова назва' }, comma)).toEqual({
+      ok: true,
+      sent: { body: { title: 'Нова назва', bullets: ['перша', 'друга', 'третя'] }, index: { bulletIndex: ['b0', 'b1', 'b2'], tagIndex: [] } },
+    })
+    // The line edited: the stored name with a comma is one theme again, with its source.
+    const themed = patchOf({ ...form, tags: 'Стосунки,  родина, робота, сон' }, comma)
+    expect(themed.ok && themed.sent?.body.tags).toEqual([
+      { name: 'стосунки, родина', source: 'ai' },
+      { name: 'робота', source: 'user' },
+      { name: 'сон', source: 'user' },
+    ])
+    expect(tagsFromText('родина, стосунки', comma.tags)).toEqual([
+      { id: 't0', name: 'родина', source: 'user' },
+      { id: 't1', name: 'стосунки', source: 'user' },
+    ])
+    // A theme the form leaves out (it spells the paused number) is not deleted by a title edit.
+    const numbered: SummaryOut = { ...SUMMARY, tags: [{ id: 'x', name: PAUSED, source: 'ai' }, ...SUMMARY.tags] }
+    const titled = patchOf({ ...formOf(numbered), title: 'Інша назва' }, numbered)
+    expect(titled.ok && titled.sent !== null && 'tags' in titled.sent.body).toBe(false)
+  })
+
   test('the edit form starts masked: the paused number never reaches a field', () => {
     const numbered: SummaryOut = { ...SUMMARY, title: `Лінія ${PAUSED}`, bullets: [`Дзвонити на ${PAUSED}`], tags: [{ id: 'x', name: PAUSED, source: 'ai' }, { id: 'y', name: 'день', source: 'ai' }] }
     const form = formOf(numbered)

@@ -3188,10 +3188,12 @@ function found(call: ApiCall, items: readonly Summary[] = ENTRIES): Summary[] {
   return items.filter((r) => (q === '' || `${r.title} ${r.bullets.join(' ')} ${r.tags.map((t) => t.name).join(' ')}`.toLowerCase().includes(q)) && (tag === null || r.tags.some((t) => t.id === tag)))
 }
 
-/** PATCH /summaries/{id} → 200: the record with the body applied and edited_at stamped. */
+/** PATCH /summaries/{id} → 200: the record with the body applied and edited_at stamped. Without
+ *  `tags` (the themes line was not changed) the stored tags stay, as on the server. */
 function patched(base: Summary, body: unknown): Summary {
-  const b = body as { title: string; bullets: string[]; tags: { name: string; source: string }[] }
-  return { ...base, title: b.title, bullets: b.bullets, tags: b.tags.map((t, i) => ({ id: themeId(40 + i), name: t.name, source: t.source })), edited_at: '2026-10-21T08:00:00Z' }
+  const b = body as { title: string; bullets: string[]; tags?: { name: string; source: string }[] }
+  const tags = b.tags === undefined ? base.tags : b.tags.map((t, i) => ({ id: themeId(40 + i), name: t.name, source: t.source }))
+  return { ...base, title: b.title, bullets: b.bullets, tags, edited_at: '2026-10-21T08:00:00Z' }
 }
 
 /** From the account sheet (the header has no room for one more control at 320 px). */

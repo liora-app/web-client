@@ -82,12 +82,30 @@ export function formOf(summary: SummaryOut): EntryForm {
 /** The themes line → the tags of the PATCH. A name that is one of the record's own tags (as the
  *  server normalizes it) keeps the stored spelling and its source: an AI tag goes back as 'ai',
  *  or the PATCH would turn it into the person's (journal-api §2.3). A new name is the person's.
- *  Empty pieces and repeats go, as the server would fold them. */
+ *  Empty pieces and repeats go, as the server would fold them.
+ *
+ *  A comma separates themes, but a stored name may hold one: the server takes any 1..40 code
+ *  points, and the AI may draft «стосунки, родина». The pieces such a name of the record spans in
+ *  the line are that one theme again (the longest name first), not two new ones of the person. */
 export function tagsFromText(text: string, own: readonly SummaryTagOut[]): DraftTag[] {
+  const pieces = text.split(',')
+  const parts = (name: string): number => name.split(',').length
+  const joined = own.filter((tag) => tag.name.includes(',')).sort((a, b) => parts(b.name) - parts(a.name))
   const out: DraftTag[] = []
   const seen = new Set<string>()
-  for (const piece of text.split(',')) {
-    const name = piece.trim()
+  for (let i = 0; i < pieces.length; ) {
+    let name = pieces[i]!.trim()
+    let span = 1
+    for (const tag of joined) {
+      const k = parts(tag.name)
+      const whole = pieces.slice(i, i + k).join(',').trim()
+      if (i + k <= pieces.length && normalize(whole) === normalize(tag.name)) {
+        name = whole
+        span = k
+        break
+      }
+    }
+    i += span
     if (name === '') continue
     const key = normalize(name)
     if (seen.has(key)) continue
@@ -106,11 +124,12 @@ export type PatchCheck =
   | Readonly<{ ok: true; sent: null }>
   | Readonly<{ ok: false; issues: readonly DraftIssue[] }>
 
-function draftOfForm(form: EntryForm, own: readonly SummaryTagOut[]) {
+/** `themes`: the themes line was changed — only then are its tags read (and checked). */
+function draftOfForm(form: EntryForm, own: readonly SummaryTagOut[], themes: boolean) {
   return {
     title: form.title,
     bullets: form.bullets.map((text, i) => ({ id: `b${i}`, text, removed: false })),
-    tags: tagsFromText(form.tags, own),
+    tags: themes ? tagsFromText(form.tags, own) : [],
   }
 }
 
@@ -119,12 +138,18 @@ const sameList = <T>(a: readonly T[], b: readonly T[], eq: (x: T, y: T) => boole
 
 /** The PATCH of an edit, checked the way the theses are (validateDraft: empty theses dropped, the
  *  rest within the schema). Issues name the fields: 'title', 'b{i}' (the i-th thesis field), 't{i}'
- *  (the i-th theme of the line). All three fields go: each replaces the stored one. */
+ *  (the i-th theme of the line). The title and the theses always go, each replacing the stored
+ *  one. The themes go only when their line differs from the one the form opened with: `tags`
+ *  replaces the record's whole set, and a line read back unchanged could still lose a theme the
+ *  form leaves out (the paused number) or a stored name it cannot tell apart. Left out, the server
+ *  keeps the tags as stored (SummaryPatch.tags = None). */
 export function patchOf(form: EntryForm, summary: SummaryOut): PatchCheck {
-  const check = validateDraft(draftOfForm(form, summary.tags), summary.scenario)
+  const first = formOf(summary)
+  const themes = form.tags !== first.tags
+  const check = validateDraft(draftOfForm(form, summary.tags, themes), summary.scenario)
   if (!check.ok) return { ok: false, issues: check.issues }
   const { title, bullets, tags } = check.value.body
-  const before = validateDraft(draftOfForm(formOf(summary), summary.tags), summary.scenario)
+  const before = validateDraft(draftOfForm(first, summary.tags, themes), summary.scenario)
   if (
     before.ok &&
     before.value.body.title === title &&
@@ -133,11 +158,8 @@ export function patchOf(form: EntryForm, summary: SummaryOut): PatchCheck {
   ) {
     return { ok: true, sent: null }
   }
-  return {
-    ok: true,
-    sent: {
-      body: { title, bullets: [...bullets], tags: tags.map((t) => ({ name: t.name, source: t.source })) },
-      index: { bulletIndex: check.value.bulletIndex, tagIndex: check.value.tagIndex },
-    },
-  }
+  const body: SummaryPatch = themes
+    ? { title, bullets: [...bullets], tags: tags.map((t) => ({ name: t.name, source: t.source })) }
+    : { title, bullets: [...bullets] }
+  return { ok: true, sent: { body, index: { bulletIndex: check.value.bulletIndex, tagIndex: themes ? check.value.tagIndex : [] } } }
 }
