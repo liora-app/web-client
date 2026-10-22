@@ -2939,7 +2939,8 @@ parameter properties.
      `playwright.config.ts`: `E2E_NO_WEBGL=1` вимикає WebGL у Chromium-проєктах (`--disable-webgl
      --disable-webgl2 --disable-3d-apis`), без змінної нічого не змінюється.
      Пропуски в чотирьох специфікаціях лендингу з `E2E_NO_WEBGL=1 --grep-invert @gpu` — лише за проєктом, і кожен
-     пропущений тест проходить на іншому; живої сцени не вимагає жоден (ті, що вимагають, — `@gpu`, їх відсіяно).
+     пропущений тест проходить на іншому. Тегу `@gpu` у цих чотирьох файлах немає, жоден пропуск не чекає живої
+     сцени, і всі непропущені тести проходять з вимкненим WebGL.
      Desktop пропускає 3 перевірки на 320 px, які робить mobile: header.spec «at 320 px the crisis chapter…» і «the
      header fits at 320 px…», landing.spec «nothing is cut off at 320 px». Mobile пропускає 8 перевірок широкого
      екрана й клавіатури, які робить desktop: header.spec «wide screens show the sections…», «wide screens lead to
@@ -2947,7 +2948,8 @@ parameter properties.
      landing.spec «skip link is the first tab stop…», «the chapter in the middle is marked…», «focus inside a reveal
      block…», «the hero light stands beside the title…». Тест прикладу розмови на телефоні більше не пропускається:
      причина пропуску («на одній колонці приклад не тьмяніє») сама була неперевіреною обіцянкою, тож mobile ставить
-     крок 3 посередині й чекає кожен рядок прикладу кольором `--color-text`.
+     крок 3 посередині й чекає кольором `--color-text` перший рядок людини (`.said p`, `data-for="1 2"`) і першу
+     тезу (`.theses__list li`, `data-for="3 4"`) — на широкому екрані перший у цю мить тьмяний.
    - **Поява глав (`ui/reveal.ts`) — прогресивне покращення.** Прихований стан `html.js-reveal` ставиться
      лише з першою відповіддю `IntersectionObserver`; те, що вже на екрані в цю мить, позначається видимим
      до класу. Спостерігач, що не відповідає ніколи (завислий фон, зламаний рушій), не ховає нічого
