@@ -26,6 +26,8 @@ import {
   NEED_RECORDS,
   REVISIT_EMPTY,
   REVISIT_GONE_BLOCK,
+  SAY_ALREADY,
+  SAY_INSERTED,
   SERVER_DOWN,
   TOO_LARGE_BLOCK,
   WEEK_FAILED,
@@ -5425,6 +5427,260 @@ test.describe('what the final review found', () => {
     await page.emulateMedia({ colorScheme: 'light' })
     await settled(page)
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent-tint').trim())).toMatch(/181,? 83,? 42|b5532a/i)
+  })
+})
+
+test.describe('what the accessibility review found', () => {
+  /** The live region's non-empty writes since `from`. */
+  const saidSince = async (page: Page, from: number): Promise<string[]> => (await announced(page)).slice(from).filter((text) => text !== '')
+  const touch = (page: Page): Promise<boolean> => page.evaluate(() => !window.matchMedia('(pointer: fine)').matches)
+
+  test('#122 a starter and «Додати до розмови» on a touch screen say where the words went; the same words twice go in once', async ({ page }) => {
+    await openChat(page)
+    const coarse = await touch(page)
+    const chip = page.locator('[data-el="starters"] button.starter').first()
+    const line = starters('free')[0]!
+    const from = (await announced(page)).length
+    await chip.click()
+    await expect(composer(page)).toHaveValue(line)
+    if (coarse) {
+      // The focus stays on the chip (no keyboard over the page): the live region says it instead.
+      await expect(composer(page)).not.toBeFocused()
+      await expect.poll(() => saidSince(page, from)).toEqual([SAY_INSERTED])
+    } else {
+      // The focus follows the words; nothing to say.
+      await expect(composer(page)).toBeFocused()
+      expect(await saidSince(page, from)).toEqual([])
+    }
+    // Pressed again: the words end the field already, they are not put twice.
+    await chip.click()
+    await expect(composer(page)).toHaveValue(line)
+    if (coarse) await expect.poll(() => saidSince(page, from)).toEqual([SAY_INSERTED, SAY_ALREADY])
+
+    // «Додати до розмови»: the dialog closes, the focus goes back to «Інструменти», the sentence goes
+    // into the field after what is there.
+    await openTool(page, 'Як ви зараз?')
+    await moodDialog(page).getByRole('radio', { name: 'Мало сил, приємно' }).click()
+    await moodDialog(page).getByRole('radio', { name: 'спокій', exact: true }).click()
+    const before = (await announced(page)).length
+    await moodDialog(page).getByRole('button', { name: 'Додати до розмови' }).click()
+    await expect(moodDialog(page)).toBeHidden()
+    await expect(composer(page)).toHaveValue(`${line} Зараз у мене — спокій.`)
+    if (coarse) {
+      await expect(toolsButton(page)).toBeFocused()
+      await expect.poll(() => saidSince(page, before)).toEqual([SAY_INSERTED])
+    } else {
+      await expect(composer(page)).toBeFocused()
+      expect(await saidSince(page, before)).toEqual([])
+    }
+  })
+
+  test('#123 another week of the diary is said: its range and its count; not on the way in, not when an edit asks for the same week again', async ({ page, api }) => {
+    api.on('GET /summaries', (call) => ({ json: diary(found(call)) }))
+    api.on('GET /tags', { json: THEMES })
+    api.on('GET /reviews/weekly', (call) => {
+      const start = call.query.get('week_start') ?? THIS_WEEK
+      return { json: start === LAST_WEEK ? weekly(LAST_WEEK, 1, ['сон']) : weekly(THIS_WEEK, 2, ['робота', 'сон']) }
+    })
+    const target = ENTRIES[0]!
+    api.on(`DELETE /summaries/${target.id}`, { status: 204 })
+    await openChat(page)
+    const from = (await announced(page)).length
+    await openDiary(page)
+    const count = page.locator('[data-el="week-count"]')
+    await expect(count).toHaveText('2 збережені записи')
+    expect(await saidSince(page, from)).toEqual([])
+
+    const back = page.getByRole('button', { name: 'Попередній тиждень' })
+    await back.click()
+    await expect(count).toHaveText('1 збережений запис')
+    await expect.poll(() => saidSince(page, from)).toEqual(['12–18 жовтня. 1 збережений запис'])
+    // The person's themes stay on the page, not in the region; the focus stays on the button.
+    await expect(page.locator('[data-el="week-themes"]')).toHaveText('Теми: сон')
+    await expect(back).toBeFocused()
+    await page.getByRole('button', { name: 'Наступний тиждень' }).click()
+    await expect(count).toHaveText('2 збережені записи')
+    await expect.poll(() => saidSince(page, from)).toEqual(['12–18 жовтня. 1 збережений запис', 'Цей тиждень. 2 збережені записи'])
+
+    // A delete asks for the week shown once more: the same week, nothing said about it.
+    const weeks = api.count('GET /reviews/weekly')
+    await entryTitled(page, target.title).getByRole('button', { name: 'Видалити' }).click()
+    await confirmDialog(page).getByRole('button', { name: 'Видалити', exact: true }).click()
+    await expect(journalStatus(page)).toHaveText(JOURNAL_DELETED)
+    await expect.poll(() => api.count('GET /reviews/weekly')).toBe(weeks + 1)
+    await expect(count).toHaveText('2 збережені записи')
+    await page.waitForTimeout(300)
+    expect((await saidSince(page, from)).filter((text) => text.includes('тиждень') || text.includes('жовтня'))).toHaveLength(2)
+  })
+
+  test('#124 «Як ви зараз?»: the cells and the words are radio groups — one Tab stop each, the arrows move and choose, a second press keeps the choice', async ({ page }) => {
+    await openChat(page)
+    await openTool(page, 'Як ви зараз?')
+    const mood = moodDialog(page)
+    const grid = mood.getByRole('radiogroup', { name: 'Як ви зараз?', exact: true })
+    const cells = grid.getByRole('radio')
+    await expect(cells).toHaveText(['Багато сил, неприємно', 'Багато сил, приємно', 'Мало сил, неприємно', 'Мало сил, приємно'])
+    await expect(grid).toHaveAccessibleDescription('Оберіть, що ближче.')
+    // No toggle buttons left: a toggle promised that a second press lets go.
+    await expect(mood.locator('[aria-pressed]')).toHaveCount(0)
+    const stops = (group: Locator): Promise<(string | null)[]> => group.getByRole('radio').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('tabindex')))
+    await expect(cells.first()).toBeFocused()
+    expect(await stops(grid)).toEqual(['0', '-1', '-1', '-1'])
+
+    // → takes the next one; ← round the start takes the last.
+    await page.keyboard.press('ArrowRight')
+    await expect(cells.nth(1)).toBeFocused()
+    await expect(cells.nth(1)).toHaveAttribute('aria-checked', 'true')
+    await expect(cells.nth(0)).toHaveAttribute('aria-checked', 'false')
+    await expect(mood.getByRole('radiogroup', { name: 'Багато сил, приємно', exact: true }).getByRole('radio')).toHaveText(['натхнення', 'радість', 'азарт', 'піднесення', 'цікавість', 'гордість'])
+    await page.keyboard.press('ArrowLeft')
+    await page.keyboard.press('ArrowLeft')
+    await expect(cells.nth(3)).toBeFocused()
+    await expect(cells.nth(3)).toHaveAttribute('aria-checked', 'true')
+    expect(await stops(grid)).toEqual(['-1', '-1', '-1', '0'])
+    // A second press (a click, Space) keeps the choice.
+    await cells.nth(3).click()
+    await page.keyboard.press('Space')
+    await expect(cells.nth(3)).toHaveAttribute('aria-checked', 'true')
+
+    // Tab: from the grid to the words, one stop; ↓ chooses the next word.
+    const words = mood.getByRole('radiogroup', { name: 'Мало сил, приємно', exact: true })
+    await page.keyboard.press('Tab')
+    await expect(words.getByRole('radio').first()).toBeFocused()
+    await page.keyboard.press('ArrowDown')
+    await expect(words.getByRole('radio', { name: 'вдячність', exact: true })).toBeFocused()
+    await expect(words.getByRole('radio', { name: 'вдячність', exact: true })).toHaveAttribute('aria-checked', 'true')
+    await page.keyboard.press('Space')
+    await expect(words.getByRole('radio', { name: 'вдячність', exact: true })).toHaveAttribute('aria-checked', 'true')
+    await page.keyboard.press('Tab')
+    await expect(mood.getByRole('button', { name: 'Готово' })).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(words.getByRole('radio', { name: 'вдячність', exact: true })).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(cells.nth(3)).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(mood).toBeHidden()
+    // The page's colour is read with no dialog open (under one the root takes the scrim's).
+    for (const scheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme: scheme })
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await openTool(page, 'Як ви зараз?')
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('Tab')
+      await page.keyboard.press('ArrowRight')
+      await expect(mood.locator('.mood__word[aria-checked="true"]')).toHaveText('радість')
+      await axe(page, `${scheme}: the check-in as radio groups, a word chosen`)
+      await page.keyboard.press('Escape')
+      await expect(mood).toBeHidden()
+    }
+  })
+
+  test('#125 the «Інструменти» menu is a group named «Інструменти», not a nameless box', async ({ page }) => {
+    await openChat(page)
+    await toolsButton(page).click()
+    const group = page.getByRole('group', { name: 'Інструменти', exact: true })
+    await expect(group).toBeVisible()
+    await expect(group.getByRole('button')).toHaveText(['Подихати хвилину', 'Заземлення 5-4-3-2-1', 'Як ви зараз?', 'В укритті'])
+    for (const scheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme: scheme })
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await axe(page, `${scheme}: the tools menu, open`)
+    }
+  })
+
+  test('#126 the labels under «Пауза», «Звук» and «Вигляд»: Esc hides one without moving the focus or the pointer; the pointer can move onto it', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'a pointer that hovers')
+    await openChat(page)
+    const label = (button: Locator): Promise<number> => button.evaluate((node) => Number(getComputedStyle(node, '::after').opacity))
+    const hovered = (button: Locator): Promise<boolean> => button.evaluate((node) => node.matches(':hover'))
+    const toggle = themeToggle(page)
+    // From the keyboard: Tab onto «Вигляд» shows «Вигляд»; Esc hides it and nothing else moves.
+    await toggle.focus()
+    await page.keyboard.press('Shift+Tab')
+    await page.keyboard.press('Tab')
+    await expect(toggle).toBeFocused()
+    await expect.poll(() => label(toggle)).toBe(1)
+    await page.keyboard.press('Escape')
+    await expect.poll(() => label(toggle)).toBe(0)
+    await expect(toggle).toBeFocused()
+    await expect(themeMenu(page)).toBeHidden()
+    // The focus leaves and comes back: the label is there again.
+    await page.keyboard.press('Shift+Tab')
+    await page.keyboard.press('Tab')
+    await expect.poll(() => label(toggle)).toBe(1)
+    // The menu closed with Esc gives the focus back without the label popping up under it.
+    await page.keyboard.press('Enter')
+    await expect(themeMenu(page)).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(themeMenu(page)).toBeHidden()
+    await expect(toggle).toBeFocused()
+    await expect.poll(() => label(toggle)).toBe(0)
+    await composer(page).focus()
+
+    // With the pointer: over «Пауза анімації», then straight down across the gap onto the label.
+    const motion = page.locator('[data-motion-toggle]')
+    await motion.hover()
+    await expect.poll(() => label(motion)).toBe(1)
+    const box = (await motion.boundingBox())!
+    const x = box.x + box.width / 2
+    const gap = box.y + box.height + 4
+    const onLabel = box.y + box.height + 0.6 * 16 + 8
+    await page.mouse.move(x, gap, { steps: 4 })
+    expect(await hovered(motion), 'in the gap').toBe(true)
+    await page.mouse.move(x, onLabel, { steps: 6 })
+    expect(await hovered(motion), 'on the label').toBe(true)
+    await page.waitForTimeout(400)
+    expect(await label(motion)).toBe(1)
+    // Esc with the pointer still there: gone, the pointer has not moved.
+    await page.keyboard.press('Escape')
+    await expect.poll(() => label(motion)).toBe(0)
+    // Hidden, it takes no pointer: what lies under it gets the click.
+    await page.mouse.move(x, box.y + box.height + 120, { steps: 4 })
+    await expect.poll(() => label(motion)).toBe(0)
+    expect(await page.evaluate(([px, py]) => document.elementFromPoint(px!, py!)?.closest('[data-motion-toggle]') === null, [x, onLabel])).toBe(true)
+    // Back over the button: shown again.
+    await motion.hover()
+    await expect.poll(() => label(motion)).toBe(1)
+    for (const scheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme: scheme })
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await expect.poll(() => label(motion)).toBe(1)
+      await axe(page, `${scheme}: the header with a label shown`)
+    }
+  })
+
+  test('#127 a confirm’s sentences are its description: «Видалити запис?» says «Повернути його не вийде.»; a line its condition hides is not read', async ({ page, api }) => {
+    api.on('GET /summaries', (call) => ({ json: diary(found(call)) }))
+    api.on('GET /tags', { json: THEMES })
+    api.on('GET /reviews/weekly', { json: weekly(THIS_WEEK, 2, ['робота', 'сон']) })
+    await openChat(page)
+    await exchange(page, USER)
+    const confirm = confirmDialog(page)
+    // «Завершити розмову?» after one message: the short line is read, «не зберігати» (off) is not.
+    await page.locator('[data-el="session-end"]').click()
+    await expect(confirm.getByRole('button', { name: 'Підсумувати' })).toBeFocused()
+    await expect(confirm).toHaveAccessibleDescription(/^AI запропонує 3–5 коротких тез\..* Розмова ще коротка, тож тези можуть вийти загальними\. Для тез текст розмови ще раз передається/)
+    await expect(confirm).not.toHaveAccessibleDescription(/не зберігати/)
+    // Switched in place: the new sentence is the description.
+    await confirm.getByRole('button', { name: 'Завершити без тез' }).click()
+    await expect(confirm).toHaveAccessibleDescription(/^Текст розмови зникне з цієї сторінки\. Ні тексту, ні тез у Liora не залишиться/)
+    await expect(confirm).not.toHaveAccessibleDescription(/Збереження тез не підтвердилося/)
+    await page.keyboard.press('Escape')
+    await expect(confirm).toBeHidden()
+
+    await openDiary(page)
+    // The page's colour is read with no dialog open (under one the root takes the scrim's).
+    for (const scheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme: scheme })
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await entryTitled(page, ENTRIES[0]!.title).getByRole('button', { name: 'Видалити' }).click()
+      await expect(confirm.getByRole('button', { name: 'Залишити' })).toBeFocused()
+      await expect(confirm).toHaveAccessibleName('Видалити запис?')
+      await expect(confirm).toHaveAccessibleDescription('Повернути його не вийде.')
+      await axe(page, `${scheme}: «Видалити запис?»`)
+      await page.keyboard.press('Escape')
+      await expect(confirm).toBeHidden()
+    }
   })
 })
 
