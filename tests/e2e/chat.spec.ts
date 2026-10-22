@@ -4787,6 +4787,28 @@ test.describe('highlights, the reminder to pause, the soft end', () => {
     await expect(pauseText(page)).toHaveText('Ви тут уже 40 хвилин. Можна зробити паузу або зібрати тези.')
   })
 
+  test('#121 the 40 minutes run out while an answer comes, and the answer ends without `done` («Зупинити»): the line comes then, not never', async ({ page, api }) => {
+    const never = gate()
+    api.on('POST /chat/turn', { sse: reply() }, async () => {
+      await never.wait
+      return { sse: reply() }
+    })
+    await page.clock.install()
+    await openChat(page)
+    await exchange(page, USER)
+    await page.clock.fastForward('39:50')
+    await send(page, 'Друге синтетичне повідомлення.')
+    const stop = page.getByRole('button', { name: 'Зупинити відповідь' })
+    await expect(stop).toBeVisible()
+    // 40:10 — past the 40 minutes, under the 35 s headers timeout: nothing while the AI writes.
+    await page.clock.fastForward('00:20')
+    await expect(pauseText(page)).toHaveText('')
+    await stop.click()
+    await expect(lastUser(page).locator('.said__flag')).toHaveText('Відповідь зупинено')
+    await expect(pauseText(page)).toHaveText('Ви тут уже 40 хвилин. Можна зробити паузу або зібрати тези.')
+    await expect(pauseActions(page)).toBeVisible()
+  })
+
   test('#92 a soft end: no praise and nothing that holds on; one line about people on «Збережено» and «Розмову завершено»; no thought to take along without a mark', async ({ page }) => {
     await openChat(page)
     await exchange(page, USER)

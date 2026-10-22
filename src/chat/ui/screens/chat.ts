@@ -13,9 +13,9 @@
 // (§5.7).
 //
 // The reminder to pause (§3.7.7) is one line in the composer: its 40 minutes are one timer armed
-// here for the time left (the core has no clock), cleared on every way out of the screen — the
-// crisis above all — and armed again on the way back. 60 replies need no timer: the core looks at
-// each answer.
+// here for the time left (the core has no clock), between answers only, cleared on every way out
+// of the screen — the crisis above all — and armed again on the way back. 60 replies need no
+// timer: the core looks at each answer.
 
 import { maskPausedLineInline } from '../../core/helplines'
 import type { Action, ChatState, Model } from '../../core/state'
@@ -114,9 +114,11 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
   let lastModel: Model | null = null
   let shownNotice: ChatState['notice'] = null
   let repeatTimer = 0
-  /** The reminder's timer, and the moment it is armed for: one timer, never one per render. Once
-   *  it fired for that moment it is not armed again — an answer still coming then takes the
-   *  reminder along with its `done` (the core checks it there). */
+  /** The reminder's timer, and the moment it is armed for: one timer, never one per render. It
+   *  stands only between answers (the core takes the reminder only then): while an answer comes it
+   *  is taken off, and when the turn ends — `done`, «Зупинити», an error, a 429 — it is armed again,
+   *  firing at once if the moment passed meanwhile. `done` brings the reminder itself (the core
+   *  checks it there), and then nothing is armed. */
   let pauseTimer = 0
   let pauseFor: number | null = null
   const disarmPause = (): void => {
@@ -358,8 +360,10 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
       if (!composerShown) closePopovers(composer.element)
       show(el('chat-ai'), !composerShown)
       // The reminder to pause (§3.7.7): with the field, never instead of it. «Зібрати тези» waits
-      // while an answer comes (the confirm opens between answers only).
-      armPause(pauseAt(s))
+      // while an answer comes (the confirm opens between answers only). The timer too: one that
+      // fired mid-answer would be refused, and an answer that ends without `done` (stopped, failed,
+      // a 429) would never bring the line.
+      armPause(idle ? pauseAt(s) : null)
       const pause = s.pause === 'time' || s.pause === 'count' ? s.pause : null
       const pauseText = el('pause-text')
       const pauseLine = pause !== null && composerShown ? PAUSE_LINE[pause] : ''
