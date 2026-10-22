@@ -39,7 +39,7 @@ import {
   tooLong,
 } from '../copy'
 import { byEl, fromTemplate, headingOf, screenOf, setAttr, setText, show } from '../dom'
-import { motionAllowed, onMotionChange } from '../../../ui/motion'
+import { decorativeMotion, onMotionChange } from '../../../ui/motion'
 import { REPEAT_GAP_MS } from '../announcer'
 import { createComposer, type Composer } from '../composer'
 import { createScrollAnchor } from '../scroll-anchor'
@@ -269,8 +269,9 @@ export function chatScreen(
         anchor.reset()
         wasStarted = started
       }
-      // The first message: where the list stood before the head goes (the glide's start).
-      const collapsing = started && !wasStarted && motionAllowed() && !document.hidden
+      // The first message: where the list stood before the head goes (the glide's start). Not under
+      // prefers-reduced-motion, even with a stored «on» (decorativeMotion, ADR-012 §3).
+      const collapsing = started && !wasStarted && decorativeMotion() && !document.hidden
       const fromTop = collapsing ? talk.getBoundingClientRect().top : 0
       wasStarted = started
 

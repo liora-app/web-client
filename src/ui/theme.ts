@@ -7,12 +7,14 @@
 // - Without data-theme the CSS follows prefers-color-scheme (tokens.css, stage.css).
 // - html[data-theme-lock] pins a page to one theme: no choice is read or written there. No page uses
 //   it now — the landing follows the theme like the chat (its dark side is its own night, landing.css).
-// - A switch cross-fades for 240 ms through a View Transition when motion is allowed, otherwise it is
-//   instant; CSS transitions are off for the switch itself, so no property eases on its own clock.
+// - A switch cross-fades for 240 ms through a View Transition when motion is allowed and the system
+//   does not reduce it (decorativeMotion: a stored «on» does not override the OS here, as in the
+//   CSS), otherwise it is instant; CSS transitions are off for the switch itself, so no property eases
+//   on its own clock.
 // - Every change of the resolved theme is published as window event 'liora:theme' (detail: 'light' |
 //   'dark') for the WebGL light, which swaps uniforms instead of rebuilding its scene.
 
-import { motionAllowed } from './motion'
+import { decorativeMotion } from './motion'
 
 export type ThemeChoice = 'system' | 'light' | 'dark'
 export type Theme = 'light' | 'dark'
@@ -137,7 +139,7 @@ export function setTheme(next: ThemeChoice): void {
   writeStored(next)
   const after = resolvedTheme()
   const animate =
-    before !== after && motionAllowed() && !document.hidden && typeof document.startViewTransition === 'function'
+    before !== after && decorativeMotion() && !document.hidden && typeof document.startViewTransition === 'function'
   // The controls and the WebGL light hear of the new theme only once it is on <html>: during a
   // cross-fade that is after the old frame was captured, so the old snapshot keeps the old colours.
   let committed = false

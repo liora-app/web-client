@@ -31,7 +31,7 @@ import { maskPausedLine } from '../core/helplines'
 import type { Msg, Pending } from '../core/state'
 import { busyWait, clock, replyWhich, requestIdLine, turnError, waitLabel } from './copy'
 import { fromTemplate, setAttr, setText, show } from './dom'
-import { motionAllowed } from '../../ui/motion'
+import { decorativeMotion } from '../../ui/motion'
 
 export type StreamView = Readonly<{
   id: number
@@ -551,7 +551,7 @@ export class Transcript {
     if (this.scheduled !== null) return
     if (document.hidden) {
       this.scheduled = { kind: 'timer', handle: window.setTimeout(() => this.flush(), 250) }
-    } else if (!motionAllowed()) {
+    } else if (!decorativeMotion()) {
       this.scheduled = { kind: 'timer', handle: window.setTimeout(() => this.flush(), 300) }
     } else {
       this.scheduled = { kind: 'raf', handle: window.requestAnimationFrame(() => this.flush()) }
@@ -571,7 +571,7 @@ export class Transcript {
     // The whole answer so far, masked: digits that came in separate tokens are one number here. A
     // number still coming in (a trailing run of digits) waits until its end is in.
     const masked = shown('assistant', this.target)
-    writeLive(textBox(this.streamLi), this.streamText, holdNumberTail(masked), motionAllowed() && !document.hidden)
+    writeLive(textBox(this.streamLi), this.streamText, holdNumberTail(masked), decorativeMotion() && !document.hidden)
     this.hooks.onWrite?.()
     if (this.target === '') return
     const now = performance.now()

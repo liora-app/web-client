@@ -13,7 +13,7 @@
 // - A line over the field that the person did not ask for (the reminder to pause) does not cover
 //   the end it lands on: with the end in view, the page moves up by the line's height (hold()).
 
-import { motionAllowed } from '../../ui/motion'
+import { decorativeMotion } from '../../ui/motion'
 import { setText, show } from './dom'
 
 export type AnchorContext = Readonly<{
@@ -160,7 +160,8 @@ export function createScrollAnchor(parts: AnchorParts): ScrollAnchor {
         // The header, the session row and the composer are measured now: scroll-padding-top and the
         // room are right.
         measure()
-        message.scrollIntoView({ block: 'start', behavior: motionAllowed() ? 'smooth' : 'auto' })
+        // An explicit behaviour wins over the CSS's scroll-behavior: smooth only as the CSS would be.
+        message.scrollIntoView({ block: 'start', behavior: decorativeMotion() ? 'smooth' : 'instant' })
         update()
       })
     },
