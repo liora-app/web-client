@@ -3023,6 +3023,20 @@ test.describe('state: the diary', () => {
     expect(run(untouched.model, { type: 'journal/list-fail', req: listFx(untouched.effects).req, error: unauthorized }).model.state).toEqual({ s: 'signed-out', variant: 'fresh', notice: null })
     const open = run(talk, { type: 'journal/open', tz: TZ })
     expect(run(open.model, { type: 'journal/list-fail', req: listFx(open.effects).req, error: unauthorized }).model.state).toMatchObject({ s: 'session-expired', editLost: false })
+    // The consent a PATCH asked for holds the edit: a 401 there (its GET or its POST) says the same.
+    const consentFor = (from: Model) => {
+      const pending = saving(from)
+      return run(pending.model, { type: 'journal/patch-fail', req: patchFx(pending.effects).req, error: apiError(403, 'consent_required', { missing: ['data_processing'] }) }).model
+    }
+    const resumeEnded = consentFor({ ...booted(), state: { s: 'ended' } })
+    expect(resumeEnded.state).toMatchObject({ s: 'consent', mode: 'resume', resume: { kind: 'patch' } })
+    expect(run(resumeEnded, { type: 'consents/fail', purpose: 'fresh', error: unauthorized }).model.state).toEqual({ s: 'signed-out', variant: 'fresh', notice: { kind: 'edit-lost' } })
+    const resumeTalk = run(consentFor(talk), { type: 'consents/ok', purpose: 'fresh', consents: { ...CONSENTS_OK, missing: ['data_processing'] } }, { type: 'consent/agree', checked: [...KINDS] }).model
+    expect(run(resumeTalk, { type: 'grant/fail', error: unauthorized }).model.state).toMatchObject({ s: 'session-expired', editLost: true })
+    // A consent for the conversation (a turn) has no edit to speak of.
+    const turnConsent = run(talk, { type: 'chat/send', text: 'Ще.' })
+    const asked = run(turnConsent.model, { type: 'turn/outcome', id: turnEffect(turnConsent.effects).id, now: NOW, outcome: { kind: 'http', error: apiError(403, 'consent_required', { missing: ['llm_transfer'] }) } }).model
+    expect(run(asked, { type: 'consents/fail', purpose: 'fresh', error: unauthorized }).model.state).toMatchObject({ s: 'session-expired', editLost: false })
   })
 
   test('the record a revisit goes back to leaves the diary: under way, «До розмови» brings the block «Записів… уже немає»; not begun, the record is no longer chosen', () => {

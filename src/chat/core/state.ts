@@ -957,7 +957,9 @@ function accountDeleted(model: Model, variant: 'confirmed' | 'presumed'): Step {
  *  it did not reach the diary instead of losing it without a word. */
 function unauthenticated(model: Model, session: Session | null, pending: Pending | null, draft: Draft | null): Step {
   const next: Model = model.ctx.op === null ? model : { ...model, ctx: { ...model.ctx, op: null } }
-  const editLost = editUnsaved(model.state)
+  // On the diary with the edit typed, or on the consent a PATCH asked for (its edit waits there).
+  const { state } = model
+  const editLost = editUnsaved(state) || (state.s === 'consent' && state.resume?.kind === 'patch')
   if (session === null) return signedOut(next, 'fresh', editLost ? { kind: 'edit-lost' } : null)
   return withState(next, { s: 'session-expired', stale: session, pending, draft, editLost }, [{ type: 'abort', target: 'all' }])
 }
