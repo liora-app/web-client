@@ -2873,6 +2873,8 @@ test.describe('accessibility', () => {
   })
 
   test('axe: the consent confirms in the sheet, the crisis restart, session-expired', async ({ page, api }) => {
+    // Half the 30 s and more under E2E_CPU_THROTTLE=4 (14.6 s), a CI runner's pace (§11.9).
+    test.slow()
     api.on('POST /chat/turn', { sse: reply() }, { sse: meta() + crisis('keyword') }, fail(401, 'unauthenticated'))
     await openChat(page)
     await exchange(page)
@@ -3091,6 +3093,8 @@ test.describe('theme: a light system', () => {
   // #55 was one test of eleven axe passes: on a CI runner it ran out of its 30 s on the last screen.
   // Split at «Акаунт», each half with its own setup; together they check the same screens.
   test('#55 axe in the light theme the system chose: signed-out, consent, a conversation, the «Вигляд» menu', async ({ page, api }) => {
+    // Half the 30 s and more under E2E_CPU_THROTTLE=4 (16.2 s), a CI runner's pace (§11.9).
+    test.slow()
     api.on('GET /me', fail(401, 'unauthenticated'))
     await openChat(page, '/chat/', 'signed-out')
     // No choice stored: the CSS follows the system.
@@ -3124,6 +3128,8 @@ test.describe('theme: a light system', () => {
   })
 
   test('#55c axe in the light theme the system chose: the account sheet over the evening and morning skies, «Якщо важко», the crisis', async ({ page, api }) => {
+    // Half the 30 s and more under E2E_CPU_THROTTLE=4 (17.1 s), a CI runner's pace (§11.9).
+    test.slow()
     api.on('POST /chat/turn', { sse: reply() }, { sse: reply() }, { sse: meta() + crisis('keyword') })
     await openChat(page)
     // No choice stored: the CSS follows the system.
@@ -3617,6 +3623,8 @@ test.describe('diary', () => {
   })
 
   test('#72 axe on the diary in both themes: the list, an edit with an empty title, the delete confirm', async ({ page, api }) => {
+    // Half the 30 s and more under E2E_CPU_THROTTLE=4 (18.5 s), a CI runner's pace (§11.9).
+    test.slow()
     await openChat(page)
     await openDiary(page)
     for (const scheme of ['dark', 'light'] as const) {
@@ -4199,6 +4207,8 @@ test.describe('tools', () => {
   })
 
   test('#80 ★ the crisis closes each tool in the frame it comes — a running minute, grounding, the check-in, the shelter and breathing over it; no tool opens beside the contacts', async ({ page }) => {
+    // Half the 30 s and more under E2E_CPU_THROTTLE=4 (18.0 s), a CI runner's pace (§11.9).
+    test.slow()
     const stream = await streamTurns(page)
     await openChat(page)
     // What the page shows the moment the crisis screen is set: no dialog still open, in the same task.
@@ -4419,6 +4429,8 @@ test.describe('tools', () => {
   // One test per theme: both in one ran past 30 s on a CI runner (twelve axe passes).
   for (const scheme of ['dark', 'light'] as const) {
     test(`#83 axe on every tool, ${scheme}: breathing ready and running, grounding, the check-in with a word, the shelter and breathing over it, «Якщо важко» with its tools`, async ({ page }) => {
+      // Half the 30 s and more under E2E_CPU_THROTTLE=4 (17.9–19.1 s), a CI runner's pace (§11.9).
+      test.slow()
       await page.emulateMedia({ colorScheme: scheme })
       await openChat(page)
       await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
@@ -4451,6 +4463,8 @@ test.describe('tools', () => {
   }
 
   test('#84 axe in both themes: the kit on the signed-out screen, the check-in chip, «А зараз?» on the theses', async ({ page, api }) => {
+    // Half the 30 s and more under E2E_CPU_THROTTLE=4 (14.8 s), a CI runner's pace (§11.9).
+    test.slow()
     api.on('GET /me', fail(401, 'unauthenticated'), { json: ME })
     await openChat(page, '/chat/', 'signed-out')
     for (const scheme of ['dark', 'light'] as const) {
@@ -4850,6 +4864,8 @@ test.describe('highlights and the reminder in the light theme', () => {
   test.use({ colorScheme: 'light' })
 
   test('#98 axe in the light theme: a marked reply, the reminder to pause, the candidates, «Взяти з собою»', async ({ page }) => {
+    // Half the 30 s and more under E2E_CPU_THROTTLE=4 (17.2 s), a CI runner's pace (§11.9).
+    test.slow()
     await page.clock.install()
     await openChat(page)
     await exchange(page, USER)
