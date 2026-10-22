@@ -405,11 +405,13 @@
                 <!-- «Інструменти» stands at the field's left, so it comes before the field in Tab order too:
                      small exercises beside the conversation (spec §3.13). Each opens its own dialog; none of
                      them sends anything or starts the conversation. Its menu follows it, so the items come
-                     right after it. -->
+                     right after it. A group named by its title: a popover alone is a generic box, and a
+                     generic one may carry no name (ARIA 1.2), so «Інструменти» was dropped. Not a menu:
+                     its items are plain buttons that Tab walks. -->
                 <button class="composer__tools" type="button" popovertarget="composer-tools" aria-label="Інструменти" data-el="composer-tools">
                   <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 4.75v10.5M4.75 10h10.5" /></svg>
                 </button>
-                <div class="composer__menu" id="composer-tools" popover aria-labelledby="composer-tools-title">
+                <div class="composer__menu" id="composer-tools" popover role="group" aria-labelledby="composer-tools-title">
                   <p class="composer__menu-title" id="composer-tools-title">Інструменти</p>
                   <button class="composer__menu-item" type="button" data-act="tool" data-tool="breathe" aria-haspopup="dialog">
                     <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="2.75" /><circle cx="10" cy="10" r="6.5" /></svg>
