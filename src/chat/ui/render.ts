@@ -72,7 +72,7 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky,
   const chat = chatScreen(dispatch, () => presence.pulse(), () => presence.listen(), say)
   const consent = consentScreen()
   const review = reviewScreen(dispatch)
-  const journal = journalScreen(dispatch)
+  const journal = journalScreen(dispatch, say)
   const screens: Record<State['s'], Screen> = {
     booting: staticScreen,
     'signed-out': signInScreen(),

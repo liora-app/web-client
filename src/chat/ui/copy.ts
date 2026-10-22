@@ -392,6 +392,9 @@ export const SAY_SAVED = 'Збережено в щоденник'
 export const SAY_INSERTED = 'Додано в поле повідомлення'
 /** The same words pressed again: they end the field already and are not put twice. */
 export const SAY_ALREADY = 'Ці слова вже є в полі повідомлення'
+/** Another week of the diary, once it is in: its range (or «Цей тиждень») and its count —
+ *  «12–18 жовтня. 2 збережені записи», «Цей тиждень. Збережених записів немає.» */
+export const sayWeek = (title: string, count: string): string => `${title}. ${count}`
 
 // ── Copying (§3.8) ───────────────────────────────────────────────────────────────────────────
 

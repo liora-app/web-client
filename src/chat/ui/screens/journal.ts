@@ -30,6 +30,7 @@ import {
   entryMeta,
   journalNothing,
   requestIdLine,
+  sayWeek,
   weekCount,
   weekRange,
   weekThemes,
@@ -42,7 +43,7 @@ const SEARCH_DEBOUNCE_MS = 300
 
 export type JournalScreen = Screen & Readonly<{ act(name: string, target: HTMLElement): boolean }>
 
-export function journalScreen(dispatch: (action: Action) => void): JournalScreen {
+export function journalScreen(dispatch: (action: Action) => void, say: (text: string) => void = () => {}): JournalScreen {
   const root = screenOf('journal')
   const el = <T extends HTMLElement = HTMLElement>(name: string): T => byEl<T>(name, root)
   const list = el('journal-list')
@@ -57,6 +58,8 @@ export function journalScreen(dispatch: (action: Action) => void): JournalScreen
   let focusNext: string | null = null
   /** The record each row shows: a new object (a PATCH, a reload) is written again. Never in data-*. */
   const shown = new WeakMap<HTMLLIElement, SummaryOut>()
+  /** The Monday of the week last shown loaded; null until the first one on this visit. */
+  let weekSaid: string | null = null
 
   const current = (): JournalState | null => (last !== null && last.state.s === 'journal' ? last.state : null)
 
@@ -114,6 +117,14 @@ export function journalScreen(dispatch: (action: Action) => void): JournalScreen
     // title.
     const loaded = review !== null && review.week_start === start
     setText(el('week-count'), loaded ? weekCount(review.sessions) : '')
+    // «Попередній / Наступний тиждень» keep the focus while the title and the count change beside
+    // them, unannounced: once the other week is in, the live region says its range and count (WCAG
+    // 4.1.3). Not the first week of a visit (the page opening says it), and not the same week asked
+    // again after an edit or a delete. The themes stay on the page: the person's own words.
+    if (loaded) {
+      if (weekSaid !== null && review.week_start !== weekSaid) say(sayWeek(title, weekCount(review.sessions)))
+      weekSaid = review.week_start
+    }
     const words = loaded ? weekThemes(review.top_tags.map((t) => t.name)) : ''
     setText(el('week-themes'), words)
     show(el('week-themes'), words !== '')
@@ -366,6 +377,7 @@ export function journalScreen(dispatch: (action: Action) => void): JournalScreen
         search.value = state.q
         editing = null
         shownIssues = null
+        weekSaid = null
       }
       setText(el('journal-back-label'), state.back !== null ? JOURNAL_BACK : JOURNAL_NEW)
       setAttr(root.querySelector<HTMLElement>('[data-act="journal-back"]')!, 'aria-disabled', journalBusy(state) ? 'true' : null)
@@ -419,6 +431,7 @@ export function journalScreen(dispatch: (action: Action) => void): JournalScreen
       window.clearTimeout(searchTimer)
       last = null
       editing = null
+      weekSaid = null
       list.replaceChildren()
       themes.replaceChildren()
       themeKey = ''
