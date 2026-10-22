@@ -5371,6 +5371,32 @@ test.describe('what the final review found', () => {
     expect(svg.headers()['content-type']).toContain('image/svg+xml')
   })
 
+  test('#116b in forced colours the search fields’ «×» keeps the system’s text colour (the mask over Canvas was gone)', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'one engine is enough')
+    await page.emulateMedia({ forcedColors: 'active' })
+    await openChat(page)
+    // A pseudo-element of a search field has no computed style to read: the rules that apply to it
+    // under forced colours, hovered or not, are read from the sheet.
+    const rules = await page.evaluate(() => {
+      const found: { selector: string; adjust: string; color: string }[] = []
+      const walk = (list: CSSRuleList, forced: boolean): void => {
+        for (const r of Array.from(list)) {
+          if (r instanceof CSSMediaRule) walk(r.cssRules, forced || (r.conditionText.includes('forced-colors') && matchMedia(r.conditionText).matches))
+          else if (r instanceof CSSStyleRule && forced && r.selectorText.includes('::-webkit-search-cancel-button')) {
+            found.push({ selector: r.selectorText, adjust: r.style.getPropertyValue('forced-color-adjust'), color: r.style.getPropertyValue('background-color') })
+          }
+        }
+      }
+      for (const sheet of Array.from(document.styleSheets)) walk(sheet.cssRules, false)
+      return found
+    })
+    expect(rules.length, 'a forced-colours rule for the «×»').toBeGreaterThan(0)
+    const selectors = rules.flatMap((r) => r.selector.split(',').map((s) => s.trim()))
+    expect(selectors.some((s) => s.endsWith('::-webkit-search-cancel-button'))).toBe(true)
+    expect(selectors.some((s) => s.endsWith('::-webkit-search-cancel-button:hover'))).toBe(true)
+    for (const r of rules) expect(r).toMatchObject({ adjust: 'none', color: expect.stringMatching(/^canvastext$/i) })
+  })
+
   test('#117 «Якщо важко» on a wide screen stands under the header and scrolls inside itself: the pill that opened it stays in view', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'the centred dialog of the wide layout')
     await openChat(page)
@@ -5703,6 +5729,95 @@ test.describe('what the accessibility review found', () => {
       await page.keyboard.press('Escape')
       await expect(confirm).toBeHidden()
     }
+  })
+})
+
+test.describe('what the theme and motion review found', () => {
+  test('#128 an engine without light-dark() shows only the dark theme: the WebGL light hears «dark» too, whatever the system says', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'one engine is enough')
+    // Safari < 17.5, Chrome < 123: CSS.supports() knows no light-dark(), and the CSS falls back to the
+    // dark theme (tokens.css). This Chromium knows it, so the page's scripts are told it does not.
+    await page.addInitScript(() => {
+      const supports = CSS.supports.bind(CSS) as (...args: string[]) => boolean
+      CSS.supports = ((...args: string[]) => (args.some((a) => String(a).includes('light-dark(')) ? false : supports(...args))) as typeof CSS.supports
+      const heard: string[] = []
+      ;(window as unknown as { __themes: string[] }).__themes = heard
+      window.addEventListener('liora:theme', (event) => heard.push(String((event as CustomEvent).detail)))
+    })
+    const heard = (): Promise<string[]> => page.evaluate(() => (window as unknown as { __themes: string[] }).__themes)
+    await openChat(page)
+    // Only the dark theme exists here: no «Вигляд».
+    await expect(page.locator('[data-theme-toggle]')).toBeHidden()
+    // The system turns light, dark, light. What the scene and the orb are told (scene.ts and
+    // presence.ts take their palette from this event and from resolvedTheme()) stays the dark the CSS
+    // shows — it was the day palette on the night.
+    let n = 0
+    for (const scheme of ['light', 'dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme: scheme })
+      n += 1
+      await expect.poll(async () => (await heard()).length).toBe(n)
+    }
+    expect(await heard()).toEqual(['dark', 'dark', 'dark'])
+  })
+
+  test('#130 «Увімкнути анімацію» stored and the system reducing motion: the JS stays still as the CSS does — no cross-fade, no glide, no smooth scroll', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'one engine is enough')
+    // What the page's scripts ask to move: a View Transition, Element.animate() on the transcript,
+    // the behaviour of the send anchor's scroll.
+    await page.addInitScript(() => {
+      const moves: string[] = []
+      ;(window as unknown as { __moves: string[] }).__moves = moves
+      const start = document.startViewTransition?.bind(document)
+      if (start) {
+        document.startViewTransition = ((update?: () => void) => {
+          moves.push('view-transition')
+          return start(update)
+        }) as typeof document.startViewTransition
+      }
+      const animate = Element.prototype.animate
+      Element.prototype.animate = function (this: Element, ...args: Parameters<Element['animate']>) {
+        moves.push(`animate ${this.getAttribute('data-el') ?? this.tagName.toLowerCase()}`)
+        return animate.apply(this, args)
+      }
+      const scrollIntoView = Element.prototype.scrollIntoView
+      Element.prototype.scrollIntoView = function (this: Element, arg?: boolean | ScrollIntoViewOptions) {
+        if (typeof arg === 'object' && arg.behavior) moves.push(`scroll ${arg.behavior}`)
+        return scrollIntoView.call(this, arg)
+      }
+    })
+    const moves = (): Promise<string[]> => page.evaluate(() => (window as unknown as { __moves: string[] }).__moves)
+    const choose = async (name: string): Promise<void> => {
+      await themeToggle(page).click()
+      await themeItem(page, name).click()
+      await expect(themeMenu(page)).toBeHidden()
+    }
+
+    // With motion, all three move: the control the rest of the test is measured against.
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await openChat(page)
+    await expect(html(page)).toHaveAttribute('data-motion', 'on')
+    await choose('Світла')
+    await expect(html(page)).toHaveAttribute('data-theme', 'light')
+    await exchange(page)
+    expect(await moves()).toEqual(expect.arrayContaining(['view-transition', 'animate talk', 'scroll smooth']))
+
+    // The system reduces motion; the visitor presses «Увімкнути анімацію» (liora:motion = on).
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await expect(html(page)).toHaveAttribute('data-motion', 'off')
+    await page.locator('[data-motion-toggle]').click()
+    await expect(html(page)).toHaveAttribute('data-motion', 'on')
+    expect(await page.evaluate(() => localStorage.getItem('liora:motion'))).toBe('on')
+    await page.reload()
+    await onScreen(page, 'chat')
+    await expect(html(page)).toHaveAttribute('data-motion', 'on')
+    // The CSS stands still under reduce whatever data-motion says (base.css); so does the JS now.
+    await choose('Темна')
+    await expect(html(page)).toHaveAttribute('data-theme', 'dark')
+    await expect(html(page)).toHaveCSS('background-color', LAMP)
+    await exchange(page)
+    const still = await moves()
+    expect(still.filter((m) => m === 'view-transition' || m === 'animate talk' || m === 'scroll smooth')).toEqual([])
+    expect(still).toContain('scroll instant')
   })
 })
 
