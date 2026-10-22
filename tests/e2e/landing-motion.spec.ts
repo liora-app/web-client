@@ -240,17 +240,30 @@ test.describe('where the scroll comes to rest, what is on screen is shown', () =
   })
 })
 
-test.describe('motion', () => {
-  test('the hero comes in once: within 600 ms, the headline by opacity alone, the rest rising 8 px', async ({ page }) => {
-    // What the cascade is at the moment src/ui/intro.ts switches it on (before any frame of it).
-    await page.addInitScript(() => {
-      const seen: Record<string, unknown> = {}
-      ;(window as unknown as { __intro: Record<string, unknown> }).__intro = seen
+/** The hero's three parts the moment html.js-intro goes on (before any frame of the cascade). */
+type IntroPart = { selector: string; count: number; end: number; properties: string[]; opacity: string; transform: string }
+/** How often src/ui/intro.ts asked for the paint entries, and the cascade if the class ever went on. */
+type IntroSeen = { asked: number; parts?: IntroPart[] }
+const HERO = ['.hero__title', '.hero__aside', '.hero__links']
+
+/** src/ui/intro.ts plays the cascade only over a page the browser has not painted yet. Whether the
+ *  first paint lands before the module runs is a race the machine decides, so the test answers the
+ *  module's question itself: `painted` is what performance.getEntriesByType('paint') returns (nothing,
+ *  or one first-paint). Each branch then either does what it must or fails; neither is skipped. */
+async function watchIntro(page: Page, painted: boolean): Promise<void> {
+  await page.addInitScript(
+    ([alreadyPainted, hero]) => {
+      const seen: IntroSeen = { asked: 0 }
+      ;(window as unknown as { __intro: IntroSeen }).__intro = seen
+      const entries = performance.getEntriesByType.bind(performance)
+      performance.getEntriesByType = ((type: string) => {
+        if (type !== 'paint') return entries(type)
+        seen.asked += 1
+        return alreadyPainted ? [{ name: 'first-paint', entryType: 'paint', startTime: 1, duration: 0, toJSON: () => ({}) }] : []
+      }) as typeof performance.getEntriesByType
       new MutationObserver(() => {
-        const root = document.documentElement
-        if (!root.classList.contains('js-intro') || seen.parts) return
-        seen.paintedBefore = performance.getEntriesByType('paint').length
-        seen.parts = ['.hero__title', '.hero__aside', '.hero__links'].map((selector) => {
+        if (!document.documentElement.classList.contains('js-intro') || seen.parts) return
+        seen.parts = hero.map((selector) => {
           const element = document.querySelector(selector)!
           const animations = element.getAnimations()
           const style = getComputedStyle(element)
@@ -266,13 +279,22 @@ test.describe('motion', () => {
           }
         })
       }).observe(document, { subtree: true, attributes: true, attributeFilter: ['class'] })
-    })
+    },
+    [painted, HERO] as const,
+  )
+}
+
+const introSeen = (page: Page): Promise<IntroSeen> => page.evaluate(() => (window as unknown as { __intro: IntroSeen }).__intro)
+
+test.describe('motion', () => {
+  test('the hero comes in once: within 600 ms, the headline by opacity alone, the rest rising 8 px', async ({ page }) => {
+    await watchIntro(page, false)
     await page.goto('/')
     await settled(page)
-    const intro = await page.evaluate(() => (window as unknown as { __intro: { paintedBefore?: number; parts?: { selector: string; count: number; end: number; properties: string[]; opacity: string; transform: string }[] } }).__intro)
-    // The cascade only plays over a page not painted yet; a page already on screen keeps its text.
-    test.skip(!intro.parts, 'the page was painted before the module ran: no cascade, by design')
-    expect(intro.paintedBefore).toBe(0)
+    await expect(page.locator('html')).toHaveAttribute('data-motion', 'on')
+    const intro = await introSeen(page)
+    expect(intro.asked, 'src/ui/intro.ts asks whether the page was painted').toBeGreaterThan(0)
+    expect(intro.parts, 'nothing painted yet, motion on: the cascade must start').toBeDefined()
     const [title, aside, links] = intro.parts!
     expect(title).toMatchObject({ count: 1, properties: ['opacity'], opacity: '0', transform: 'none' })
     for (const part of [aside, links]) expect(part).toMatchObject({ count: 1, properties: ['opacity', 'transform'], opacity: '0', transform: 'matrix(1, 0, 0, 1, 0, 8)' })
@@ -281,7 +303,19 @@ test.describe('motion', () => {
     // Over in under 700 ms, and the class goes with it.
     await expect(page.locator('html')).not.toHaveClass(/js-intro/, { timeout: 1_500 })
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
-    expect(await notAtRest(page, ['.hero__title', '.hero__aside', '.hero__links'])).toEqual([])
+    expect(await notAtRest(page, HERO)).toEqual([])
+  })
+
+  test('a hero the browser has already painted stays as it is: no cascade over text already seen', async ({ page }) => {
+    await watchIntro(page, true)
+    await page.goto('/')
+    await settled(page)
+    await expect(page.locator('html')).toHaveAttribute('data-motion', 'on')
+    const intro = await introSeen(page)
+    expect(intro.asked, 'src/ui/intro.ts asks whether the page was painted').toBeGreaterThan(0)
+    expect(intro.parts, 'html.js-intro never goes on').toBeUndefined()
+    expect(await page.locator(HERO.join(', ')).evaluateAll((all) => all.flatMap((element) => element.getAnimations()).length)).toBe(0)
+    expect(await notAtRest(page, HERO)).toEqual([])
   })
 
   test('steps, privacy rows and FAQ answers come in once: 280 ms, 8 px, decelerate', async ({ page }) => {
