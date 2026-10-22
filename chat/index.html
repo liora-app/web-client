@@ -925,12 +925,13 @@
         <h2 class="sheet__title" id="mood-title" data-el="mood-title">Як ви зараз?</h2>
         <p id="mood-hint">Оберіть, що ближче.</p>
         <!-- Energy × pleasantness: the top row has more energy, the right column is pleasant. Each cell
-             says it in words, not by colour alone. -->
-        <div class="mood__grid" role="group" aria-labelledby="mood-title" aria-describedby="mood-hint">
-          <button class="mood__cell" type="button" aria-pressed="false" data-act="mood-quadrant" data-quadrant="high-unpleasant" data-focus>Багато сил, неприємно</button>
-          <button class="mood__cell" type="button" aria-pressed="false" data-act="mood-quadrant" data-quadrant="high-pleasant">Багато сил, приємно</button>
-          <button class="mood__cell" type="button" aria-pressed="false" data-act="mood-quadrant" data-quadrant="low-unpleasant">Мало сил, неприємно</button>
-          <button class="mood__cell" type="button" aria-pressed="false" data-act="mood-quadrant" data-quadrant="low-pleasant">Мало сил, приємно</button>
+             says it in words, not by colour alone. One of four: a radio group (APG) — one stop in the Tab
+             order, the arrows move and choose, a second press keeps the choice. -->
+        <div class="mood__grid" role="radiogroup" aria-labelledby="mood-title" aria-describedby="mood-hint">
+          <button class="mood__cell" type="button" role="radio" aria-checked="false" tabindex="0" data-act="mood-quadrant" data-quadrant="high-unpleasant" data-focus>Багато сил, неприємно</button>
+          <button class="mood__cell" type="button" role="radio" aria-checked="false" tabindex="-1" data-act="mood-quadrant" data-quadrant="high-pleasant">Багато сил, приємно</button>
+          <button class="mood__cell" type="button" role="radio" aria-checked="false" tabindex="-1" data-act="mood-quadrant" data-quadrant="low-unpleasant">Мало сил, неприємно</button>
+          <button class="mood__cell" type="button" role="radio" aria-checked="false" tabindex="-1" data-act="mood-quadrant" data-quadrant="low-pleasant">Мало сил, приємно</button>
         </div>
         <!-- The words of each cell come from the core's dictionary (src/chat/core/selfhelp.ts), put here
              once when the page starts. -->

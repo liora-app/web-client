@@ -175,10 +175,11 @@ export function createTools(dispatch: (action: Action) => void, composer: () => 
   const cells = Array.from(mood.querySelectorAll<HTMLElement>('[data-quadrant]'))
   const words = m('mood-words')
   // The chips, once, from the core's dictionary: a word the page shows is a word the state takes.
+  // One word of the cell's six: a radio group, like the cells (APG «Radio Group»).
   for (const quadrant of MOOD_QUADRANTS) {
     const group = document.createElement('div')
     group.className = 'mood__group'
-    group.setAttribute('role', 'group')
+    group.setAttribute('role', 'radiogroup')
     group.dataset.group = quadrant
     const label = cells.find((cell) => cell.dataset.quadrant === quadrant)?.textContent?.trim() ?? ''
     group.setAttribute('aria-label', label)
@@ -189,7 +190,9 @@ export function createTools(dispatch: (action: Action) => void, composer: () => 
       chip.className = 'mood__word'
       chip.dataset.act = 'mood-word'
       chip.dataset.word = word
-      chip.setAttribute('aria-pressed', 'false')
+      chip.setAttribute('role', 'radio')
+      chip.setAttribute('aria-checked', 'false')
+      chip.tabIndex = -1
       chip.textContent = word
       group.append(chip)
     }
@@ -206,16 +209,56 @@ export function createTools(dispatch: (action: Action) => void, composer: () => 
     return field.isConnected && !field.hidden
   }
 
+  /** A radio group's state: aria-checked on the chosen one, and one Tab stop — the chosen one, else
+   *  the first (roving tabindex). */
+  const rove = (items: readonly HTMLElement[], chosen: (item: HTMLElement) => boolean): void => {
+    const stop = Math.max(0, items.findIndex(chosen))
+    items.forEach((item, i) => {
+      setAttr(item, 'aria-checked', String(chosen(item)))
+      setAttr(item, 'tabindex', i === stop ? '0' : '-1')
+    })
+  }
+
   const moodRender = (): void => {
     setText(m('mood-title'), MOOD_TITLE[when])
-    for (const cell of cells) setAttr(cell, 'aria-pressed', String(cell.dataset.quadrant === quadrant))
+    rove(cells, (cell) => cell.dataset.quadrant === quadrant)
     for (const group of Array.from(words.querySelectorAll<HTMLElement>('.mood__group'))) {
       show(group, group.dataset.group === quadrant)
-      for (const chip of Array.from(group.querySelectorAll<HTMLElement>('.mood__word'))) setAttr(chip, 'aria-pressed', String(chip.dataset.word === word))
+      rove(Array.from(group.querySelectorAll<HTMLElement>('.mood__word')), (chip) => chip.dataset.word === word)
     }
     show(m('mood-actions'), word !== null)
     show(m('mood-add'), word !== null && canAdd(last))
   }
+
+  /** A cell: another one takes the choice and lets the word go; the chosen one again keeps both
+   *  (a radio is not a toggle). */
+  const chooseQuadrant = (next: string | undefined): void => {
+    if (next === undefined || !(MOOD_QUADRANTS as readonly string[]).includes(next)) return
+    if (next !== quadrant) word = null
+    quadrant = next as MoodQuadrant
+    moodRender()
+  }
+
+  const chooseWord = (next: string | undefined): void => {
+    if (next !== undefined && isMoodWord(next)) word = next
+    moodRender()
+  }
+
+  // The arrows of a radio group (APG): the next one (→ ↓) or the one before (← ↑), round the ends,
+  // takes the focus and the choice. Tab leaves the group from its one stop.
+  mood.addEventListener('keydown', (event) => {
+    const step = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0
+    if (step === 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+    const item = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('[role="radio"]') : null
+    const group = item?.closest<HTMLElement>('[role="radiogroup"]')
+    if (!item || !group) return
+    event.preventDefault()
+    const items = Array.from(group.querySelectorAll<HTMLElement>('[role="radio"]'))
+    const next = items[(items.indexOf(item) + step + items.length) % items.length]!
+    if (next.dataset.act === 'mood-quadrant') chooseQuadrant(next.dataset.quadrant)
+    else chooseWord(next.dataset.word)
+    next.focus()
+  })
 
   // ── open, close, sync ──
 
@@ -329,20 +372,12 @@ export function createTools(dispatch: (action: Action) => void, composer: () => 
           groundGo(0)
           g('ground-next').focus()
           return true
-        case 'mood-quadrant': {
-          const next = target.dataset.quadrant as MoodQuadrant | undefined
-          if (next === undefined || !(MOOD_QUADRANTS as readonly string[]).includes(next)) return true
-          if (next !== quadrant) word = null
-          quadrant = next
-          moodRender()
+        case 'mood-quadrant':
+          chooseQuadrant(target.dataset.quadrant)
           return true
-        }
-        case 'mood-word': {
-          const next = target.dataset.word ?? ''
-          if (isMoodWord(next)) word = next
-          moodRender()
+        case 'mood-word':
+          chooseWord(target.dataset.word)
           return true
-        }
         case 'mood-done':
         case 'mood-add': {
           if (word === null) return true

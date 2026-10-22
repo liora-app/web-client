@@ -4186,7 +4186,7 @@ html[data-motion='on'] :is(.confirm, .sheet--side, .sheet--pick)[open]::backdrop
   color: var(--color-text);
 }
 
-.mood__cell[aria-pressed='true'] {
+.mood__cell[aria-checked='true'] {
   border-color: var(--color-accent);
   background: var(--color-accent-tint-strong);
   box-shadow: inset 0 0 0 1px var(--color-accent);
@@ -4222,7 +4222,7 @@ html[data-motion='on'] :is(.confirm, .sheet--side, .sheet--pick)[open]::backdrop
   color: var(--color-text);
 }
 
-.mood__word[aria-pressed='true'] {
+.mood__word[aria-checked='true'] {
   border-color: var(--color-accent);
   background: var(--color-accent);
   color: var(--color-on-accent);
@@ -4334,8 +4334,8 @@ html:has(dialog[open]:is(.sheet--shelter, .sheet--tool[data-shelter])) {
   }
 
   /* The chosen cell and word of «Як ви зараз?» (spec §3.13). */
-  .mood__cell[aria-pressed='true'],
-  .mood__word[aria-pressed='true'] {
+  .mood__cell[aria-checked='true'],
+  .mood__word[aria-checked='true'] {
     outline: 2px solid Highlight;
   }
 
