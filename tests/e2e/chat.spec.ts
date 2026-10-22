@@ -102,7 +102,7 @@ import {
   userMessages,
   weekly,
 } from './chat-fixtures'
-import { cutOffAtEdges } from './helpers'
+import { animationsDone, cutOffAtEdges } from './helpers'
 
 type Msg = { role: string; content: string }
 type TurnBody = { scenario: string; messages: Msg[]; revisit_summary_ids?: string[] }
@@ -2939,16 +2939,8 @@ const themeItem = (page: Page, name: string): Locator => themeMenu(page).getByRo
 const storedTheme = (page: Page): Promise<string | null> => page.evaluate(() => localStorage.getItem('liora:theme'))
 /** Every finite animation and transition is over (a theme cross-fade, a menu's entrance): axe
  *  measures the colours the page settles on, not a frame in between. The endless ones (the haze's
- *  drift, the light's breath) never finish and are left alone. */
-const settled = (page: Page): Promise<unknown> =>
-  page.evaluate(() =>
-    Promise.all(
-      document
-        .getAnimations()
-        .filter((a) => Number.isFinite(Number(a.effect?.getComputedTiming().endTime)))
-        .map((a) => a.finished.catch(() => null)),
-    ),
-  )
+ *  drift, the light's breath) never finish and are left alone (helpers.ts, animationsDone). */
+const settled = (page: Page): Promise<void> => animationsDone(page)
 
 test.describe('theme', () => {
   test('#54 «Вигляд» in the header: the menu switches the theme; after a reload it is on <html> by DOMContentLoaded; «Як у системі» removes the key', async ({ page }) => {
@@ -3096,7 +3088,9 @@ test.describe('theme: a light system', () => {
     await axe(page, 'light: #composer-tip open')
   })
 
-  test('#55 axe in the light theme the system chose: signed-out, consent, a conversation, the menu, the sheets, the crisis', async ({ page, api }) => {
+  // #55 was one test of eleven axe passes: on a CI runner it ran out of its 30 s on the last screen.
+  // Split at «Акаунт», each half with its own setup; together they check the same screens.
+  test('#55 axe in the light theme the system chose: signed-out, consent, a conversation, the «Вигляд» menu', async ({ page, api }) => {
     api.on('GET /me', fail(401, 'unauthenticated'))
     await openChat(page, '/chat/', 'signed-out')
     // No choice stored: the CSS follows the system.
@@ -3112,7 +3106,7 @@ test.describe('theme: a light system', () => {
     await axe(page, 'light: consent')
 
     api.on('GET /consents', { json: CONSENTS_OK })
-    api.on('POST /chat/turn', { sse: reply() }, { sse: reply() }, { sse: meta() + crisis('keyword') })
+    api.on('POST /chat/turn', { sse: reply() }, { sse: reply() })
     await openChat(page)
     await settled(page)
     await axe(page, 'light: a new conversation')
@@ -3126,6 +3120,16 @@ test.describe('theme: a light system', () => {
     await settled(page)
     await axe(page, 'light: the open «Вигляд» menu')
     await page.keyboard.press('Escape')
+    await expect(themeMenu(page)).toBeHidden()
+  })
+
+  test('#55c axe in the light theme the system chose: the account sheet over the evening and morning skies, «Якщо важко», the crisis', async ({ page, api }) => {
+    api.on('POST /chat/turn', { sse: reply() }, { sse: reply() }, { sse: meta() + crisis('keyword') })
+    await openChat(page)
+    // No choice stored: the CSS follows the system.
+    await expect(html(page)).not.toHaveAttribute('data-theme')
+    await exchange(page)
+    await exchange(page, 'Друге синтетичне повідомлення.')
 
     await accountToggle(page).click()
     await expect(accountSheet(page)).toBeVisible()
@@ -4315,9 +4319,11 @@ test.describe('tools', () => {
         return out
       })
     const same = async (dialog: Locator, label: string): Promise<void> => {
-      // No hover and no colour still easing: the pointer leaves, the transitions end.
+      // No hover and no colour still easing: the pointer leaves, the transitions end. The breathing
+      // circle's scale is retargeted every step (its transition is cancelled then — AbortError on a
+      // slow runner) and moves no colour: not waited for.
       await page.mouse.move(1, 1)
-      await dialog.evaluate((node) => Promise.all(node.getAnimations({ subtree: true }).map((a) => a.finished)))
+      await animationsDone(dialog, { except: '.breathe__circle' })
       // The page under it says which theme is on: its text is --color-text of that theme.
       await page.emulateMedia({ colorScheme: 'dark' })
       await expect(page.locator('body')).toHaveCSS('color', 'rgb(236, 241, 237)')
@@ -4410,10 +4416,11 @@ test.describe('tools', () => {
     expect(api.count('POST /chat/turn')).toBe(0)
   })
 
-  test('#83 axe on every tool in both themes: breathing ready and running, grounding, the check-in with a word, the shelter and breathing over it, «Якщо важко» with its tools', async ({ page }) => {
-    await openChat(page)
-    for (const scheme of ['dark', 'light'] as const) {
+  // One test per theme: both in one ran past 30 s on a CI runner (twelve axe passes).
+  for (const scheme of ['dark', 'light'] as const) {
+    test(`#83 axe on every tool, ${scheme}: breathing ready and running, grounding, the check-in with a word, the shelter and breathing over it, «Якщо важко» with its tools`, async ({ page }) => {
       await page.emulateMedia({ colorScheme: scheme })
+      await openChat(page)
       await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
       await openTool(page, 'Подихати хвилину')
       await axe(page, `${scheme}: breathing, ready`)
@@ -4440,8 +4447,8 @@ test.describe('tools', () => {
       await expect(page.locator('[data-el="help-tools"]')).toBeVisible()
       await axe(page, `${scheme}: «Якщо важко» with the tools`)
       await page.keyboard.press('Escape')
-    }
-  })
+    })
+  }
 
   test('#84 axe in both themes: the kit on the signed-out screen, the check-in chip, «А зараз?» on the theses', async ({ page, api }) => {
     api.on('GET /me', fail(401, 'unauthenticated'), { json: ME })
@@ -4509,9 +4516,11 @@ test.describe('tools', () => {
 
   test('#86 ★ the tools hold still under the pointer: «Далі» in one place on every step and two presses go two steps on; the check-in and breathing keep their head where they opened', async ({ page }) => {
     await openChat(page)
-    /** Where a control is once the dialog's entrance (a fade and a short rise) is over. */
+    /** Where a control is once the dialog's entrance (a fade and a short rise) is over. The breathing
+     *  circle's scale (retargeted every step, so cancelled — AbortError on a slow runner) moves no
+     *  control: not waited for. */
     const at = async (dialog: Locator, control: Locator, edge: 'left' | 'right' = 'left'): Promise<{ x: number; y: number }> => {
-      await dialog.evaluate((node) => Promise.all(node.getAnimations({ subtree: true }).map((a) => a.finished)))
+      await animationsDone(dialog, { except: '.breathe__circle' })
       const box = (await control.boundingBox())!
       return { x: Math.round(edge === 'left' ? box.x : box.x + box.width), y: Math.round(box.y) }
     }
@@ -4898,6 +4907,11 @@ async function halfFaded(page: Page): Promise<string[]> {
  *  control drawn with a border under 3:1 must be named by visible words or an icon ≥ 3:1. Fields
  *  never count as identified by their words: their border is their shape. */
 async function borderOnlyControls(page: Page): Promise<string[]> {
+  // The colours the controls rest on. A confirm just closed leaves the root easing back from the
+  // scrim's colour (html[data-gutter]: a headless Chromium keeps its classic scrollbar, CI's too);
+  // under reduced motion that is a 0.01 ms transition, yet it waits for a frame, and a CI runner
+  // read the theses before it had one: the fields' border on --color-bg-under-scrim, 2.44.
+  await animationsDone(page)
   return page.evaluate(() => {
     const parse = (c: string): number[] | null => {
       const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(c)
@@ -5188,6 +5202,9 @@ test.describe('what the review of phase C3 found', () => {
     await page.clock.install()
     await openChat(page)
     await exchange(page, USER)
+    // The screen (280 ms) and the messages (220 ms) rise in by a few px: a box read in the middle of
+    // that is off by what is left of the rise (|Δ| 1.92 on a CI runner, up to 2.0 here).
+    await animationsDone(page)
     await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' }))
     // The «↓» pill looks again a frame after the scroll.
     await expect.poll(async () => (await pageEnd(page)).pill).toBe(false)
@@ -5196,6 +5213,7 @@ test.describe('what the review of phase C3 found', () => {
     const focused = await page.evaluate(() => document.activeElement?.id ?? '')
     await page.clock.fastForward('40:00')
     await expect(pauseText(page)).not.toHaveText('')
+    await animationsDone(page)
     const after = await pageEnd(page)
     // The field grew by the line; the end is still above it, the gap it had kept, no «↓» pill.
     expect(after.field).toBeLessThan(before.field - 20)
