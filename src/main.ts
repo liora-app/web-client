@@ -18,6 +18,7 @@ import { initReveal } from './ui/reveal'
 import { initSound } from './ui/sound'
 import { initSteps } from './ui/steps'
 import { initThemePicker } from './ui/theme-picker'
+import { initTips } from './ui/tips'
 
 // A sign-in error that came back to "/" belongs to the chat (ADR-007): without the flow cookie the
 // server does not know `next` yet and sends the person here. Only known codes travel on (the same
@@ -34,6 +35,7 @@ if (authError !== null) {
   initThemePicker({ root: document.querySelector<HTMLElement>('[data-theme-pick]'), radios: null })
   initHeroLight()
   initMotionToggle(document.querySelector<HTMLButtonElement>('[data-motion-toggle]'))
+  initTips()
   // Right after the motion choice is on <html>: the hero's cascade starts in the same frame, or not at all.
   initIntro()
   initNav()

@@ -317,7 +317,10 @@ html[data-sound='on'][data-motion='on'] .sound-toggle__wave span:nth-child(4) {
   }
 }
 
-/* A small label under the icon on hover and keyboard focus. The accessible name is aria-label. */
+/* A small label under the icon on hover and keyboard focus. The accessible name is aria-label.
+   WCAG 1.4.13 (src/ui/tips.ts): Esc hides it (data-tip="off") until the pointer and the focus have
+   left; while it is shown on a device that hovers, it takes the pointer (below), so the pointer can
+   move onto it. Hidden, it takes no tap or click. */
 .media__button::after {
   position: absolute;
   top: calc(100% + 0.6rem);
@@ -351,8 +354,7 @@ html[data-sound='on'][data-motion='on'] .sound-toggle__wave span:nth-child(4) {
   content: 'Вимкнути звук';
 }
 
-.media__button:hover::after,
-.media__button:focus-visible::after {
+.media__button:is(:hover, :focus-visible):not([data-tip='off'])::after {
   opacity: 1;
 }
 
@@ -436,8 +438,29 @@ html[data-sound='on'][data-motion='on'] .sound-toggle__wave span:nth-child(4) {
   transition: opacity var(--dur-fast) ease;
 }
 
-.theme-toggle:is(:hover, :focus-visible):not([aria-expanded='true'])::after {
+.theme-toggle:is(:hover, :focus-visible):not([aria-expanded='true'], [data-tip='off'])::after {
   opacity: 1;
+}
+
+/* Hoverable (WCAG 1.4.13): a label shown under the pointer takes the pointer, and so does the
+   0.6rem between it and the button — crossing that gap the pointer stays on the button and the label
+   stays. Only where the pointer hovers: a tap's lingering :hover on a phone must not leave a box
+   that catches the next tap meant for the page under it. Never while the menu is open. */
+@media (hover: hover) {
+  .media__button:hover:not([data-tip='off'])::after,
+  .theme-toggle:hover:not([aria-expanded='true'], [data-tip='off'])::after {
+    pointer-events: auto;
+  }
+
+  .media__button:hover:not([data-tip='off'])::before,
+  .theme-toggle:hover:not([aria-expanded='true'], [data-tip='off'])::before {
+    content: '';
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    height: 0.6rem;
+  }
 }
 
 .theme-menu {

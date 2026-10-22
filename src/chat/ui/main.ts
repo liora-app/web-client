@@ -16,6 +16,7 @@ import { initMotionToggle } from '../../ui/motion'
 import { initSky } from '../../ui/sky'
 import { initSound } from '../../ui/sound'
 import { initThemePicker } from '../../ui/theme-picker'
+import { initTips } from '../../ui/tips'
 import { createApi } from '../core/api'
 import { maskPausedLine } from '../core/helplines'
 import { MAX_MARKS, draftOf, editUnsaved, leaveGuard, pendingOf, sessionOf, type Action, type Model } from '../core/state'
@@ -38,6 +39,7 @@ const theme = initThemePicker({
   radios: document.querySelector<HTMLElement>('[data-theme-radios]'),
 })
 initMotionToggle(document.querySelector<HTMLButtonElement>('[data-motion-toggle]'))
+initTips()
 // The page sets the chord and the silence itself (presence.ts): no chapters to follow here.
 const sound = initSound({ follow: 'manual' })
 initKeyboard()

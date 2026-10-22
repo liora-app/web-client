@@ -8,6 +8,7 @@
 // without light-dark(), where only the dark theme exists) the button stays hidden.
 
 import { initTheme, onThemeChange, setTheme, themeChoice, parseTheme, type ThemeChoice } from './theme'
+import { hideTip } from './tips'
 
 const LABEL: Readonly<Record<ThemeChoice, string>> = {
   system: 'як у системі',
@@ -120,7 +121,11 @@ export function initThemePicker(options: { root: HTMLElement | null; radios: HTM
         case 'Escape':
           event.preventDefault()
           event.stopPropagation()
-          return close(true)
+          close(true)
+          // The focus is back on the button from the keyboard: its label «Вигляд» would show at
+          // once, under the Esc that was pressed to put things away (WCAG 1.4.13, src/ui/tips.ts).
+          if (button) hideTip(button)
+          return
         case 'Tab':
           return close(false)
       }
