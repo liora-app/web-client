@@ -2993,6 +2993,42 @@ test.describe('state: the diary', () => {
     expect(names(run(taken.model, { type: 'diary/ok', diary: DIARY }).model)).toEqual(['s-9'])
   })
 
+  test('a late first page of the record picker changes nothing once the picker is closed: a chosen name stays, a deleted record stays gone', () => {
+    const names = (m: Model) => (m.ctx.diary.status === 'ok' ? m.ctx.diary.value.items.map((i) => i.id) : [])
+    // s-12 chosen from a search (it is not on the first page), then «Змінити» and Esc before the
+    // picker's first page came; the diary opens.
+    const far: SummaryOut = { ...SUMMARY, id: 's-12', title: 'Далекий запис' }
+    const picked = run(
+      booted(),
+      { type: 'chat/scenario', id: 'revisit' },
+      { type: 'revisit/open' },
+      { type: 'revisit/list-ok', purpose: 'pick', q: '', cursor: null, diary: DIARY },
+      { type: 'revisit/search', q: 'далеко' },
+      { type: 'revisit/list-ok', purpose: 'pick', q: 'далеко', cursor: null, diary: { items: [far], nextCursor: null } },
+      { type: 'revisit/toggle', id: 's-12' },
+      { type: 'revisit/confirm' },
+    ).model
+    expect(names(picked)).toEqual(['s-1', 's-2', 's-12'])
+    const reopened = run(picked, { type: 'revisit/open' })
+    expect(reopened.effects).toEqual([{ type: 'pick-list', purpose: 'pick', q: '', cursor: null }])
+    const opening = run(reopened.model, { type: 'overlay/close' }, { type: 'journal/open', tz: TZ })
+    const open = run(opening.model, { type: 'journal/list-ok', req: listFx(opening.effects).req, diary: DIARY })
+    const late: Action = { type: 'revisit/list-ok', purpose: 'pick', q: '', cursor: null, diary: DIARY }
+    const onDiary = run(open.model, late)
+    expect(names(onDiary.model)).toEqual(['s-1', 's-2', 's-12'])
+    const back = run(onDiary.model, { type: 'journal/back' }).model
+    expect(chatOf(back).session.revisitIds).toEqual(['s-12'])
+    expect(names(back)).toContain('s-12')
+    // Back in the conversation with the picker closed, the same late page changes nothing either.
+    expect(run(back, late).model).toBe(back)
+    // A record deleted in the diary meanwhile does not come back with the late page.
+    const deleted = run(open.model, { type: 'confirm/open', kind: 'delete-summary', summary: 's-2' }, { type: 'confirm/accept' }, { type: 'journal/delete-ok', id: 's-2' })
+    expect(names(deleted.model)).toEqual(['s-1', 's-12'])
+    expect(names(run(deleted.model, late).model)).toEqual(['s-1', 's-12'])
+    // A 404's first page that lands on the diary does not replace it either.
+    expect(run(open.model, { type: 'revisit/list-ok', purpose: 'pick-404', q: '', cursor: null, diary: { items: [], nextCursor: null } }).model.ctx).toBe(open.model.ctx)
+  })
+
   test('a failed refresh of the themes keeps the pills (a filter can still be taken off); a delete that empties the page’s diary asks it again', () => {
     const { model } = opened()
     const filtered = run(model, { type: 'journal/tag', id: 'tg-1' })

@@ -2079,8 +2079,13 @@ function step(model: Model, action: Action): Step {
     }
     case 'revisit/list-ok': {
       const firstPage = action.q === '' && action.cursor === null
+      // Only an answer someone still waits for: the picker open, or after a 404 the conversation
+      // still on the screen. A late page — the picker closed meanwhile, the diary opened, the
+      // theses — must not replace the page's diary: a record chosen from a search would lose its
+      // name, and one deleted in the diary since would come back (§7.7).
+      const awaited = state.s === 'chat' && (action.purpose === 'pick-404' || topPick(model) !== null)
       let next: Model = model
-      if (firstPage) {
+      if (firstPage && awaited) {
         // The first page is the page's diary now; the records chosen keep their names in it. Not after
         // a 404: one of them is gone, and the page shows the diary as the server has it.
         const top = topPick(model)
