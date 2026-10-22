@@ -80,7 +80,8 @@ test.describe('WebGL scene', () => {
       await centre(page, `[data-gl-state="${state}"]`)
       await expect.poll(async () => (await sceneStats(page)).state, { timeout: 6_000 }).toBeCloseTo(state, 0)
     }
-    expect(seen.size).toBe(8)
+    // ADR-013: the beads no longer carry states 1–3 (one row: their plateaus coincide); #how holds 1.
+    expect(seen.size).toBe(7)
   })
 
   test('the scene follows the text layout, not the screen shape', GPU, async ({ page }, testInfo) => {
@@ -211,7 +212,7 @@ test.describe('WebGL scene', () => {
 })
 
 test.describe('static backdrop', () => {
-  test('reduced motion keeps the scene off until the visitor asks for it', GPU, async ({ page, browserName, isMobile }) => {
+  test('reduced motion keeps the scene off until the visitor asks for it', GPU, async ({ page, browserName }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto('/')
     const html = page.locator('html')
@@ -220,8 +221,6 @@ test.describe('static backdrop', () => {
     const orb = page.locator('.hero__orb')
     await expect(orb).toBeVisible()
     await expect(orb).toHaveCSS('opacity', '1')
-    // The static page keeps the light form beside the diary (wide layout).
-    if (!isMobile) await expect(page.locator('.diary__sky')).toBeVisible()
     await page.waitForTimeout(1500)
     await expect(html).toHaveAttribute('data-gl', 'off')
 
@@ -233,26 +232,8 @@ test.describe('static backdrop', () => {
     }
   })
 
-  test('the static light follows data-gl: shown while loading or off, gone when on', async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: 'reduce' }) // the scene never starts, so the test owns data-gl
-    await page.goto('/')
-    const orb = page.locator('.hero__orb')
-    for (const [status, opacity] of [
-      ['loading', '1'],
-      ['off', '1'],
-      ['on', '0'],
-    ] as const) {
-      await page.evaluate((value) => (document.documentElement.dataset.gl = value), status)
-      await expect(orb).toHaveCSS('opacity', opacity)
-      await expect(page.locator('.mind__still')).toHaveCSS('visibility', status === 'on' ? 'hidden' : 'visible')
-      await expect(page.locator('.diary__sky')).toHaveCSS('opacity', opacity)
-      const drawing = await page.locator('.how__motion').evaluate(element => getComputedStyle(element).backgroundImage)
-      if (status === 'on') expect(drawing).toBe('none')
-      else expect(drawing).toContain('/conversation-still.png')
-      expect(await page.locator('.final__art').evaluate(element => getComputedStyle(element, '::before').visibility))
-        .toBe(status === 'on' ? 'hidden' : 'visible')
-    }
-  })
+  // «the static light follows data-gl» moved to landing.spec.ts (ADR-013): it needs no GPU, and there
+  // it runs locally too.
 
   test('forced colours (high contrast) get the plain page', async ({ page }) => {
     await page.emulateMedia({ forcedColors: 'active' })

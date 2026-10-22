@@ -16,7 +16,6 @@ import { initMotionToggle } from './ui/motion'
 import { initNav } from './ui/nav'
 import { initReveal } from './ui/reveal'
 import { initSound } from './ui/sound'
-import { initSteps } from './ui/steps'
 import { initThemePicker } from './ui/theme-picker'
 import { initTips } from './ui/tips'
 
@@ -42,7 +41,6 @@ if (authError !== null) {
   initMenu()
   initSound()
   initReveal()
-  initSteps()
   initDecode()
 
   const canvas = document.querySelector<HTMLCanvasElement>('[data-gl-canvas]')

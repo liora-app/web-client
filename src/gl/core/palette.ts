@@ -15,8 +15,7 @@ export type GlTheme = 'dark' | 'light'
 export type Rgb = readonly [number, number, number]
 
 /** The landing's scene (src/gl/scene.ts): luminous field (filaments, inner, orbits), motes, the
- *  atmosphere behind them, the contour portrait (head and trails) and the conversation drawing
- *  (lines and their glow). The same formulas in both themes; only these numbers change.
+ *  atmosphere behind them and the contour portrait (head and trails). The same formulas in both themes; only these numbers change.
  *  - additive: the night adds light (AdditiveBlending); by day ink covers the paper (NormalBlending,
  *    still premultiplied, rgb <= alpha).
  *  - *.alpha multiplies a layer's alpha. At night faint strokes sum to brightness; by day each stroke
@@ -42,7 +41,6 @@ export interface ScenePalette {
     rim: number
   }
   trails: { violet: Rgb; teal: Rgb; alpha: number }
-  conversation: { cyan: Rgb; gold: Rgb; flash: Rgb; alpha: number }
 }
 
 export interface GlPalette {
@@ -81,7 +79,6 @@ const NIGHT_SCENE: ScenePalette = {
     rim: 0.11,
   },
   trails: { violet: [0.48, 0.2, 0.64], teal: [0.07, 0.67, 0.8], alpha: 1 },
-  conversation: { cyan: [0.13, 0.78, 0.91], gold: [1.0, 0.68, 0.32], flash: [0.94, 1.0, 0.97], alpha: 1 },
 }
 
 /** Day, «світанок» (ADR-013): the strokes are --color-stroke #0c4a4a and the warm --color-light
@@ -106,7 +103,6 @@ const DAY_SCENE: ScenePalette = {
     rim: 0.45,
   },
   trails: { violet: [0.3, 0.25, 0.52], teal: [0.05, 0.4, 0.4], alpha: 1 },
-  conversation: { cyan: [0.05, 0.4, 0.38], gold: [0.71, 0.33, 0.16], flash: [0.48, 0.2, 0.08], alpha: 0.9 },
 }
 
 export const GL_PALETTES: Readonly<Record<GlTheme, GlPalette>> = {

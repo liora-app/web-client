@@ -2,6 +2,8 @@ uniform float uTime;
 uniform float uOpacity;
 uniform float uGain;
 uniform float uFinal;
+// The final's text column (half-widths from the centre, screen fraction): inner edge, outer edge.
+uniform vec2 uProtect;
 uniform vec2 uResolution;
 // The theme's colours and how much of them (core/palette.ts ScenePalette.field).
 uniform vec3 uFieldBlue;
@@ -25,7 +27,9 @@ void main() {
   color = mix(color, uFieldFlash, pulse * 0.65);
   float alpha = edge * (0.18 + 0.11 * flow + 0.56 * pulse) * variation * mix(0.22, 0.95, vDepth) * uOpacity * uGain * uFieldAlpha;
   vec2 screen = gl_FragCoord.xy / uResolution;
-  float protect = 1.0 - (1.0 - smoothstep(0.16, 0.34, abs(screen.x - 0.5))) * uFinal * 0.96;
-  alpha = min(alpha * protect, 1.0);
+  // Under the final's words the light is at most 1 − uFinal (.15) of its own: clipped to 1 first, then
+  // guarded, so a pulse cannot lift it past the guard (the text keeps 4.5:1, ADR-013).
+  float protect = 1.0 - (1.0 - smoothstep(uProtect.x, uProtect.y, abs(screen.x - 0.5))) * uFinal;
+  alpha = min(alpha, 1.0) * protect;
   gl_FragColor = vec4(color * alpha, alpha);
 }

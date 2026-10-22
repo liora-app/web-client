@@ -230,11 +230,10 @@ test.describe('the light theme without WebGL', () => {
     const art = await page.evaluate(() =>
       (
         [
+          // ADR-013: the conversation drawing and the diary's map are gone with their holders.
           ['.hero__orb', '::before'],
           ['.final__art', '::before'],
           ['.mind__still', null],
-          ['.how__motion', null],
-          ['.diary__sky', '::before'],
         ] as const
       ).map(([selector, pseudo]) => [selector + (pseudo ?? ''), getComputedStyle(document.querySelector(selector)!, pseudo).backgroundImage]),
     )

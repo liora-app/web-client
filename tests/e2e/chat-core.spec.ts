@@ -108,7 +108,7 @@ import { moodLine, moodSentence, sayAnswer, sayRetry } from '../../src/chat/ui/c
 import { KEYBOARD_DROP, keyboardInset, keyboardShown } from '../../src/chat/ui/keyboard'
 import { presenceOf } from '../../src/chat/ui/presence'
 import { SKY_KEY, parseSky, skyAttribute } from '../../src/ui/sky'
-import { block, checkAll, grounds, hexOf, over, props, ratio, sampled, sky, themes, worst, type Check, type Ground } from './sky-contrast'
+import { block, checkAll, colour, fieldsMeet, grounds, hexOf, lum, over, props, ratio, sampled, sectionGrounds, sectionSky, sky, themes, worst, type Check, type Ground, type Rgb } from './sky-contrast'
 
 test.beforeEach(({}, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'pure core tests: one project is enough')
@@ -4141,6 +4141,71 @@ test.describe('sky presets', () => {
     expect(crisis.get('sky-image')).toBe('var(--sky-image-quiet) !important')
     expect(crisis.get('sky-stars')).toBe('none !important')
     expect(props(block(stage, ':root')).get('sky-image-quiet')).toBe('none, none, none, none, none, var(--sky-stops)')
+  })
+
+  // ADR-013 §1.4 (the landing): each section paints its own sky in literal colours (landing.css). Every
+  // text token keeps 4.5:1 and every sole boundary 3:1 on every ground of every section × theme —
+  // its stops, each field and ribbon over them, by day each pair of fields — with the night subtree's
+  // tokens (the dark side) over the night band and the footer, and the glass over the worst of them.
+  // In the dark (and in the night band by day) the fields never meet, the drift included.
+  test('the landing: each section sky keeps text ≥ 4.5:1 and sole boundaries ≥ 3:1, and in the dark its fields never meet', () => {
+    const styles = resolve(test.info().project.testDir, '..', '..', 'src', 'styles')
+    const tokens = readFileSync(join(styles, 'tokens.css'), 'utf8')
+    const landing = readFileSync(join(styles, 'landing.css'), 'utf8')
+    const T = themes(tokens)
+    const TEXT = ['color-text', 'color-text-soft', 'color-text-muted', 'color-text-dim', 'color-ai', 'color-teal', 'color-light', 'color-light-strong']
+    const BOUNDS = ['color-stroke', 'color-field-border', 'color-focus', 'color-accent']
+    const SECTIONS = ['.hero', '.mind', '.how', '.scenarios', '.diary', '.night', '.final'] as const
+    const DAY = ":root[data-theme='light']:not([data-theme-lock])"
+    const SYSTEM = ':root:not([data-theme]):not([data-theme-lock])'
+    const amplitude = Number(/@keyframes sky-drift \{\s*to \{ --drift: ([\d.]+)%; \}/.exec(landing)?.[1]) / 100
+    expect(amplitude, 'the drift of the fields').toBeGreaterThan(0)
+    // Every section paints its two lists, and the crisis quiets the night to its stops.
+    expect(props(block(landing, '.stage[data-quiet] ~ main .night')).size).toBe(0)
+    expect(block(landing, '.stage[data-quiet] ~ main .night')).toContain('background-image: var(--sky-stops);')
+
+    const checks: Check[] = []
+    const met: string[] = []
+    const pick = (theme: 'light' | 'dark', names: readonly string[]): Record<string, Rgb> => Object.fromEntries(names.map((n) => [n, T[theme](n).rgb]))
+    for (const theme of ['dark', 'light'] as const) {
+      const worst: Record<'own' | 'night', Ground[]> = { own: [], night: [] }
+      for (const section of SECTIONS) {
+        const own = props(block(landing, theme === 'dark' ? section : `${DAY} ${section}`))
+        if (theme === 'light') expect(props(block(landing, `${SYSTEM} ${section}`)), `system light ${section}`).toEqual(own)
+        const fields = own.get('sky-fields')
+        const stops = own.get('sky-stops')
+        expect([fields, stops].every(Boolean), `${theme} ${section}: --sky-fields and --sky-stops`).toBe(true)
+        const night = section === '.night' // the night subtree: the dark side by day too (tokens.css)
+        const sky = sectionSky(`${theme} ${section}`, fields!, stops!)
+        const day = theme === 'light' && !night
+        const list = sectionGrounds(sky, day)
+        if (!day) met.push(...fieldsMeet(sky, amplitude))
+        worst[night ? 'night' : 'own'].push(...list)
+        const inks = night ? 'dark' : theme
+        checks.push(...checkAll(pick(inks, TEXT), list, 4.5), ...checkAll(pick(inks, BOUNDS), list, 3))
+      }
+      // Glass over the worst ground: the cards of the sections (the theme's capsule), the night's
+      // (the dark capsule) and the crisis card (its own night glass, ADR-013 §1.5).
+      const capsule = T[theme]('color-capsule')
+      const dark = T.dark('color-capsule')
+      const w = worst.own.reduce((a, b) => ((theme === 'light' ? lum(b.rgb) < lum(a.rgb) : lum(b.rgb) > lum(a.rgb)) ? b : a))
+      const n = worst.night.reduce((a, b) => (lum(b.rgb) > lum(a.rgb) ? b : a))
+      const card = colour(/\.help-card \{[^}]*background: (rgb\([^)]*\));/.exec(landing)![1]!)
+      checks.push(
+        ...checkAll(pick(theme, TEXT), [{ label: `${theme} glass over ${w.label}`, rgb: over(capsule.rgb, capsule.a, w.rgb) }], 4.5),
+        ...checkAll(pick('dark', TEXT), [{ label: `${theme} night glass over ${n.label}`, rgb: over(dark.rgb, dark.a, n.rgb) }], 4.5),
+        ...checkAll({ ...pick('dark', TEXT), 'color-crisis-ink': T.dark('color-crisis-ink').rgb }, [{ label: `${theme} crisis card over ${n.label}`, rgb: over(card.rgb, card.a, n.rgb) }], 4.5),
+      )
+    }
+    // The footer: the night subtree on its own ground.
+    const footer = /--landing-footer: light-dark\((#[0-9a-f]{6}), (#[0-9a-f]{6})\)/.exec(landing)!
+    const grounds = [footer[1]!, footer[2]!].map((hex) => ({ label: `footer ${hex}`, rgb: colour(hex).rgb }))
+    checks.push(...checkAll(pick('dark', TEXT), grounds, 4.5), ...checkAll(pick('dark', BOUNDS), grounds, 3))
+
+    expect(met, 'in the dark the fields never meet').toEqual([])
+    const failures = checks.filter((c) => c.ratio < c.min).map((c) => `${c.ratio.toFixed(2)} < ${c.min}: ${c.pair}`)
+    expect(failures.slice(0, 25), `${failures.length} of ${checks.length} pairs`).toEqual([])
+    expect(checks.length).toBeGreaterThan(1_000)
   })
 })
 

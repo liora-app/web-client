@@ -67,19 +67,21 @@ async function pinAt(page: Page, fraction: number): Promise<void> {
   await frames(page)
 }
 
-/** The sky's lights stand where this scroll puts them: src/ui/nav.ts writes --progress in the frame
- *  after a scroll, so a read right after centre() can still see the stop before — a CI runner read
- *  #faq's light at #scenarios' place (matrix(…, -223.062, -246.024) both times). */
-async function drifted(page: Page): Promise<void> {
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const max = document.documentElement.scrollHeight - window.innerHeight
-        const ratio = max > 0 ? Math.min(1, window.scrollY / max) : 0
-        return document.querySelector<HTMLElement>('.stage')!.style.getPropertyValue('--progress') === ratio.toFixed(4)
-      }),
-    )
-    .toBe(true)
+/** The stage's own pseudo-elements: the landing's drifting lights are gone (ADR-013). */
+const stageLights = (page: Page): Promise<string[]> =>
+  page.locator('.stage').evaluate((stage) => [getComputedStyle(stage, '::before').content, getComputedStyle(stage, '::after').content])
+
+const SKIES = '.hero, .mind, #how, #scenarios, #diary, .night, #final'
+
+/** The section skies: their animations, and whether every sky is the same image a frame apart. */
+async function skies(page: Page): Promise<{ animations: number; still: boolean }> {
+  const images = (): Promise<string[]> => page.locator(SKIES).evaluateAll((all) => all.map((node) => getComputedStyle(node).backgroundImage))
+  const before = await images()
+  await frames(page)
+  await page.waitForTimeout(250)
+  const after = await images()
+  const animations = await page.locator(SKIES).evaluateAll((all) => all.flatMap((node) => node.getAnimations()).length)
+  return { animations, still: JSON.stringify(before) === JSON.stringify(after) }
 }
 
 const opacity = (page: Page, selector: string): Promise<number> => page.locator(selector).evaluate((element) => Number(getComputedStyle(element).opacity))
@@ -141,8 +143,10 @@ test.describe('without motion everything is there at once', () => {
     await page.locator('#faq summary').first().click()
     await frames(page)
     expect(await running(page), 'a FAQ answer opens at once').toEqual([])
-    // The sky's lights do not exist without motion.
-    expect(await page.locator('.stage').evaluate((stage) => [getComputedStyle(stage, '::before').opacity, getComputedStyle(stage, '::after').opacity])).toEqual(['0', '0'])
+    // The sky stands without motion: the stage has no lights of its own (ADR-013), and the sections'
+    // skies have no animation and do not move a frame apart.
+    expect(await stageLights(page)).toEqual(['none', 'none'])
+    expect(await skies(page)).toEqual({ animations: 0, still: true })
     expect(problems).toEqual([])
   })
 
@@ -158,7 +162,7 @@ test.describe('without motion everything is there at once', () => {
     expect(await color(page, '.mind__note'), 'the note is still to come at this point: the dim ink').toBe(await ink(page, '--color-text-dim'))
     await pause(page)
     expect(await page.evaluate(() => ({ mind: document.querySelector<HTMLElement>('.mind')!.offsetHeight, y: Math.round(window.scrollY) }))).toEqual(before)
-    expect(await color(page, '.mind__note'), 'on pause, its own ink').toBe(await ink(page, '--color-text-soft'))
+    expect(await color(page, '.mind__note'), 'on pause, its own ink').toBe(await ink(page, '--color-text'))
     expect(await notAtRest(page)).toEqual([])
     expect(await running(page)).toEqual([])
 
@@ -174,7 +178,8 @@ test.describe('without motion everything is there at once', () => {
     await frames(page)
     expect(await running(page), 'the answer opens at once, the «+» turns at once').toEqual([])
     await expect(answer).toHaveAttribute('open', '')
-    expect(await page.locator('.stage').evaluate((stage) => [getComputedStyle(stage, '::before').opacity, getComputedStyle(stage, '::after').opacity])).toEqual(['0', '0'])
+    expect(await stageLights(page)).toEqual(['none', 'none'])
+    expect(await skies(page)).toEqual({ animations: 0, still: true })
 
     // Play again: the hero's entrance does not replay.
     await page.locator('[data-motion-toggle]').click()
@@ -393,13 +398,17 @@ test.describe('motion', () => {
     expect(heights.now).toBe(heights.dcl)
     expect(heights.now / heights.screen).toBeGreaterThan(1.8)
 
+    // ADR-013: the muted tones are one (soft = muted = dim), so the copy's own ink is --color-text —
+    // the tag, the second line and the note alike — and the dim ink before its turn stays distinct.
     const dim = await ink(page, '--color-text-dim')
     const own = {
-      tag: await ink(page, '--color-text-muted'),
+      tag: await ink(page, '--color-text'),
       title: await ink(page, '--color-text'),
-      soft: await ink(page, '--landing-title-soft'),
-      note: await ink(page, '--color-text-soft'),
+      soft: await ink(page, '--color-text'),
+      note: await ink(page, '--color-text'),
     }
+    expect(dim).not.toBe(own.note)
+    expect(dim).not.toBe(own.tag)
     // The scroll can stop anywhere: the copy is never faded, only dimmer and lower before its turn.
     for (const at of [-0.3, -0.1, 0, 0.15, 0.36, 0.6, 1, 1.3]) {
       await pinAt(page, at)
@@ -527,38 +536,38 @@ test.describe('motion', () => {
     expect(instant.early).toBeGreaterThan(instant.closed + 20)
   })
 
-  test('the sky drifts from #scenarios to #faq, goes out beside the crisis numbers, and stands on pause', async ({ page }) => {
+  // ADR-013: the aurora drifts in the sections' own skies (--drift inside the fields' positions), not
+  // in two lights of the stage. Background only: the boxes and the text stay where they are.
+  test('the sky drifts in the sections, goes quiet beside the crisis numbers, and stands on pause', async ({ page }) => {
     await page.goto('/')
     await settled(page)
-    const lights = (): Promise<{ quiet: boolean; before: string[]; after: string[] }> =>
-      page.locator('.stage').evaluate((stage) => {
-        const before = getComputedStyle(stage, '::before')
-        const after = getComputedStyle(stage, '::after')
-        return { quiet: stage.hasAttribute('data-quiet'), before: [before.opacity, before.transform], after: [after.opacity, after.transform] }
-      })
-    await centre(page, '#scenarios')
-    await drifted(page)
-    await expect.poll(async () => (await lights()).after[0]).toBe('1')
-    const scenarios = await lights()
-    await centre(page, '#faq')
-    await drifted(page)
-    await expect.poll(async () => (await lights()).after[0]).toBe('1')
-    const faq = await lights()
-    expect(faq.after[1]).not.toBe(scenarios.after[1])
-    expect(faq.before[1]).not.toBe(scenarios.before[1])
-    // Transform only: the lights move, their boxes stay.
-    expect(scenarios.after[1]).toMatch(/^matrix\(1, 0, 0, 1, /)
+    const night = page.locator('.night')
+    const sky = (selector: string): Promise<{ image: string; animations: string[] }> =>
+      page.locator(selector).first().evaluate((node) => ({
+        image: getComputedStyle(node).backgroundImage,
+        animations: node.getAnimations().map((animation) => (animation as Animation & { animationName?: string }).animationName ?? '?'),
+      }))
+    for (const where of ['#scenarios', '#faq']) {
+      await centre(page, where)
+      const section = where === '#faq' ? '.night' : where
+      expect((await sky(section)).animations, where).toEqual(['sky-drift'])
+      const first = (await sky(section)).image
+      await expect.poll(async () => (await sky(section)).image, { message: `${where}: the fields move` }).not.toBe(first)
+    }
+    const size = (): Promise<number[]> => night.evaluate((node) => [(node as HTMLElement).offsetWidth, (node as HTMLElement).offsetHeight])
+    const box = await size()
 
-    // Beside the crisis contacts the decoration goes (ADR-011).
+    // Beside the crisis contacts the decoration goes (ADR-011): the night's stops alone, no drift.
     await centre(page, '#safety')
-    await expect.poll(async () => (await lights()).quiet).toBe(true)
-    await expect.poll(async () => (await lights()).after[0]).toBe('0')
-    await expect.poll(async () => (await lights()).before[0]).toBe('0')
+    await expect(page.locator('.stage')).toHaveAttribute('data-quiet', '')
+    await expect.poll(async () => (await sky('.night')).animations).toEqual([])
+    expect((await sky('.night')).image).not.toMatch(/radial-gradient/)
+    expect(await size(), 'the sky goes quiet, the box stays').toEqual(box)
 
     await pause(page)
     await centre(page, '#faq')
     await frames(page)
-    expect(await lights()).toMatchObject({ before: ['0', 'none'], after: ['0', 'none'] })
+    expect(await skies(page)).toEqual({ animations: 0, still: true })
   })
 })
 
