@@ -531,6 +531,20 @@ test.describe('layers', () => {
     expect(waiting).toBe(0)
   })
 
+  test('with reduced motion and «Увімкнути анімацію» stored the labels still do not decode: the flicker is JS, the CSS cannot still it', async ({ page }) => {
+    // The stored «on» starts only the light (boot.ts); kept off here, nothing renders WebGL.
+    await page.addInitScript(NO_WEBGL2)
+    await page.addInitScript(() => localStorage.setItem('liora:motion', 'on'))
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto('/')
+    await expect(page.locator('html')).toHaveAttribute('data-motion', 'on')
+    // Two frames: an IntersectionObserver callback would have run by now.
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+    const tag = page.locator('.hero__tag')
+    await expect(tag.locator('.visually-hidden')).toHaveCount(0)
+    await expect(tag).toHaveText('Саморефлексія з AI')
+  })
+
   test('filled buttons stay sharp when the WebGL scene is on', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto('/')
