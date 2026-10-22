@@ -2840,6 +2840,9 @@ test.describe('accessibility', () => {
   })
 
   test('axe: the confirms of the conversation and of the theses', async ({ page }) => {
+    // 12.4–13.5 s under E2E_CPU_THROTTLE=4, yet 18 s and more start to start on the CI runner
+    // (58ad6d4): ×4 underrates a runner's pace, so 12 s under ×4 is the line (§11.9).
+    test.slow()
     await openChat(page)
     await exchange(page)
     const confirm = confirmDialog(page)
