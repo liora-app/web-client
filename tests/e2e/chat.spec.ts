@@ -3807,6 +3807,44 @@ test.describe('diary', () => {
     held.open()
     await expect(journalStatus(page)).toHaveText(JOURNAL_SAVED)
   })
+
+  /** «Редагувати» on the first record, a new title, «Зберегти» (its PATCH answers 401). */
+  async function saveEditInto401(page: Page, api: MockApi): Promise<void> {
+    const target = ENTRIES[0]!
+    api.on(`PATCH /summaries/${target.id}`, fail(401, 'unauthenticated'))
+    const row = entryTitled(page, target.title)
+    await row.getByRole('button', { name: 'Редагувати' }).click()
+    await row.getByRole('textbox', { name: 'Назва' }).fill('Синтетична назва, що не збережеться')
+    await row.getByRole('button', { name: 'Зберегти' }).click()
+  }
+
+  test('#120 a 401 on «Зберегти» of a record under a conversation: session-expired keeps the conversation and says the changes did not reach the diary', async ({ page, api }) => {
+    await openChat(page)
+    await exchange(page, USER)
+    await openDiary(page)
+    await saveEditInto401(page, api)
+    await onScreen(page, 'session-expired')
+    const lost = page.locator('[data-el="expired-edit"]')
+    await expect(lost).toBeVisible()
+    await expect(lost).toHaveText('Зміни в записі щоденника не збереглися: після входу їх треба буде внести ще раз.')
+    await expect(page.locator('[data-el="expired-talk"]')).toContainText(USER)
+    await axe(page, 'session-expired after a 401 on an edit of a record')
+  })
+
+  test('#120b a 401 on «Зберегти» of a record from «Розмову завершено»: the sign-in screen says the changes did not reach the diary, focused', async ({ page, api }) => {
+    await openChat(page)
+    await exchange(page, USER)
+    await endWithoutTheses(page)
+    await page.locator('section[data-screen="ended"]').getByRole('button', { name: 'Відкрити щоденник' }).click()
+    await onScreen(page, 'journal')
+    await saveEditInto401(page, api)
+    await onScreen(page, 'signed-out')
+    const banner = page.locator('[data-el="signin-banner"]')
+    await expect(banner).toBeFocused()
+    await expect(page.locator('[data-el="signin-banner-label"]')).toBeHidden()
+    await expect(page.locator('[data-el="signin-banner-text"]')).toHaveText(signInBanner({ kind: 'edit-lost' }).text)
+    await expect(page.locator('[data-el="signin-banner-text"]')).toHaveText('Вхід завершився, тож зміни в записі щоденника не збереглися. Увійдіть знову, щоб внести їх ще раз.')
+  })
 })
 
 // ── The self-help tools (spec §3.13): breathing, grounding, the check-in, the shelter ─────────

@@ -112,6 +112,8 @@ export function expiredScreen(): Screen {
       const state = model.state as On<'session-expired'>
       setText(copy, state.draft !== null ? 'Скопіювати тези' : 'Скопіювати текст розмови')
       copy.dataset.act = state.draft !== null ? 'copy-theses' : 'copy'
+      // The 401 came over an unsaved edit of a diary record: say it did not reach the diary.
+      show(byEl('expired-edit', root), state.editLost)
       if (entered) renderStatic(talk, state.stale.messages, state.pending)
     },
     leave: () => talk.replaceChildren(),

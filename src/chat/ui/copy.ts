@@ -87,6 +87,9 @@ export function signInBanner(notice: AuthNotice): BannerText {
     case 'delete-relogin':
       // No sign-in failed here: the session ended. The label belongs to a failed return from Google.
       return { label: null, text: 'Вхід завершився. Увійдіть, щоб видалити акаунт.' }
+    case 'edit-lost':
+      // The same: the session ended under the diary, and what was typed into a record went with it.
+      return { label: null, text: 'Вхід завершився, тож зміни в записі щоденника не збереглися. Увійдіть знову, щоб внести їх ще раз.' }
     case 'auth-error': {
       const code = notice.code === 'not_invited' ? 'unknown' : notice.code
       return { label: 'Вхід не відбувся', text: AUTH_TEXT[code] }

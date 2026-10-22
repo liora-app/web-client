@@ -146,6 +146,10 @@ export type AuthNotice =
   | Readonly<{ kind: 'logged-out' }>
   /** DELETE /me answered 401 on the first attempt: sign in again to delete (§3.3). */
   | Readonly<{ kind: 'delete-relogin' }>
+  /** A 401 came on the diary while an edit of a record was not saved, with no conversation under
+   *  it to keep (opened from «Збережено» / «Розмову завершено»): the changes did not reach the
+   *  diary, and the sign-in screen says so (§3.3, §7.7). */
+  | Readonly<{ kind: 'edit-lost' }>
 
 export type ChatNotice =
   | Readonly<{ kind: 'need-records' }> // revisit without chosen records
@@ -188,7 +192,16 @@ export type State =
       /** Where the scenario goes back to when the record picker closes with nothing chosen. */
       revertTo: ScenarioId
     }>
-  | Readonly<{ s: 'session-expired'; stale: Session; pending: Pending | null; draft: Draft | null }>
+  | Readonly<{
+      s: 'session-expired'
+      stale: Session
+      pending: Pending | null
+      draft: Draft | null
+      /** The 401 came on the diary while an edit of a record was not saved: the screen says the
+       *  changes did not reach the diary. They cannot wait for the new sign-in — «Увійти знову»
+       *  leaves the page, and nothing about the person is stored (§3.8, §7.7). */
+      editLost: boolean
+    }>
   | Readonly<{ s: 'crisis'; helplines: SafeHelplines; stale: readonly Msg[] }>
   | Readonly<{
       s: 'summarizing'
@@ -939,11 +952,14 @@ function accountDeleted(model: Model, variant: 'confirmed' | 'presumed'): Step {
 
 /** 401 on a protected call: keep what the person wrote, read-only, when there is a session. The
  *  account operation goes with the session: reduce() keeps a busy one across a new screen, and a
- *  401 that keeps `session-expired` would leave it busy for good. */
+ *  401 that keeps `session-expired` would leave it busy for good. An unsaved edit of a diary record
+ *  cannot be kept past the sign-in (it leaves the page; nothing is stored): the next screen says
+ *  it did not reach the diary instead of losing it without a word. */
 function unauthenticated(model: Model, session: Session | null, pending: Pending | null, draft: Draft | null): Step {
   const next: Model = model.ctx.op === null ? model : { ...model, ctx: { ...model.ctx, op: null } }
-  if (session === null) return signedOut(next, 'fresh', null)
-  return withState(next, { s: 'session-expired', stale: session, pending, draft }, [{ type: 'abort', target: 'all' }])
+  const editLost = editUnsaved(model.state)
+  if (session === null) return signedOut(next, 'fresh', editLost ? { kind: 'edit-lost' } : null)
+  return withState(next, { s: 'session-expired', stale: session, pending, draft, editLost }, [{ type: 'abort', target: 'all' }])
 }
 
 /** The revoke is over, whatever screen the page is on. Its answer lets go of the revoke only: an

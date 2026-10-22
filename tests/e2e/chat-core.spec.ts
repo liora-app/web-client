@@ -2994,6 +2994,37 @@ test.describe('state: the diary', () => {
     expect(names(run(taken.model, { type: 'diary/ok', diary: DIARY }).model)).toEqual(['s-9'])
   })
 
+  test('a 401 over an unsaved edit of a record: the next screen says the changes did not reach the diary — session-expired under a conversation, the sign-in notice without one', () => {
+    /** The diary opened from `from`, s-1 edited and «Зберегти» pressed: the PATCH on its way. */
+    const saving = (from: Model) => {
+      const edit = run(opened(from).model, { type: 'journal/edit', id: 's-1' })
+      const form = journalOf(edit.model).edit!.form
+      return run(edit.model, { type: 'journal/edit-update', form: { ...form, title: 'Набрана назва' } }, { type: 'journal/edit-save' })
+    }
+    const unauthorized = apiError(401, 'unauthenticated')
+    const talk = answered(booted(), 'РОЗМОВА-ПІД-ЩОДЕННИКОМ')
+    const underTalk = saving(talk)
+    const expired = run(underTalk.model, { type: 'journal/patch-fail', req: patchFx(underTalk.effects).req, error: unauthorized }).model
+    expect(expired.state).toMatchObject({ s: 'session-expired', editLost: true, draft: null, stale: { messages: chatOf(talk).session.messages } })
+    // From «Розмову завершено» / «Збережено» there is no conversation to keep: the sign-in screen says it.
+    for (const from of [{ s: 'ended' }, { s: 'saved', summary: SUMMARY }] as const) {
+      const fromEnd = saving({ ...booted(), state: from })
+      const out = run(fromEnd.model, { type: 'journal/patch-fail', req: patchFx(fromEnd.effects).req, error: unauthorized })
+      expect(out.model.state).toEqual({ s: 'signed-out', variant: 'fresh', notice: { kind: 'edit-lost' } })
+      expect(types(out.effects)).toEqual(['abort', 'announcer/clear'])
+    }
+    // Any 401 on the diary while the edit is typed and not saved says the same (a search's GET).
+    const typed = run(opened({ ...booted(), state: { s: 'ended' } }).model, { type: 'journal/edit', id: 's-1' })
+    const form = journalOf(typed.model).edit!.form
+    const search = run(typed.model, { type: 'journal/edit-update', form: { ...form, title: 'Ще не збережено' } }, { type: 'journal/search', q: 'сон' })
+    expect(run(search.model, { type: 'journal/list-fail', req: listFx(search.effects).req, error: unauthorized }).model.state).toMatchObject({ s: 'signed-out', notice: { kind: 'edit-lost' } })
+    // Nothing typed (a form opened and unchanged, or none): nothing to say.
+    const untouched = run(typed.model, { type: 'journal/search', q: 'сон' })
+    expect(run(untouched.model, { type: 'journal/list-fail', req: listFx(untouched.effects).req, error: unauthorized }).model.state).toEqual({ s: 'signed-out', variant: 'fresh', notice: null })
+    const open = run(talk, { type: 'journal/open', tz: TZ })
+    expect(run(open.model, { type: 'journal/list-fail', req: listFx(open.effects).req, error: unauthorized }).model.state).toMatchObject({ s: 'session-expired', editLost: false })
+  })
+
   test('the record a revisit goes back to leaves the diary: under way, «До розмови» brings the block «Записів… уже немає»; not begun, the record is no longer chosen', () => {
     /** A revisit with s-1 chosen, from a page whose diary is `items`; the diary opened over it. */
     const revisitWith = (items: readonly SummaryOut[], begun: boolean) => {
