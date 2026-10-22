@@ -7,7 +7,7 @@
 // focus back to the button, Tab closes and moves on, a click outside closes it. Without JS (or
 // without light-dark(), where only the dark theme exists) the button stays hidden.
 
-import { initTheme, onThemeChange, setTheme, themeChoice, parseTheme, type ThemeChoice } from './theme'
+import { initTheme, onThemeChange, setTheme, themeChoice, parseTheme, themesSupported, type ThemeChoice } from './theme'
 import { hideTip } from './tips'
 
 const LABEL: Readonly<Record<ThemeChoice, string>> = {
@@ -19,10 +19,6 @@ const LABEL: Readonly<Record<ThemeChoice, string>> = {
 export interface ThemePicker {
   /** Closes the menu without moving the focus (a new screen takes it, the crisis above all). */
   close(): void
-}
-
-export function themesSupported(): boolean {
-  return typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('color', 'light-dark(#000, #fff)')
 }
 
 export function initThemePicker(options: { root: HTMLElement | null; radios: HTMLElement | null }): ThemePicker {

@@ -66,8 +66,17 @@ export function themeChoice(): ThemeChoice {
   return lockedTo() ? lockedTo()! : choice
 }
 
+/** Both themes need light-dark(): an engine without it (Safari < 17.5, as tokens.css says) gets only the
+ *  dark one from the CSS (tokens.css, landing.css, stage.css fallbacks), whatever is chosen or
+ *  stored and whatever the system prefers. */
+export function themesSupported(): boolean {
+  return typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('color', 'light-dark(#000, #fff)')
+}
+
+/** The theme the CSS renders — what the WebGL light (scene.ts, presence.ts) and the 'liora:theme'
+ *  event follow. A lock comes first: the CSS fallbacks leave a locked page alone too. */
 export function resolvedTheme(): Theme {
-  return lockedTo() ?? resolveTheme(choice, prefersDark.matches)
+  return lockedTo() ?? (themesSupported() ? resolveTheme(choice, prefersDark.matches) : 'dark')
 }
 
 export function onThemeChange(listener: ThemeListener): () => void {
