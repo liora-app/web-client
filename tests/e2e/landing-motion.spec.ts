@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
-import { NO_WEBGL2, centre, cutOffAtEdges, watchConsole } from './helpers'
+import { NO_WEBGL2, centre, cutOffAtEdges, throttle, watchConsole } from './helpers'
 
 // The landing's motion between chapters (spec §9.4 п. 8, ADR-012 «Рух»): the hero's cascade, the
 // reveals of steps, privacy rows and FAQ answers, #mind's copy unfolding with the scroll and its
@@ -10,6 +10,7 @@ import { NO_WEBGL2, centre, cutOffAtEdges, watchConsole } from './helpers'
 // with E2E_NO_WEBGL=1 too): the static backdrop is what #mind's CSS fallback is about, and no GPU work.
 
 test.beforeEach(async ({ page }) => {
+  await throttle(page)
   await page.addInitScript(NO_WEBGL2)
 })
 
@@ -64,6 +65,21 @@ async function pinAt(page: Page, fraction: number): Promise<void> {
     window.scrollTo({ top: top + (mind.offsetHeight - window.innerHeight) * at, behavior: 'instant' })
   }, fraction)
   await frames(page)
+}
+
+/** The sky's lights stand where this scroll puts them: src/ui/nav.ts writes --progress in the frame
+ *  after a scroll, so a read right after centre() can still see the stop before — a CI runner read
+ *  #faq's light at #scenarios' place (matrix(…, -223.062, -246.024) both times). */
+async function drifted(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const max = document.documentElement.scrollHeight - window.innerHeight
+        const ratio = max > 0 ? Math.min(1, window.scrollY / max) : 0
+        return document.querySelector<HTMLElement>('.stage')!.style.getPropertyValue('--progress') === ratio.toFixed(4)
+      }),
+    )
+    .toBe(true)
 }
 
 const opacity = (page: Page, selector: string): Promise<number> => page.locator(selector).evaluate((element) => Number(getComputedStyle(element).opacity))
@@ -492,9 +508,11 @@ test.describe('motion', () => {
         return { quiet: stage.hasAttribute('data-quiet'), before: [before.opacity, before.transform], after: [after.opacity, after.transform] }
       })
     await centre(page, '#scenarios')
+    await drifted(page)
     await expect.poll(async () => (await lights()).after[0]).toBe('1')
     const scenarios = await lights()
     await centre(page, '#faq')
+    await drifted(page)
     await expect.poll(async () => (await lights()).after[0]).toBe('1')
     const faq = await lights()
     expect(faq.after[1]).not.toBe(scenarios.after[1])
