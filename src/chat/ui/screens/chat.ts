@@ -88,7 +88,12 @@ function closePopovers(scope: HTMLElement): void {
  *  place instead of jumping (a FLIP on the list, spec §3.6). Only with motion. */
 const COLLAPSE_MS = 240
 
-export function chatScreen(dispatch: (action: Action) => void, onPulse: () => void, onType: () => void = () => {}): ChatScreen {
+export function chatScreen(
+  dispatch: (action: Action) => void,
+  onPulse: () => void,
+  onType: () => void = () => {},
+  say: (text: string) => void = () => {},
+): ChatScreen {
   const root = screenOf('chat')
   const el = <T extends HTMLElement = HTMLElement>(name: string): T => byEl<T>(name, root)
   const session = el('session')
@@ -164,6 +169,7 @@ export function chatScreen(dispatch: (action: Action) => void, onPulse: () => vo
     },
     () => dispatch({ type: 'chat/stop' }),
     onType,
+    say,
   )
 
   const renderScenarios = (items: readonly ScenarioOut[], chosen: string): void => {

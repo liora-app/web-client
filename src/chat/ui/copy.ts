@@ -387,6 +387,11 @@ export function secondsWord(n: number): string {
 export const sayRetry = (seconds: number): string => `Пробуємо ще раз через ${seconds} ${secondsWord(seconds)}`
 export const sayTheses = (n: number): string => `Тези готові: ${n}`
 export const SAY_SAVED = 'Збережено в щоденник'
+/** A starter or «Додати до розмови» on a touch screen: the words went into the field, the focus did
+ *  not follow them (it would pop the keyboard), so this is all a screen reader hears of it. */
+export const SAY_INSERTED = 'Додано в поле повідомлення'
+/** The same words pressed again: they end the field already and are not put twice. */
+export const SAY_ALREADY = 'Ці слова вже є в полі повідомлення'
 
 // ── Copying (§3.8) ───────────────────────────────────────────────────────────────────────────
 

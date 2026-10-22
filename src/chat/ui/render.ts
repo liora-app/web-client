@@ -49,9 +49,12 @@ export type ViewDeps = Readonly<{
   sound: SoundControl | null
   sky: SkyControl | null
   theme: ThemePicker | null
+  /** The page's one polite live region (announcer.ts), for what a screen does where the focus is
+   *  not: words put into the field from a touch screen, another week of the diary. */
+  say: (text: string) => void
 }>
 
-export function createView(dispatch: (action: Action) => void, { gl, sound, sky, theme }: ViewDeps): View {
+export function createView(dispatch: (action: Action) => void, { gl, sound, sky, theme, say }: ViewDeps): View {
   const html = document.documentElement
   const main = document.querySelector<HTMLElement>('main')!
   const account = document.querySelector<HTMLElement>('.account-toggle')!
@@ -66,7 +69,7 @@ export function createView(dispatch: (action: Action) => void, { gl, sound, sky,
   // created just below.
   const tools = createTools(dispatch, () => chat.composer)
   const dialogs = createDialogs(dispatch, tools)
-  const chat = chatScreen(dispatch, () => presence.pulse(), () => presence.listen())
+  const chat = chatScreen(dispatch, () => presence.pulse(), () => presence.listen(), say)
   const consent = consentScreen()
   const review = reviewScreen(dispatch)
   const journal = journalScreen(dispatch)

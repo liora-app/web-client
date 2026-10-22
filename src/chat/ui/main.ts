@@ -90,7 +90,7 @@ const effects = createEffects({
   composer: (text) => view.chat.composer.put(text),
   clearComposer: () => view.chat.composer.clear(),
 })
-view = createView(dispatch, { gl, sound, sky, theme })
+view = createView(dispatch, { gl, sound, sky, theme, say: (text) => announcer.say(text) })
 
 // ── One delegated handler for every [data-act] on the page and in the dialogs ──
 
