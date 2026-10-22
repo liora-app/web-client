@@ -60,6 +60,9 @@ export function journalScreen(dispatch: (action: Action) => void, say: (text: st
   const shown = new WeakMap<HTMLLIElement, SummaryOut>()
   /** The Monday of the week last shown loaded; null until the first one on this visit. */
   let weekSaid: string | null = null
+  /** Another Monday was asked for since (it may have failed): the next week in is said even if it
+   *  is weekSaid again. */
+  let weekAway = false
 
   const current = (): JournalState | null => (last !== null && last.state.s === 'journal' ? last.state : null)
 
@@ -121,9 +124,14 @@ export function journalScreen(dispatch: (action: Action) => void, say: (text: st
     // them, unannounced: once the other week is in, the live region says its range and count (WCAG
     // 4.1.3). Not the first week of a visit (the page opening says it), and not the same week asked
     // again after an edit or a delete. The themes stay on the page: the person's own words.
+    // A step that failed and a step back to the week said: the same Monday comes in again, yet the
+    // page showed another title and a failure in between — said too.
     if (loaded) {
-      if (weekSaid !== null && review.week_start !== weekSaid) say(sayWeek(title, weekCount(review.sessions)))
+      if (weekSaid !== null && (review.week_start !== weekSaid || weekAway)) say(sayWeek(title, weekCount(review.sessions)))
       weekSaid = review.week_start
+      weekAway = false
+    } else if (weekSaid !== null && start !== weekSaid) {
+      weekAway = true
     }
     const words = loaded ? weekThemes(review.top_tags.map((t) => t.name)) : ''
     setText(el('week-themes'), words)
@@ -378,6 +386,7 @@ export function journalScreen(dispatch: (action: Action) => void, say: (text: st
         editing = null
         shownIssues = null
         weekSaid = null
+        weekAway = false
       }
       setText(el('journal-back-label'), state.back !== null ? JOURNAL_BACK : JOURNAL_NEW)
       setAttr(root.querySelector<HTMLElement>('[data-act="journal-back"]')!, 'aria-disabled', journalBusy(state) ? 'true' : null)
@@ -432,6 +441,7 @@ export function journalScreen(dispatch: (action: Action) => void, say: (text: st
       last = null
       editing = null
       weekSaid = null
+      weekAway = false
       list.replaceChildren()
       themes.replaceChildren()
       themeKey = ''
