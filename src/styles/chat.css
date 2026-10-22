@@ -2879,6 +2879,16 @@ html[data-kb] .composer__keys {
   background-color: var(--color-text);
 }
 
+/* Forced colours paint every background Canvas, the mask's ink included: the «×» was gone there (a
+   press still emptied the field, unseen). It keeps the system's text colour instead, hovered too. */
+@media (forced-colors: active) {
+  .field__input[type='search']::-webkit-search-cancel-button,
+  .field__input[type='search']::-webkit-search-cancel-button:hover {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+}
+
 .field__input--title {
   font-size: 1.375rem;
   font-weight: 600;
