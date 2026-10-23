@@ -118,24 +118,38 @@ export async function centre(page: Page, selector: string): Promise<void> {
 }
 
 /** Things drawn past the screen edge. body { overflow-x: clip } hides them instead of scrolling,
- *  so look at element boxes and at text runs (a block's own box never shows its overflowing words). */
+ *  so look at element boxes and at text runs (a block's own box never shows its overflowing words).
+ *  Inside a row that scrolls sideways on purpose (overflow-x: auto or scroll — the chat's scenarios,
+ *  ADR-013) what lies past its edge is reached by scrolling the row, not cut off: there the row's own
+ *  box is what must fit the screen. */
 export async function cutOffAtEdges(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const width = document.documentElement.clientWidth
     const out = (rect: DOMRect): boolean => rect.width > 0 && (rect.right > width + 1 || rect.left < -1)
     const skip = (element: Element | null): boolean => !element || element.closest('.visually-hidden, .brand__name') !== null
+    /** The nearest ancestor that scrolls sideways, if any. */
+    const scroller = (element: Element | null): Element | null => {
+      for (let n = element?.parentElement ?? null; n !== null && n !== document.body; n = n.parentElement) {
+        if (/^(auto|scroll)$/.test(getComputedStyle(n).overflowX)) return n
+      }
+      return null
+    }
+    const boxOf = (element: Element, rect: DOMRect): DOMRect => {
+      const row = scroller(element)
+      return row === null ? rect : row.getBoundingClientRect()
+    }
     const found: string[] = []
     const range = document.createRange()
     for (const root of Array.from(document.querySelectorAll('.site-header, main, .site-footer'))) {
       for (const element of Array.from(root.querySelectorAll('*'))) {
-        if (!skip(element) && out(element.getBoundingClientRect())) found.push(`<${element.tagName.toLowerCase()} class="${element.getAttribute('class') ?? ''}">`)
+        if (!skip(element) && out(boxOf(element, element.getBoundingClientRect()))) found.push(`<${element.tagName.toLowerCase()} class="${element.getAttribute('class') ?? ''}">`)
       }
       const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
       while (walker.nextNode()) {
         const node = walker.currentNode as Text
         if (!node.data.trim() || skip(node.parentElement)) continue
         range.selectNodeContents(node)
-        if (Array.from(range.getClientRects()).some(out)) found.push(`"${node.data.trim().slice(0, 40)}"`)
+        if (Array.from(range.getClientRects()).some((rect) => out(boxOf(node.parentElement!, rect)))) found.push(`"${node.data.trim().slice(0, 40)}"`)
       }
     }
     return found

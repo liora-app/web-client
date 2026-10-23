@@ -371,13 +371,17 @@
             <ol class="talk" aria-label="Розмова" data-el="talk" data-no-stoplist></ol>
 
             <!-- Until the first message: a few ways to begin. A chip puts its words into the field; the
-                 person edits them and sends — nothing goes by itself. -->
-            <div class="starters" role="group" aria-label="Почати зі слів" data-el="starters" hidden>
-              <!-- The check-in (spec §3.13): optional; its word goes into the field only on «Додати до розмови». -->
-              <button class="checkin" type="button" data-act="tool" data-tool="mood" aria-haspopup="dialog" data-el="checkin">
-                <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6.5" /><path d="M7.25 11.75c.7.8 1.6 1.25 2.75 1.25s2.05-.45 2.75-1.25" /></svg>
-                Як ви зараз?
-              </button>
+                 person edits them and sends — nothing goes by itself. The group is named by its visible
+                 label (its arrow is drawn by chat.css, outside the name). -->
+            <div class="starters-row" data-el="starters-row" hidden>
+              <p class="starters__label" id="starters-label">Почати зі слів</p>
+              <div class="starters" role="group" aria-labelledby="starters-label" data-el="starters" hidden>
+                <!-- The check-in (spec §3.13): optional; its word goes into the field only on «Додати до розмови». -->
+                <button class="checkin" type="button" data-act="tool" data-tool="mood" aria-haspopup="dialog" data-el="checkin">
+                  <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6.5" /><path d="M7.25 11.75c.7.8 1.6 1.25 2.75 1.25s2.05-.45 2.75-1.25" /></svg>
+                  Як ви зараз?
+                </button>
+              </div>
             </div>
 
             <div class="nosave" data-el="nosave">
@@ -428,6 +432,7 @@
                      its items are plain buttons that Tab walks. -->
                 <button class="composer__tools" type="button" popovertarget="composer-tools" aria-label="Інструменти" data-el="composer-tools">
                   <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 4.75v10.5M4.75 10h10.5" /></svg>
+                  <span class="composer__tools-word" aria-hidden="true">Інструменти</span>
                 </button>
                 <div class="composer__menu" id="composer-tools" popover role="group" aria-labelledby="composer-tools-title">
                   <p class="composer__menu-title" id="composer-tools-title">Інструменти</p>

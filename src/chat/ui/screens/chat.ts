@@ -106,9 +106,13 @@ export function chatScreen(
   const status = el('composer-status')
   const talk = el<HTMLOListElement>('talk')
   const starterBox = el('starters')
+  /** The starters' row: their visible label «Почати зі слів» (the group's name) and the group. */
+  const starterRow = el('starters-row')
   /** «Як ви зараз?» (§3.13): after the starters, in the same row; it opens the check-in. */
   const checkin = el('checkin')
   let scenarioKey = ''
+  /** The scenario the row last showed as chosen (see renderScenarios). */
+  let scenarioShown = ''
   let starterKey = ''
   /** The last render showed a conversation already under way (the head gone). */
   let wasStarted = false
@@ -192,6 +196,15 @@ export function chatScreen(
       if (input.checked !== on) input.checked = on
       input.closest('.pill')?.classList.toggle('pill--on', on)
     }
+    // Arrow keys move the focus and the choice along the radios, but Chromium does not scroll a radio
+    // focused that way into view: on a phone the row (it scrolls sideways, ADR-013) brings the focused
+    // pill in itself, a whole padding in, clear of its faded ends (#141). Only when the choice moved,
+    // after the ✦ changed the pills' widths: a later render never pulls the row or the page back.
+    if (chosen !== scenarioShown) {
+      scenarioShown = chosen
+      const focused = document.activeElement
+      if (focused instanceof HTMLInputElement && list.contains(focused)) focused.closest('.pill')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    }
   }
 
   const renderStarters = (scenario: string, visible: boolean): void => {
@@ -210,6 +223,7 @@ export function chatScreen(
     // «Як ви зараз?» is always there before the first message, a scenario without starters of its
     // own (one the server added later) included.
     show(starterBox, visible)
+    show(starterRow, visible)
   }
 
   const streamOf = (state: ChatState): StreamView | null => {
