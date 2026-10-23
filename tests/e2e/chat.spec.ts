@@ -6664,7 +6664,8 @@ test.describe('the light', () => {
 
   // ADR-013 (P3b): one centred sheet, the character in a band over its top edge — no text column
   // beside it any more. The canvas is the slot's own size and meets no line of text (as #43 checks the
-  // still orb without WebGL). Not run locally (@gpu): CI's GPU job only.
+  // still orb without WebGL). @gpu: CI filters it out (ci-e2e.sh), so it runs only on a GPU machine
+  // with the owner's leave.
   test('the light runs in its slot, over the sheet’s top edge and clear of every line of text', GPU, async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'the band of the presence')
     await openChat(page)
