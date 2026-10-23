@@ -221,8 +221,8 @@ export function buildThesis(thesis: Thesis, index: number, rand: () => number): 
   return net(somas, axons, dendrites(somas, () => 3, [0.04, 0.09], rand))
 }
 
-// The static diary constellation (index.html, .diary__sky, viewBox 560×360): the WebGL graph uses the
-// same nodes and links, so both show the same themes.
+// The diary graph's themes, laid out on a 560×360 plane (centred and scaled below). The landing's static
+// constellation that shared them (.diary__sky) went with ADR-013's spread; only this graph uses them now.
 const DIARY_NODES: [number, number, number][] = [
   [40, 150, 3], [150, 80, 4], [270, 45, 5], [360, 120, 6], [290, 190, 4], [500, 60, 3],
   [460, 170, 5], [470, 310, 3], [360, 300, 4], [180, 215, 4], [150, 310, 3], [30, 280, 3],

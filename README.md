@@ -106,7 +106,7 @@ src/gl/               WebGL-шар — окремий лінивий чанк з
     quality.ts        тири (частинки, боке, DPR, msaa / charLod / envSize; pickTier({ force }) → ?tier=low|medium|high
                       → пристрій) і губернатор кадрів
     palette.ts        кольори WebGL на тему (дзеркало tokens.css): GL_PALETTES.dark / .light — куля чату
-                      і сцена лендінгу (ScenePalette: вночі світло додається, вдень — чорнило на папері)
+                      і сцена лендінгу (ScenePalette: вночі світло додається, вдень — чорнило на денному небі)
   scene.ts            сцена лендінгу: прозорий канвас; світлові нитки, пил і ореол (luminous-field.ts),
                       контурний портрет (contour-portrait.ts);
                       тема — uniforms і blending за подією liora:theme, без перебудови; цикл, пауза,
@@ -118,7 +118,8 @@ src/gl/               WebGL-шар — окремий лінивий чанк з
   shapes.ts           розкладки частинок кулі чату (ядро, ланцюг, тези, граф) — теж лише presence.ts
   shaders/            GLSL
 src/styles/           токени, база, небо й шари (stage.css; кольори неба — --sky-* на :root), шапка,
-                      компоненти, глави; landing.css — артнапрям лендінгу і його токени (ніч у темній)
+                      компоненти, глави; landing.css — артнапрям лендінгу й небо кожної секції (--sky-stops, --sky-fields);
+                      власні лише --landing-footer і --landing-mark-glow, токенів не перевизначає
 tests/e2e/            Playwright: контент, стоп-лист, шари, клавіатура, axe, сцена, фолбеки;
                       chat-core.spec.ts — ядро чату без браузера; chat.spec.ts — /chat/ проти моків
                       API (page.route, синтетичний SSE, fetch-shim для стріму по чанках, page.clock);
