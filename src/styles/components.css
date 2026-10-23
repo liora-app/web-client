@@ -1,6 +1,7 @@
 /* Type and small building blocks. No card grids and no gradient text: structure comes from type,
    hairlines, space and the sky. Glass only where ADR-013 §2 allows it — the header capsule, the
-   scenario caption, the crisis card and the chat's sheet — always with an opaque fallback. */
+   example conversation in #how, the scenario caption, the diary's spread, the crisis card (its own
+   night tone) and the chat's sheet (painted, no backdrop-filter) — always with an opaque fallback. */
 
 /* ---------- Glass (ADR-013 §2) ---------- */
 
@@ -32,6 +33,19 @@
     background: var(--color-sheet-solid);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
+  }
+
+  /* Tinted pills without a blur (the capsule's tone, alpha .72 / .78): the chip «AI · не людина», the
+     hero's AI note and «Як це працює», a secondary glass button. Opaque too (the same test). */
+  :root .ai-chip,
+  :root .hero__note,
+  :root .hero__links .text-link,
+  :root .button-glass {
+    background: var(--color-sheet-solid);
+  }
+
+  :root .button-glass:hover {
+    background: linear-gradient(var(--color-hover), var(--color-hover)), var(--color-sheet-solid);
   }
 }
 
@@ -88,7 +102,7 @@
   font-family: var(--font-mono);
   font-size: var(--step-label);
   font-weight: 400;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 

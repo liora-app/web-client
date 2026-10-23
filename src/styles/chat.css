@@ -65,10 +65,15 @@
 }
 
 /* No character, no band: the sheet's header right under the page's header (#137). The crisis has no
-   light at any width (ADR-013): the numbers right under the header. */
+   light at any width (ADR-013): the numbers right under the header. No sticky lid either (below):
+   it is there to hide what scrolls up under the character's lower edge, and with no character the
+   header's opaque band does that. It also left a seam: Chromium kept the lid's fixed sky layers
+   painted with the fields after the crisis took them off (its computed image was already the quiet
+   one; a scroll repainted it). */
 html:is([data-character='off'], [data-screen='crisis']) {
   --scene-h: 0px;
   --band-h: 0px;
+  --sheet-cap: 0px;
 }
 
 /* Focus never hides under the sticky header, the band, the session row (or the sheet's lid) or the
@@ -91,8 +96,10 @@ html {
    scrolled under them never shows through and no band has an edge. --sky-edge is the right edge of a
    classic scrollbar's gutter (html[data-gutter], measured in src/chat/ui/scroll-anchor.ts): the gutter
    shows only the root's colour (fixed layers stop where it begins), so the sky eases into that colour
-   over its last 8rem — on .stage (::after) and on every band. With overlay scrollbars (phones, macOS)
-   the sky runs to the edge. */
+   over its last 2rem — on .stage (::after) and on every band. Only 2rem: the root's colour is the
+   day's first stop (teal), and 8rem of it ran down the peach of the lower sky as a broad strip; a
+   gutter-wide edge with a short ease reads as the scrollbar's own track. With overlay scrollbars
+   (phones, macOS) the sky runs to the edge. */
 .chat-page {
   --sky-edge: linear-gradient(transparent, transparent);
 }
@@ -101,10 +108,10 @@ html[data-gutter] .chat-page {
   --sky-edge: linear-gradient(
     270deg,
     var(--color-bg) 0,
-    color-mix(in srgb, var(--color-bg) 84%, transparent) 2rem,
-    color-mix(in srgb, var(--color-bg) 50%, transparent) 4rem,
-    color-mix(in srgb, var(--color-bg) 16%, transparent) 6rem,
-    var(--color-fade-0) 8rem
+    color-mix(in srgb, var(--color-bg) 84%, transparent) 0.5rem,
+    color-mix(in srgb, var(--color-bg) 50%, transparent) 1rem,
+    color-mix(in srgb, var(--color-bg) 16%, transparent) 1.5rem,
+    var(--color-fade-0) 2rem
   );
 }
 
@@ -174,14 +181,14 @@ html[data-gutter] .chat-page .stage::after {
   content: '';
   position: absolute;
   inset: 0 0 0 auto;
-  width: 8rem;
+  width: 2rem;
   background: linear-gradient(
     270deg,
     var(--color-bg) 0,
-    color-mix(in srgb, var(--color-bg) 84%, transparent) 2rem,
-    color-mix(in srgb, var(--color-bg) 50%, transparent) 4rem,
-    color-mix(in srgb, var(--color-bg) 16%, transparent) 6rem,
-    var(--color-fade-0) 8rem
+    color-mix(in srgb, var(--color-bg) 84%, transparent) 0.5rem,
+    color-mix(in srgb, var(--color-bg) 50%, transparent) 1rem,
+    color-mix(in srgb, var(--color-bg) 16%, transparent) 1.5rem,
+    var(--color-fade-0) 2rem
   );
   pointer-events: none;
 }
@@ -589,7 +596,9 @@ html[data-screen='crisis'] .chat__scene {
 }
 
 /* Under 22.5em six words do not fit: the icons alone, 44 px tiles (the names stay in aria-label and
-   in the small labels). */
+   in the small labels). Row 1 keeps «Якщо важко · 112 · 103» whole — the crisis numbers never go
+   (spec §3.2) — beside the mark alone: the wordmark steps aside instead (its name stays for screen
+   readers, as on the landing's narrow header). */
 @media (max-width: 22.5em) {
   .chat-header {
     padding-inline: 0.875rem;
@@ -603,17 +612,29 @@ html[data-screen='crisis'] .chat__scene {
     height: 2.75rem;
   }
 
-  .chat-header .help-link {
-    padding: 0 0.7rem;
+  .chat-header .brand {
+    grid-column: 1;
   }
 
-  .chat-header .help-link__numbers {
-    display: none;
+  .chat-header .brand__name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .chat-header .help-link {
+    grid-column: 2 / 7;
+    gap: 0.4rem;
+    padding: 0 0.75rem;
   }
 }
 
 /* The session row's counter: five dots, the marked ones filled with the mark's colour — a shape too,
-   not colour alone: a filled dot against a ring. */
+   not colour alone: a filled dot against a ring. The ring stays an ink line by day (--color-stroke-warm:
+   the peach mark is 1.33–1.65:1 on the sheet, so it is a fill, never an edge); at night it is the mark. */
 .session__marks {
   display: inline-flex;
   align-items: center;
@@ -640,13 +661,25 @@ html[data-screen='crisis'] .chat__scene {
 .session__marks[data-marks='3'] .marks i:nth-child(-n + 3),
 .session__marks[data-marks='4'] .marks i:nth-child(-n + 4),
 .session__marks[data-marks='5'] .marks i:nth-child(-n + 5) {
-  border-color: var(--color-mark);
+  border-color: var(--color-stroke-warm);
   background: var(--color-mark);
 }
 
-/* A narrow phone keeps the row to the scenario, the AI's name and «Завершити»: the count is said
-   anyway as each reply is marked («Додано до тез · 2 з 5»). */
+/* A phone: the five dots alone beside the scenario and «Завершити» (spec §3.4 puts them in the
+   sheet's header at any width); the words stay for screen readers. Under 24em the row has no room for
+   them: the count is said anyway as each reply is marked («Додано до тез · 2 з 5»). */
 @media (max-width: 35.99em) {
+  .session__marks > span:not(.marks) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 23.99em) {
   .session__marks {
     display: none;
   }
@@ -720,6 +753,10 @@ html[data-screen='crisis'] .chat__scene {
   height: var(--sheet-cap);
   margin: 0 calc(-1 * var(--sheet-pad)) calc(-1 * var(--sheet-cap));
   pointer-events: none;
+}
+
+html:is([data-character='off'], [data-screen='crisis']) .chat__text::before {
+  display: none;
 }
 
 .chat__scene {
@@ -1005,12 +1042,36 @@ html[data-screen='crisis'] .vignette {
     translate: -50% 0;
   }
 
+  /* The globe's body reaches ~18 px over the sheet's top edge (B-chat-*), while its boxes stay
+     where they are: the slot ends --presence-overlap (24 px) under the edge and the sheet's first
+     words 16 px lower (#43 measures the canvas's and the orb's boxes, not the drawing). So the still
+     globe is drawn lower inside the orb's box — the full slot here, its picture moved down 17.5 % of
+     it; what that cuts off at the bottom is the picture's empty margin (its body ends at 159.4 of
+     200) — and its core's shine follows. The halo follows too, centred on the body, and stops at the
+     sheet's edge: it sets behind the sheet, the globe stands over it. With WebGL the canvas draws the
+     light in the middle of the slot (src/gl/presence.ts). */
+  .presence .orb {
+    inset: 0;
+    background-position: center calc(var(--slot) * 0.175);
+    transform-origin: 50% 67.5%;
+  }
+
+  .presence .orb::after {
+    translate: 0 calc(var(--slot) * 0.175);
+  }
+
+  .presence__slot::before {
+    border-radius: 0;
+    background: radial-gradient(circle calc(var(--slot) * 0.7071) at 50% 67.5%, var(--orb-sun) 0%, var(--orb-sun-mid) 46%, var(--orb-sun-0) 70%);
+    clip-path: inset(0 0 var(--presence-overlap) 0);
+  }
+
   /* «Чекає на ваше повідомлення»: beside the light, inside the band — the only words on the bare sky,
      so on an opaque pill of the sheet's tone (10.97 light, 10.26 dark), whatever the sky behind. */
   .presence__state {
     position: absolute;
     left: calc(100% + 0.75rem);
-    top: 50%;
+    top: 67.5%; /* beside the globe's body (drawn low in the slot, above) */
     translate: 0 -50%;
     margin: 0;
     padding: 0.25rem 0.75rem;
@@ -1238,7 +1299,7 @@ html[data-motion='on'] .chat-page .screen:not(.screen--crisis, [data-screen='boo
 .banner__label {
   font-family: var(--font-mono);
   font-size: var(--step-label);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--color-light);
 }
@@ -1562,7 +1623,7 @@ html[data-motion='on'] .more[open] .more__body {
   padding: 0;
   font-family: var(--font-mono);
   font-size: var(--step-label);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--color-text-soft);
 }
@@ -1657,21 +1718,24 @@ html[data-motion='on'] .more[open] .more__body {
    it half outside, #141). The row reaches the sheet's edges; its ends fade under a mask only as wide as the row's own padding
    less the focus ring (3 px and a 2 px gap), and a pill scrolled to by the keyboard stops a whole
    padding in: the focused pill and its ring are never under the mask (#141; axe does not count a
-   mask). overflow-x: auto computes overflow-y to auto as well: 6 px of padding above and below keep
-   the ring from being cut. */
+   mask). The start keeps the sheet's padding (the first pill lines up with the words); the end fades
+   over at least 18 px with its padding to match, so on a phone the next pill fades out instead of
+   being cut (at 14 px of padding it faded over 8). overflow-x: auto computes overflow-y to auto as
+   well: 6 px of padding above and below keep the ring from being cut. */
 .scenarios__list {
   --row-fade: max(0px, var(--sheet-pad) - 6px);
+  --row-fade-end: max(var(--row-fade), 1.125rem);
   display: flex;
   flex-wrap: nowrap;
   gap: 0.5rem;
   margin-inline: calc(-1 * var(--sheet-pad));
-  padding: 6px var(--sheet-pad);
+  padding: 6px calc(var(--row-fade-end) + 6px) 6px var(--sheet-pad);
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  scroll-padding-inline: var(--sheet-pad);
+  scroll-padding-inline: var(--sheet-pad) calc(var(--row-fade-end) + 6px);
   scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--row-fade), #000 calc(100% - var(--row-fade)), transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 var(--row-fade), #000 calc(100% - var(--row-fade)), transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 var(--row-fade), #000 calc(100% - var(--row-fade-end)), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 var(--row-fade), #000 calc(100% - var(--row-fade-end)), transparent);
 }
 
 .scenarios__list::-webkit-scrollbar {
@@ -1812,7 +1876,7 @@ html[data-motion='on'] .more[open] .more__body {
 .starters__label {
   font-family: var(--font-mono);
   font-size: var(--step-label);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   line-height: 1.5;
   text-transform: uppercase;
   color: var(--color-text-soft);
@@ -2154,16 +2218,10 @@ html[data-motion='on'] .session:not([hidden]) {
   white-space: nowrap;
 }
 
-/* A desktop: the header's chip «AI · не людина» and the line under the field say it, so the row does
-   not repeat it (G2: the chip, «AI» on every reply, the line under the field). On a phone the row
-   keeps its words (the chip stays at the sheet's top, scrolled away). The scenario is the sheet's
-   title. */
+/* A desktop: the scenario is the sheet's title, «· AI, не людина» beside it at any width (spec §3.4,
+   B-chat-dark): the sheet's own header says what answers, as the header's chip does while it is in
+   view. */
 @media (min-width: 64em) {
-  .session__ai,
-  .session__label > .session__sep {
-    display: none;
-  }
-
   .session__label {
     font-size: 1rem;
   }
@@ -2488,14 +2546,6 @@ html[data-motion='on'] .said--waiting .said__dots i:nth-child(3) {
     background-color var(--dur-1) var(--ease-standard);
 }
 
-/* It fades in under the pointer only with motion; without it, it is simply there. */
-html[data-motion='on'] .said__act {
-  transition:
-    color var(--dur-1) var(--ease-standard),
-    background-color var(--dur-1) var(--ease-standard),
-    opacity var(--dur-2) var(--ease-standard);
-}
-
 .said__act svg {
   width: 0.95rem;
   height: 0.95rem;
@@ -2531,19 +2581,8 @@ html[data-motion='on'] .said__act {
   display: block;
 }
 
-/* A mouse: the actions show on the reply under the pointer or with the keyboard focus in it (never
-   hidden from Tab); a marked reply keeps its mark in view. A touch screen: always there, small. */
-@media (hover: hover) and (pointer: fine) {
-  .said__act {
-    opacity: 0;
-  }
-
-  .said:is(:hover, :focus-within) .said__act,
-  .said__keep[aria-pressed='true'] {
-    opacity: 1;
-  }
-}
-
+/* The actions stand under every reply, with a mouse too (B-chat-*): hidden until hover, «Копіювати»
+   left an empty pill's width between the time and a marked «У тези». A touch screen: larger. */
 @media (pointer: coarse) {
   .said__act {
     min-height: 2.75rem;
@@ -2551,7 +2590,8 @@ html[data-motion='on'] .said__act {
 }
 
 /* A marked reply (ADR-013 §5): the whole reply, its label and its line of actions, on the warm tint
-   with a 3 px rule of the mark on its left. The tint stands on the sheet's opaque tone (over the
+   with a 3 px rule on its left: the mark's warm edge (--color-stroke-warm: an ink line by day, where the
+   peach mark is 1.33–1.65:1 on the sheet, the mark itself at night). The tint stands on the sheet's opaque tone (over the
    painted sheet's worst ground the dark tint was not warm: r − g −8; over --color-sheet-solid it is,
    #119). A layer of its own in the reply's grid, under its words: it covers the label and the text,
    not the room a sent message keeps under its answer (.said--room). It reaches into the sheet's side
@@ -2568,7 +2608,7 @@ html[data-motion='on'] .said__act {
   align-self: stretch;
   z-index: -1;
   margin: -0.65rem -0.85rem -0.65rem calc(-1 * min(0.85rem + 3px, var(--sheet-pad)));
-  border-left: 3px solid var(--color-mark);
+  border-left: 3px solid var(--color-stroke-warm);
   border-radius: 0 1.25rem 1.25rem 0;
   background-color: var(--color-sheet-solid);
   background-image: linear-gradient(var(--color-accent-tint), var(--color-accent-tint));
@@ -2671,7 +2711,7 @@ html[data-motion='on'] .talk:not(.talk--stale) > .said--in {
 .block__label {
   font-family: var(--font-mono);
   font-size: var(--step-label);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--color-light);
 }
@@ -2852,7 +2892,7 @@ html[data-screen='chat'] .chat__text {
 
 /* Ready, the button is filled with the accent — the focus colour itself — and its ring lay inside
    the fill (offset -2px above), the accent on the accent: unseen. There the ring takes the colour of
-   the arrow on that fill (4.96:1 light, 11.46:1 dark; more on the hover fill) and sits 3 px in from
+   the arrow on that fill (14.70:1 light, 16.78:1 dark; 10.97 and 19.23 on the hover fill) and sits 3 px in from
    the edge, so the fill runs on both sides of it: a ring, not just a thinner disc. Outside, it would
    run into the pill's border on a phone (4 px away). */
 .composer__send[data-mode='ready']:focus-visible {
@@ -2936,7 +2976,7 @@ html[data-motion='on'] .composer__send svg {
   padding: 0.35rem 0.6rem 0.4rem;
   font-family: var(--font-mono);
   font-size: var(--step-label);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--color-text-muted);
 }
@@ -3475,7 +3515,7 @@ html[data-kb] .composer__keys {
   padding: 0;
   font-family: var(--font-mono);
   font-size: var(--step-label);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--color-text-soft);
 }
@@ -3546,7 +3586,7 @@ html[data-kb] .composer__keys {
   justify-self: end;
   font-family: var(--font-mono);
   font-size: var(--step-label);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   color: var(--color-text-dim);
 }
 
@@ -3751,11 +3791,12 @@ html[data-kb] .composer__keys {
   border-bottom: 1px solid var(--color-line);
 }
 
-/* A quote with the mark's rule (ADR-013 §5): the reply it came from was marked «У тези». */
+/* A quote with the mark's rule (ADR-013 §5): the reply it came from was marked «У тези». The rule is the
+   mark's warm edge (an ink line by day, the mark at night), as on the marked reply. */
 .candidate__text {
   max-width: 38rem;
   padding-left: 0.85rem;
-  border-left: 3px solid var(--color-mark);
+  border-left: 3px solid var(--color-stroke-warm);
   color: var(--color-text-soft);
   overflow-wrap: anywhere;
 }
@@ -3780,7 +3821,7 @@ html[data-kb] .composer__keys {
 .closing__label {
   font-family: var(--font-mono);
   font-size: var(--step-label);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--color-text-soft);
 }
@@ -3816,7 +3857,7 @@ html[data-kb] .composer__keys {
 .record__tags {
   font-family: var(--font-mono);
   font-size: var(--step-label);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   color: var(--color-text-dim);
 }
 
@@ -4325,7 +4366,7 @@ html[data-motion='on'] :is(.confirm, .sheet--side, .sheet--pick)[open]::backdrop
   font-family: var(--font-mono);
   font-size: var(--step-label);
   font-weight: 400;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--color-text-soft);
 }
@@ -4400,7 +4441,7 @@ html[data-motion='on'] :is(.confirm, .sheet--side, .sheet--pick)[open]::backdrop
   margin-top: auto;
   font-family: var(--font-mono);
   font-size: var(--step-label);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--color-text-dim);
 }
@@ -4703,11 +4744,13 @@ html[data-motion='on'] :is(.confirm, .sheet--side, .sheet--pick)[open]::backdrop
   margin: 0.5rem auto;
 }
 
-/* Decorative (aria-hidden): the step is in the words over it. */
+/* Decorative (aria-hidden): the step is in the words over it. With motion its size is the pace within a
+   step, so its edge holds 3:1: the mark's warm edge (#0c4a4a by day, 9.38:1 on the dialog's
+   --color-sheet-solid; the peach mark was 1.65:1), the mark at night. */
 .breathe__circle {
   position: absolute;
   inset: 0;
-  border: 2px solid var(--color-mark);
+  border: 2px solid var(--color-stroke-warm);
   border-radius: 50%;
   background: radial-gradient(circle, var(--color-accent-tint-strong) 0%, var(--color-accent-tint) 55%, var(--color-fade-0) 72%);
 }

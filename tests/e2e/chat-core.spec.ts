@@ -4048,6 +4048,10 @@ test.describe('sky presets', () => {
   // theme × preset: each stop, each field at its full alpha, the ribbon over each field, by day each
   // pair of fields, the exact composite of the layers over three windows (tests/e2e/sky-contrast.ts),
   // and the glass over the worst of them, its opaque fallback included. Values come from the CSS.
+  // The chat's dark fields meet (teal or peach with the low rose one, stage.css) — unlike the landing's
+  // section skies, whose dark fields never do (fieldsMeet below): their overlaps are counted by the
+  // composite at the alphas they really have there. Both at full alpha is no place on the screen (and
+  // would fail: dusk and dawn, field 2 over field 4, 4.18:1 for the dim ink).
   test('each theme × preset keeps text ≥ 4.5:1 and sole boundaries ≥ 3:1 on its sky, its fields, their overlaps and its glass', () => {
     const styles = resolve(test.info().project.testDir, '..', '..', 'src', 'styles')
     const stage = readFileSync(join(styles, 'stage.css'), 'utf8')
@@ -4064,7 +4068,8 @@ test.describe('sky presets', () => {
       },
     } as const
     const TEXT = ['color-text', 'color-text-soft', 'color-text-muted', 'color-text-dim', 'color-ai', 'color-teal', 'color-light', 'color-light-strong']
-    const BOUNDS = ['color-stroke', 'color-field-border', 'color-focus', 'color-accent']
+    // --color-stroke-warm: the mark's edge (the breathing circle, the marked reply's rule, a marked dot).
+    const BOUNDS = ['color-stroke', 'color-stroke-warm', 'color-field-border', 'color-focus', 'color-accent']
     const TRIPLE = /^sky-(?:\d|field-\d|ribbon)$/
     const checks: Check[] = []
     const all: Record<'light' | 'dark', Ground[]> = { light: [], dark: [] }
@@ -4506,7 +4511,7 @@ test.describe('source rules', () => {
   // (backdrop-filter) and Playwright has no reduced-transparency option, so this reads the CSS: every
   // selector that sets a backdrop-filter is named in both fallbacks with the sheet's own opaque tone
   // (--color-sheet-solid, alpha 1 — the contrast test counts it), and the reduced one drops the blur.
-  test('glass: every backdrop-filter has an opaque fallback without backdrop-filter and with reduced transparency', () => {
+  test('glass: every backdrop-filter, capsule tint and painted sheet has an opaque fallback without backdrop-filter, with reduced transparency and in forced colours', () => {
     const styles = resolve(test.info().project.testDir, '..', '..', 'src', 'styles')
     const files = readdirSync(styles, { recursive: true, encoding: 'utf8' }).filter((p) => p.endsWith('.css'))
     const css = files.map((p) => readFileSync(join(styles, p), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')).join('\n')
@@ -4541,6 +4546,48 @@ test.describe('source rules', () => {
     for (const selector of glassy) {
       expect(named(noSupport, selector), `${selector}: opaque without backdrop-filter`).toBe(true)
       expect(named(reducedOpaque, selector), `${selector}: opaque with reduced transparency`).toBe(true)
+    }
+
+    // Translucent without a blur: the capsule's tint on a pill (the chip «AI · не людина», the hero's
+    // AI note and «Як це працює») and the chat's painted sheet (the panel over the sky). With reduced
+    // transparency each is opaque too — its bottom layer the sheet's own tone — and the sheet, which
+    // paints its own fixed sky, also gives way to the system's canvas in forced colours.
+    const last = (name: string): RegExp => new RegExp(`background(?:-color)?:\\s*[^;]*var\\(--${name}\\)\\s*(?:;|$)`)
+    const outside = rules.filter((r) => !r.selectors.some((s) => s.startsWith(':root ')))
+    const tinted = outside.filter((r) => last('color-capsule').test(r.body)).flatMap((r) => r.selectors)
+    const painted = outside.filter((r) => /var\(--color-panel\)/.test(r.body)).flatMap((r) => r.selectors)
+    expect(tinted, 'the capsule tint on pills').toEqual(expect.arrayContaining(['.ai-chip', '.hero__note', '.hero__links .text-link']))
+    expect(painted, 'the painted sheet').toEqual(expect.arrayContaining(['.chat__text', '.chat__text::before', '.session::before', '.composer::before']))
+    const reducedLast = reduced.filter((r) => last('color-sheet-solid').test(r.body)).flatMap((r) => r.selectors)
+    const forcedCanvas = inside('@media (forced-colors: active)')
+      .filter((r) => /background(?:-color)?:\s*Canvas\s*(?:;|$)/.test(r.body))
+      .flatMap((r) => r.selectors)
+    for (const selector of [...tinted, ...painted].filter((s) => !glassy.includes(s))) {
+      expect(named(reducedLast, selector), `${selector}: opaque with reduced transparency`).toBe(true)
+    }
+    for (const selector of painted) expect(named(forcedCanvas, selector), `${selector}: the canvas in forced colours`).toBe(true)
+  })
+
+  // The mark (--color-mark: #ffb185 by day) is 1.33–1.65:1 on the sheet and its tints: a fill, never an
+  // edge on its own. A border of the mark's colour is allowed only around its own fill (a pressed
+  // «У тези»); the circle of «Подихати хвилину», the marked reply's rule, a candidate's rule and the
+  // marked dots draw their edge with --color-stroke-warm (ink by day, the mark at night; the contrast
+  // test above counts it as a sole boundary).
+  test('the mark is a fill: no border of --color-mark except around its own fill', () => {
+    const styles = resolve(test.info().project.testDir, '..', '..', 'src', 'styles')
+    const files = readdirSync(styles, { recursive: true, encoding: 'utf8' }).filter((p) => p.endsWith('.css'))
+    const offending: string[] = []
+    for (const file of files) {
+      const css = readFileSync(join(styles, file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+      for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        const body = m[2]!
+        if (/(?:^|[;\s])border(?:-[a-z]+)*:\s*[^;]*var\(--color-mark\)/.test(body) && !/background(?:-color)?:\s*var\(--color-mark\)/.test(body)) offending.push(`${file}: ${m[1]!.trim()}`)
+      }
+    }
+    expect(offending).toEqual([])
+    const chat = readFileSync(join(styles, 'chat.css'), 'utf8')
+    for (const rule of [/\.breathe__circle \{[^}]*border: 2px solid var\(--color-stroke-warm\)/, /\.said--ai::before \{[^}]*border-left: 3px solid var\(--color-stroke-warm\)/, /\.candidate__text \{[^}]*border-left: 3px solid var\(--color-stroke-warm\)/]) {
+      expect(chat, String(rule)).toMatch(rule)
     }
   })
 

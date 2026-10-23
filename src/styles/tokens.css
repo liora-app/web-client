@@ -10,6 +10,10 @@
       light-dark() cannot hold (the sky's RGB triples, alphas, images) live in explicit blocks in
       stage.css (the chat) and landing.css (the landing's section skies).
    Every side of every light-dark() is #rrggbb or rgb(…): tests/e2e/chat-core.spec.ts reads them.
+   That is why there are no --raw-* constants (the aurora spec §1.3 planned --raw-ink, --raw-cream…):
+   a var() inside light-dark() could not be read pair by pair. The raw colours stay in this file all
+   the same — landing.css restates no token (chat-core checks it), stage.css holds only the skies'
+   RGB triples.
    The dark side is restated word for word where light-dark() resolved on :root cannot reach (below):
    the fallback without light-dark(), «В укритті» and the landing's night subtree.
 
@@ -86,7 +90,7 @@
   --font-body: 'Onest Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-display: var(--font-body);
 
-  --step-label: 0.6875rem;
+  --step-label: 0.75rem;
   --step--1: clamp(0.8rem, 0.77rem + 0.15vw, 0.875rem);
   --step-0: clamp(1rem, 0.96rem + 0.2vw, 1.0625rem);
   --step-1: clamp(1.1rem, 1.04rem + 0.3vw, 1.25rem);

@@ -2217,7 +2217,29 @@ async function tabTo(page: Page, from: Locator, target: Locator, key: 'Tab' | 'S
   throw new Error('Tab never reached the target')
 }
 
-const LAYERS = ['.site-header', '[data-el="session"]', '[data-el="composer"]'] as const
+/** Lines of text in <main> that a box of the light (the canvas, the still orb) meets. */
+function lightOverText(page: Page, selectors: readonly string[]): Promise<string[]> {
+  return page.evaluate((selectors) => {
+    const lights = selectors.map((selector) => document.querySelector(selector)!.getBoundingClientRect()).filter((r) => r.width > 0)
+    const found: string[] = []
+    const range = document.createRange()
+    const walker = document.createTreeWalker(document.querySelector('main')!, NodeFilter.SHOW_TEXT)
+    while (walker.nextNode()) {
+      const node = walker.currentNode as Text
+      if (!node.data.trim() || node.parentElement!.closest('.visually-hidden, [hidden]') !== null) continue
+      range.selectNodeContents(node)
+      for (const t of Array.from(range.getClientRects())) {
+        if (t.width === 0) continue
+        for (const r of lights) if (r.left < t.right && t.left < r.right && r.top < t.bottom && t.top < r.bottom) found.push(`"${node.data.trim().slice(0, 30)}" ${Math.round(t.top)}..${Math.round(t.bottom)}`)
+      }
+    }
+    return found
+  }, selectors)
+}
+
+// The sticky layers over the text: the header, the band of the presence (a desktop with the character
+// shown; display: none elsewhere, so its empty box is skipped), the session row and the composer.
+const LAYERS = ['.site-header', '.chat__scene', '[data-el="session"]', '[data-el="composer"]'] as const
 
 /** ADR-013: «Персонаж» shown (the default) and hidden. The layout's promises hold in both. */
 const CHARACTERS = ['on', 'off'] as const
@@ -2279,22 +2301,15 @@ test.describe('layout', () => {
   // the light — in a new conversation and in a running one.
   test('#43 at 1024 × 768, 1100 × 800 and 1440 × 900 the light stays clear of every line of text', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'the band of the presence')
-    const hits = (): Promise<string[]> =>
+    const hits = (): Promise<string[]> => lightOverText(page, ['.presence__canvas', '.presence .orb'])
+    // The still globe's body (public/presence-*.svg: it ends at 159.4 of 200) reaches over the sheet's
+    // top edge, as in B-chat-* (about 17 px there), while its boxes keep clear of the words.
+    const overlap = (): Promise<number> =>
       page.evaluate(() => {
-        const lights = ['.presence__canvas', '.presence .orb'].map((selector) => document.querySelector(selector)!.getBoundingClientRect()).filter((r) => r.width > 0)
-        const found: string[] = []
-        const range = document.createRange()
-        const walker = document.createTreeWalker(document.querySelector('main')!, NodeFilter.SHOW_TEXT)
-        while (walker.nextNode()) {
-          const node = walker.currentNode as Text
-          if (!node.data.trim() || node.parentElement!.closest('.visually-hidden, [hidden]') !== null) continue
-          range.selectNodeContents(node)
-          for (const t of Array.from(range.getClientRects())) {
-            if (t.width === 0) continue
-            for (const r of lights) if (r.left < t.right && t.left < r.right && r.top < t.bottom && t.top < r.bottom) found.push(`"${node.data.trim().slice(0, 30)}" ${Math.round(t.top)}..${Math.round(t.bottom)}`)
-          }
-        }
-        return found
+        const orb = document.querySelector('.presence .orb')!
+        const box = orb.getBoundingClientRect()
+        const sheet = document.querySelector('.chat__text')!.getBoundingClientRect()
+        return box.top + parseFloat(getComputedStyle(orb).backgroundPositionY) + (box.width * 159.4) / 200 - sheet.top
       })
     for (const size of [
       { width: 1024, height: 768 },
@@ -2306,6 +2321,9 @@ test.describe('layout', () => {
       await page.evaluate(() => document.fonts.ready)
       await animationsDone(page)
       expect(await hits(), `${size.width} px: a new conversation`).toEqual([])
+      const over = await overlap()
+      expect(over, `${size.width} px: the body over the sheet's edge`).toBeGreaterThanOrEqual(12)
+      expect(over, `${size.width} px: the body over the sheet's edge`).toBeLessThanOrEqual(24)
       // A conversation at its top (scrolled, its lines go under the opaque band, where nothing shows).
       await exchange(page)
       await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
@@ -2412,7 +2430,7 @@ test.describe('layout', () => {
   })
 
   for (const character of CHARACTERS)
-    test(`#43 Tab never leaves the focus under the header, the session row or the composer${hiddenTitle(character)}`, async ({ page, api }) => {
+    test(`#43 Tab never leaves the focus under the header, the band of the presence, the session row or the composer${hiddenTitle(character)}`, async ({ page, api }) => {
     await storeCharacter(page, character)
     const long = Array.from({ length: 12 }, (_, i) => `Абзац ${i + 1}: синтетична відповідь, досить довга, щоб сторінка прокручувалася.\n\n`)
     api.on('POST /chat/turn', { sse: reply(long) }, { sse: meta() + streamError('llm_failed') })
@@ -2456,28 +2474,37 @@ test.describe('layout', () => {
   // ADR-013: the phone's header is two rows in one capsule — the mark and «Якщо важко», then the tiles
   // «Щоденник», «Пауза», «Звук», «Вигляд», «Персонаж», «Акаунт»: every one inside 320 px, none over
   // another.
-  test('#43b the /chat/ header fits at 320 px: wordmark, «Якщо важко», «Щоденник», motion and sound, «Вигляд», «Персонаж», «Акаунт», none over another', async ({ page }, testInfo) => {
+  test('#43b the /chat/ header fits at 320 and 360 px: the mark, «Якщо важко · 112 · 103», «Щоденник», motion and sound, «Вигляд», «Персонаж», «Акаунт», none over another', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile', 'one engine is enough for the fit')
-    await page.setViewportSize({ width: 320, height: 640 })
-    await openChat(page)
-    await exchange(page)
-    await page.evaluate(() => document.fonts.ready)
-    await expect(accountToggle(page)).toBeVisible()
-    const selectors = ['.brand', '.help-link', '.journal-toggle', '.motion-toggle', '.sound-toggle', '.theme-toggle', '.character-toggle', '.account-toggle']
-    const boxes: { x: number; y: number; width: number; height: number }[] = []
-    for (const selector of selectors) {
-      const box = await page.locator(`.site-header ${selector}`).boundingBox()
-      expect(box, selector).not.toBeNull()
-      expect(box!.x + box!.width, selector).toBeLessThanOrEqual(320)
-      expect(box!.x, selector).toBeGreaterThanOrEqual(0)
-      boxes.push(box!)
-    }
-    for (let i = 0; i < boxes.length; i++) {
-      for (let j = i + 1; j < boxes.length; j++) {
-        const [a, b] = [boxes[i]!, boxes[j]!]
-        const apart = a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5
-        expect(apart, `${selectors[i]} and ${selectors[j]}`).toBe(true)
+    for (const width of [320, 360]) {
+      await page.setViewportSize({ width, height: 640 })
+      await openChat(page)
+      await exchange(page)
+      await page.evaluate(() => document.fonts.ready)
+      await expect(accountToggle(page)).toBeVisible()
+      // The crisis numbers never go (spec §3.2): under 22.5em the wordmark steps aside for them, its
+      // name kept for screen readers.
+      await expect(page.locator('.chat-header .help-link__numbers'), `${width} px`).toBeVisible()
+      await expect(page.locator('.chat-header .brand'), `${width} px`).toHaveAccessibleName(/Liora/)
+      const selectors = ['.brand', '.help-link', '.journal-toggle', '.motion-toggle', '.sound-toggle', '.theme-toggle', '.character-toggle', '.account-toggle']
+      const boxes: { x: number; y: number; width: number; height: number }[] = []
+      for (const selector of selectors) {
+        const box = await page.locator(`.site-header ${selector}`).boundingBox()
+        expect(box, `${width} px: ${selector}`).not.toBeNull()
+        expect(box!.x + box!.width, `${width} px: ${selector}`).toBeLessThanOrEqual(width)
+        expect(box!.x, `${width} px: ${selector}`).toBeGreaterThanOrEqual(0)
+        boxes.push(box!)
       }
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          const [a, b] = [boxes[i]!, boxes[j]!]
+          const apart = a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5
+          expect(apart, `${width} px: ${selectors[i]} and ${selectors[j]}`).toBe(true)
+        }
+      }
+      // Nothing inside the pill is cut: its words and numbers end inside its box.
+      const pill = await page.locator('.chat-header .help-link').evaluate((node) => ({ scroll: node.scrollWidth, client: node.clientWidth }))
+      expect(pill.scroll, `${width} px: ${JSON.stringify(pill)}`).toBeLessThanOrEqual(pill.client + 1)
     }
   })
 
@@ -2540,10 +2567,13 @@ test.describe('layout', () => {
           // The mask's opaque part starts where its first stop says (computed: a length in px).
           const mask = getComputedStyle(row).maskImage || getComputedStyle(row).getPropertyValue('-webkit-mask-image')
           const fade = Number(/rgb\(0, 0, 0\) ([\d.]+)px/.exec(mask)?.[1] ?? NaN)
+          // The end fades over its own width: at least 18 px, so the next pill fades out, not cut off.
+          const fadeEnd = Number(/rgb\(0, 0, 0\) calc\(100% - ([\d.]+)px\)/.exec(mask)?.[1] ?? NaN)
           return {
             ring: { left: pill.left - 5, right: pill.right + 5, top: pill.top - 5, bottom: pill.bottom + 5 },
             row: { left: box.left, right: box.right, top: box.top, bottom: box.bottom },
             fade,
+            fadeEnd,
             overflows: row.scrollWidth > row.clientWidth,
             pageWide: document.documentElement.scrollWidth - document.documentElement.clientWidth,
           }
@@ -2553,7 +2583,8 @@ test.describe('layout', () => {
         expect(where.ring.top, label).toBeGreaterThanOrEqual(where.row.top - 0.5)
         expect(where.ring.bottom, label).toBeLessThanOrEqual(where.row.bottom + 0.5)
         expect(where.ring.left, label).toBeGreaterThanOrEqual(where.row.left + where.fade - 0.5)
-        expect(where.ring.right, label).toBeLessThanOrEqual(where.row.right - where.fade + 0.5)
+        expect(where.fadeEnd, label).toBeGreaterThanOrEqual(Math.max(where.fade, 18) - 0.5)
+        expect(where.ring.right, label).toBeLessThanOrEqual(where.row.right - where.fadeEnd + 0.5)
         expect(where.pageWide, label).toBeLessThanOrEqual(0)
         // At 320 px the row is wider than the sheet: the check above is about a scrolled row.
         if (width === 320) expect(where.overflows, label).toBe(true)
@@ -2597,6 +2628,14 @@ test.describe('layout', () => {
     await expect(aiMessages(page).last()).toBeInViewport()
     expect(await page.locator('.chat-header').evaluate((node) => getComputedStyle(node).position)).toBe('absolute')
     expect(await page.locator('[data-el="session"]').evaluate((node) => getComputedStyle(node).position)).toBe('relative')
+    // Nor the band of the presence or the sheet's lid (a desktop's sticky layers; a wide low window
+    // has its own test, #144).
+    const band = await page.evaluate(() => ({
+      scene: getComputedStyle(document.querySelector('.chat__scene')!).position,
+      lid: getComputedStyle(document.querySelector('.chat__text')!, '::before').display,
+    }))
+    expect(band.scene).not.toBe('sticky')
+    expect(band.lid).toBe('none')
     await expect(page.locator('.composer__note')).toBeHidden()
     await expect(page.locator('.composer__ai')).toBeVisible()
   })
@@ -2780,6 +2819,10 @@ test.describe('presentation', () => {
     const box = page.locator('[data-el="starters"]')
     const chips = box.locator('button.starter')
     await expect(box).toHaveAttribute('role', 'group')
+    // Named by its visible label (aria-labelledby), shown with it.
+    await expect(page.getByRole('group', { name: 'Почати зі слів', exact: true })).toBeVisible()
+    await expect(page.locator('.starters__label')).toBeVisible()
+    await expect(page.locator('.starters__label')).toHaveText('Почати зі слів')
     await expect(chips).toHaveText([...starters('free')])
     await scenarioList(page).getByRole('radio', { name: 'Розбір дня' }).check()
     await expect(chips).toHaveText([...starters('day')])
@@ -2794,6 +2837,8 @@ test.describe('presentation', () => {
     await answered(page, 1)
     expect(api.count('POST /chat/turn')).toBe(1)
     await expect(box).toBeHidden()
+    // Its visible label goes with it (no «Почати зі слів» over nothing).
+    await expect(page.locator('.starters__label')).toBeHidden()
   })
 
   test('#59 ⓘ beside «Не зберігати» and under the field: Enter opens the note, Esc closes it, the focus stays on ⓘ', async ({ page }) => {
@@ -3228,13 +3273,26 @@ test.describe('theme', () => {
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
     await expect(html(page)).toHaveCSS('background-color', SKY_TOP)
     for (const decoration of ['.stage__haze--teal', '.stage__grain', '.vignette']) await expect(page.locator(decoration)).toBeHidden()
-    // ADR-013: the sky goes quiet everywhere it is painted — the stage and the header's band: its stops
-    // alone, from the day's first stop, no field (radial-gradient) and no star.
-    const skies = await page.evaluate(() => [getComputedStyle(document.querySelector('.stage')!).backgroundImage, getComputedStyle(document.querySelector('.chat-header')!, '::before').backgroundImage])
-    for (const image of skies) {
-      expect(image).not.toContain('radial-gradient')
-      expect(image).toContain('linear-gradient(rgb(70, 180, 170) 0%')
+    // ADR-013: the sky goes quiet everywhere it is painted — the stage, the header's band and the
+    // painted sheet the contacts stand on: its stops alone, from the day's first stop, no field
+    // (radial-gradient) and no star. The sheet's sticky lid is gone (it kept its old paint after the
+    // change: a seam at its height). The crisis takes the field out of the page, and the composer with it.
+    const skies = await page.evaluate(() =>
+      [
+        ['.stage', null],
+        ['.chat-header', '::before'],
+        ['.chat__text', null],
+        ['[data-el="session"]', '::before'],
+      ]
+        .filter(([selector]) => document.querySelector(selector!) !== null)
+        .map(([selector, pseudo]) => [`${selector}${pseudo ?? ''}`, getComputedStyle(document.querySelector(selector!)!, pseudo).backgroundImage]),
+    )
+    expect(skies.map(([where]) => where)).toEqual(expect.arrayContaining(['.stage', '.chat-header::before', '.chat__text']))
+    for (const [where, image] of skies) {
+      expect(image, where).not.toContain('radial-gradient')
+      expect(image, where).toContain('linear-gradient(rgb(70, 180, 170) 0%')
     }
+    expect(await page.locator('.chat__text').evaluate((node) => getComputedStyle(node, '::before').display)).toBe('none')
     await storageAudit(page)
   })
 })
@@ -4839,24 +4897,24 @@ test.describe('highlights, the reminder to pause, the soft end', () => {
     await expect(aiMessages(page).first().locator('.said__act:not([hidden])')).toHaveCount(0)
     await expect(keepOf(first)).toHaveAttribute('aria-pressed', 'false')
     const opacity = (l: Locator): Promise<string> => l.evaluate((n) => getComputedStyle(n).opacity)
-    if (isDesktop(testInfo)) {
-      // A mouse: the actions wait for the pointer or the focus.
-      await page.mouse.move(2, 2)
-      await expect.poll(() => opacity(keepOf(first))).toBe('0')
-    } else {
-      await expect(keepOf(first)).toBeVisible()
-      expect(await opacity(keepOf(first))).toBe('1')
+    // ADR-013 (B-chat-*): the actions stand under every reply, with a mouse too — not only under the
+    // pointer (a hidden «Копіювати» left an empty pill's width before a marked «У тези»).
+    await page.mouse.move(2, 2)
+    for (const reply of [first, second]) {
+      for (const action of [keepOf(reply), reply.locator('[data-act="copy-reply"]')]) {
+        await expect(action).toBeVisible()
+        expect(await opacity(action)).toBe('1')
+      }
     }
     await keepOf(first).click()
     await expect(keepOf(first)).toHaveAttribute('aria-pressed', 'true')
     await expect(announcer(page)).toHaveText('Додано до тез · 1 з 5')
     // The words stay the same; pressed says the state (a tick beside them, not colour alone).
     await expect(keepOf(first)).toHaveAccessibleName(`У тези ${await which(first, 1)}`)
-    if (isDesktop(testInfo)) {
-      await page.mouse.move(2, 2)
-      await expect.poll(() => opacity(keepOf(first))).toBe('1')
-      await expect.poll(() => opacity(keepOf(second))).toBe('0')
-    }
+    await page.mouse.move(2, 2)
+    for (const action of [keepOf(first), keepOf(second), first.locator('[data-act="copy-reply"]')]) expect(await opacity(action)).toBe('1')
+    // A phone keeps the five dots in the session row (the words for screen readers): one is filled.
+    if (!isDesktop(testInfo)) await expect(page.locator('[data-el="session-marks-row"] .marks')).toBeVisible()
     await keepOf(first).click()
     await expect(keepOf(first)).toHaveAttribute('aria-pressed', 'false')
     await expect(announcer(page)).toHaveText('Прибрано з тез · 0 з 5')
@@ -5232,14 +5290,24 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     expect(await halfFaded(page)).toEqual([])
     const placed = await lastUser(page).evaluate((li) => {
       const root = getComputedStyle(document.documentElement)
-      return Math.round(li.getBoundingClientRect().top - parseFloat(root.scrollPaddingTop) - parseFloat(getComputedStyle(li).scrollMarginTop))
+      return {
+        delta: li.getBoundingClientRect().top - parseFloat(root.scrollPaddingTop) - parseFloat(getComputedStyle(li).scrollMarginTop),
+        dpr: window.devicePixelRatio,
+        scrollY: window.scrollY,
+        padding: root.scrollPaddingTop,
+      }
     })
-    // Within half a pixel, either way: Math.round gives -0 for a hair above, and toBe tells -0 from 0.
-    expect(Math.abs(placed)).toBe(0)
+    // Chromium puts a scroll offset on the nearest device pixel — a whole CSS pixel at DPR 1 — while
+    // the anchor's target keeps the fraction of the layout above the message: at 1440 × 900 the
+    // message's top is at 377.578 px, scrollY is a whole 82, and it lands 0.42 px above the line; on a
+    // Pixel 7 (DPR 2.625) 0.06 px below. So within half a device pixel either way (plus a layout unit,
+    // 1/64 px), never more: a landing a frame late, or a row that grows after the scroll (P3b gave the
+    // session row its height from the first frame for that), misses by whole pixels.
+    expect(Math.abs(placed.delta), JSON.stringify(placed)).toBeLessThanOrEqual(0.5 / placed.dpr + 1 / 64)
   })
 
   for (const character of CHARACTERS)
-    test(`#94 the session row says «AI, не людина» only where its small light is the light (the phone); the chip «AI · не людина» stands at both widths, with the line under the field${hiddenTitle(character)}`, async ({ page }, testInfo) => {
+    test(`#94 the session row says «AI, не людина» at both widths (spec §3.4, B-chat-dark); the chip «AI · не людина» stands at both widths, with the line under the field${hiddenTitle(character)}`, async ({ page }, testInfo) => {
     await storeCharacter(page, character)
     await openChat(page)
     await exchange(page, USER)
@@ -5253,11 +5321,12 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     await expect(chip).toHaveText('AI · не людина')
     await expect(page.locator(isDesktop(testInfo) ? '.ai-chip--header' : '.ai-chip--sheet')).toBeVisible()
     await expect(page.locator('.presence__ai')).toHaveCount(0)
+    // The sheet's own header says it too, beside the scenario, at any width (the words of the chip and
+    // of the line under the field are out of view once the conversation scrolls).
+    await expect(row).toBeVisible()
     if (isDesktop(testInfo)) {
-      await expect(row).toBeHidden()
-      await expect(page.locator('[data-el="session"] .session__label')).toHaveText('Вільна розмова', { useInnerText: true })
+      await expect(page.locator('[data-el="session"] .session__label')).toHaveText('Вільна розмова · AI, не людина', { useInnerText: true })
     } else {
-      await expect(row).toBeVisible()
       // The small light goes with the character; the words stay.
       if (character === 'on') await expect(page.locator('.session .orb--mini')).toBeVisible()
       else await expect(page.locator('.session .orb--mini')).toBeHidden()
@@ -6232,7 +6301,7 @@ test.describe('the character', () => {
     for (const light of await lights(page)) expect(light, light.selector).toMatchObject({ display: 'none', boxes: 0 })
   })
 
-  test('#133 what answers is said in both states: the chip, «AI» beside every reply, the line under the field (and the phone’s session row)', async ({ page }, testInfo) => {
+  test('#133 what answers is said in both states: the chip, «AI» beside every reply, the line under the field and the session row', async ({ page }) => {
     await openChat(page)
     await exchange(page, USER)
     await exchange(page, 'Друге синтетичне повідомлення.')
@@ -6247,7 +6316,7 @@ test.describe('the character', () => {
       const count = await replies.count()
       expect(count, character).toBeGreaterThanOrEqual(3)
       for (let i = 0; i < count; i++) await expect(replies.nth(i).locator('.said__who'), `${character}: reply ${i}`).toHaveText('AI')
-      if (!isDesktop(testInfo)) await expect(page.locator('[data-el="session"] .session__ai'), character).toBeVisible()
+      await expect(page.locator('[data-el="session"] .session__ai'), character).toBeVisible()
     }
   })
 
@@ -6332,7 +6401,7 @@ test.describe('the character', () => {
   // presence sits between the header and the sheet only while the character is shown, and the sheet's
   // own header (the session row) sticks right under it — right under the page's header once the
   // character is hidden: no empty band where it stood, nothing of the text under the header.
-  test('#137 the layout without the character: the session row sticks right under the header, no empty band, the sheet centred, a new conversation still one screen', async ({ page }, testInfo) => {
+  test('#137 the layout without the character: the session row sticks right under the header, no empty band, the sheet centred, the composer band from edge to edge of the sheet, a new conversation still one screen', async ({ page }, testInfo) => {
     const where = () =>
       page.evaluate(() => {
         const header = document.querySelector('.site-header')!.getBoundingClientRect()
@@ -6343,6 +6412,12 @@ test.describe('the character', () => {
         const band = scene.getClientRects().length > 0 ? scene.getBoundingClientRect() : null
         const row = document.querySelector('[data-el="session"]')!
         const session = row.getClientRects().length > 0 ? row.getBoundingClientRect() : null
+        // The composer's band (its ::before) from one inner edge of the sheet to the other: text that
+        // scrolls under the field shows at neither side.
+        const sheet = document.querySelector<HTMLElement>('.chat__text')!
+        const bar = document.querySelector('[data-el="composer"]')!
+        const barBox = bar.getBoundingClientRect()
+        const barBand = getComputedStyle(bar, '::before')
         return {
           headerBottom: header.bottom,
           textTop: text.top,
@@ -6353,14 +6428,25 @@ test.describe('the character', () => {
           sessionTop: session?.top ?? null,
           scrollY: window.scrollY,
           extra: document.documentElement.scrollHeight - window.innerHeight,
+          composerBand: {
+            left: barBox.left + parseFloat(barBand.left) - (text.left + sheet.clientLeft),
+            right: text.left + sheet.clientLeft + sheet.clientWidth - (barBox.right - parseFloat(barBand.right)),
+          },
         }
       })
+    const bandCovers = (at: { composerBand: { left: number; right: number } }, label: string): void => {
+      // Within half a pixel of each inner edge (a band narrower would show the transcript at its sides;
+      // the sheet clips anything wider).
+      expect(Math.abs(at.composerBand.left), `${label}: ${JSON.stringify(at.composerBand)}`).toBeLessThanOrEqual(0.5)
+      expect(Math.abs(at.composerBand.right), `${label}: ${JSON.stringify(at.composerBand)}`).toBeLessThanOrEqual(0.5)
+    }
     const desktop = isDesktop(testInfo)
     await openChat(page)
     await page.evaluate(() => document.fonts.ready)
     await animationsDone(page)
     const fresh = await where()
     expect(Math.abs(fresh.leftGap - fresh.rightGap), JSON.stringify(fresh)).toBeLessThanOrEqual(1)
+    bandCovers(fresh, "shown, a new conversation")
     if (desktop) {
       // Shown: the band right under the header, the sheet right under the band, one screen.
       expect(Math.abs(fresh.bandTop! - fresh.headerBottom), JSON.stringify(fresh)).toBeLessThanOrEqual(1)
@@ -6374,6 +6460,7 @@ test.describe('the character', () => {
     await animationsDone(page)
     const talking = await where()
     expect(talking.scrollY, JSON.stringify(talking)).toBeGreaterThan(0)
+    bandCovers(talking, "shown, a conversation")
     // Under the band on a desktop; a phone has no band in a running conversation.
     expect(Math.abs(talking.sessionTop! - (desktop ? talking.bandBottom! : talking.headerBottom)), JSON.stringify(talking)).toBeLessThanOrEqual(1)
 
@@ -6382,6 +6469,7 @@ test.describe('the character', () => {
     await animationsDone(page)
     const hiddenTalking = await where()
     expect(hiddenTalking.bandTop, JSON.stringify(hiddenTalking)).toBeNull()
+    bandCovers(hiddenTalking, "hidden, a conversation")
     expect(Math.abs(hiddenTalking.sessionTop! - hiddenTalking.headerBottom), JSON.stringify(hiddenTalking)).toBeLessThanOrEqual(1)
     expect(Math.abs(hiddenTalking.leftGap - hiddenTalking.rightGap), JSON.stringify(hiddenTalking)).toBeLessThanOrEqual(1)
     await expect(composer(page)).toBeInViewport()
@@ -6393,6 +6481,7 @@ test.describe('the character', () => {
     await animationsDone(page)
     const hidden = await where()
     expect(hidden.bandTop, JSON.stringify(hidden)).toBeNull()
+    bandCovers(hidden, "hidden, a new conversation")
     // Never under the header.
     expect(hidden.textTop, JSON.stringify(hidden)).toBeGreaterThanOrEqual(hidden.headerBottom - 0.5)
     expect(Math.abs(hidden.leftGap - hidden.rightGap), JSON.stringify(hidden)).toBeLessThanOrEqual(1)
@@ -6456,18 +6545,143 @@ test.describe('the character', () => {
   })
 })
 
+test.describe('the crisis numbers and the band in a low window (review of #24)', () => {
+  // Spec §3.6: 112 and 103 on the first screen at 1440 × 900, 1366 × 768, 412 × 839 and 320 × 640, in
+  // either state of the character. Nothing stands over them (the header is fixed and taller on a phone
+  // now: toBeInViewport does not see it), and by day they are terracotta on their own opaque cream —
+  // on the crisis screen and in «Якщо важко» — while at night they are peach with no fill.
+  for (const character of CHARACTERS)
+    test(`#143 the crisis: 112 and 103 in view without scrolling, nothing over them, terracotta on its own cream by day${hiddenTitle(character)}`, async ({ page, api }, testInfo) => {
+      await storeCharacter(page, character)
+      api.on('POST /chat/turn', { sse: meta() + crisis('keyword') })
+      const sizes = isDesktop(testInfo)
+        ? [
+            { width: 1440, height: 900 },
+            { width: 1366, height: 768 },
+          ]
+        : [
+            { width: 412, height: 839 },
+            { width: 320, height: 640 },
+          ]
+      const capsules = (scope: string) =>
+        page.evaluate((scope) => {
+          const header = document.querySelector('.site-header')!.getBoundingClientRect()
+          return ['112', '103'].map((number) => {
+            const link = document.querySelector<HTMLAnchorElement>(`${scope} a.help__number[href="tel:${number}"]`)!
+            const box = link.getBoundingClientRect()
+            const style = getComputedStyle(link)
+            const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+            return {
+              number,
+              inView: box.top >= 0 && box.bottom <= window.innerHeight && box.left >= 0 && box.right <= document.documentElement.clientWidth,
+              belowHeader: box.top >= header.bottom - 0.5,
+              onTop: hit !== null && hit.closest('a') === link,
+              fill: style.backgroundColor,
+              ink: style.color,
+              edge: style.borderTopColor,
+            }
+          })
+        }, scope)
+      for (const size of sizes) {
+        await page.setViewportSize(size)
+        for (const scheme of ['light', 'dark'] as const) {
+          await page.emulateMedia({ colorScheme: scheme })
+          await openChat(page)
+          await send(page, CRISIS_TEXT)
+          await onScreen(page, 'crisis')
+          await page.evaluate(() => document.fonts.ready)
+          const label = `${size.width} × ${size.height}, ${scheme}`
+          expect(await page.evaluate(() => window.scrollY), label).toBe(0)
+          const [fill, ink] = scheme === 'light' ? ['rgb(255, 246, 236)', 'rgb(143, 52, 20)'] : ['rgba(255, 197, 143, 0)', 'rgb(255, 197, 143)']
+          for (const c of await capsules('section[data-screen="crisis"]')) {
+            expect(c, label).toEqual({ number: c.number, inView: true, belowHeader: true, onTop: true, fill, ink, edge: ink })
+          }
+          // «Якщо важко» over the crisis: the same capsules in the same colours.
+          await page.locator('.chat-header .help-link').click()
+          await expect(page.locator('#help-dialog')).toBeVisible()
+          for (const c of await capsules('#help-dialog')) expect({ fill: c.fill, ink: c.ink, edge: c.edge }, `${label}: «Якщо важко»`).toEqual({ fill, ink, edge: ink })
+          await page.keyboard.press('Escape')
+          await expect(page.locator('#help-dialog')).toBeHidden()
+        }
+      }
+    })
+
+  // A desktop window under 40em high keeps the band of the presence but lets it scroll away (--band-h
+  // 0px), and with the on-screen keyboard (html[data-kb], src/chat/ui/keyboard.ts) the band, the header
+  // and the session row all scroll with the page and the sheet's lid goes. No test opened a wide, low
+  // window before.
+  test('#144 a low desktop window (1280 × 600) and the on-screen keyboard: the band scrolls away, scroll-padding-top follows its formula', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'the band of the presence')
+    const look = () =>
+      page.evaluate(() => {
+        const root = getComputedStyle(document.documentElement)
+        const px = (name: string): number => parseFloat(root.getPropertyValue(name)) * (root.getPropertyValue(name).trim().endsWith('rem') ? 16 : 1)
+        const scene = document.querySelector('.chat__scene')!
+        const row = document.querySelector('[data-el="session"]')!
+        return {
+          band: root.getPropertyValue('--band-h').trim(),
+          scene: getComputedStyle(scene).position,
+          header: getComputedStyle(document.querySelector('.chat-header')!).position,
+          session: getComputedStyle(row).position,
+          lid: getComputedStyle(document.querySelector('.chat__text')!, '::before').display,
+          padding: parseFloat(root.scrollPaddingTop),
+          formula: px('--header-h') + px('--band-h') + Math.max(px('--session-h'), px('--sheet-cap')) + Math.max(8, px('--fade-top') - 8),
+          sceneBottom: scene.getBoundingClientRect().bottom,
+          headerBottom: document.querySelector('.site-header')!.getBoundingClientRect().bottom,
+          sessionTop: row.getBoundingClientRect().top,
+          scrollY: window.scrollY,
+        }
+      })
+    await page.setViewportSize({ width: 1280, height: 600 })
+    await openChat(page)
+    for (const text of [USER, 'Друге синтетичне повідомлення.', 'Третє синтетичне повідомлення.']) await exchange(page, text)
+    await animationsDone(page)
+    const low = await look()
+    expect(low.band, JSON.stringify(low)).toBe('0px')
+    expect(low.scene, JSON.stringify(low)).toBe('relative')
+    expect(Math.abs(low.padding - low.formula), JSON.stringify(low)).toBeLessThanOrEqual(0.5)
+    // Scrolled: the band went up with the page, the session row sticks right under the header.
+    expect(low.scrollY, JSON.stringify(low)).toBeGreaterThan(0)
+    expect(low.sceneBottom, JSON.stringify(low)).toBeLessThanOrEqual(low.headerBottom + 0.5)
+    expect(Math.abs(low.sessionTop - low.headerBottom), JSON.stringify(low)).toBeLessThanOrEqual(1)
+
+    // The keyboard (what keyboard.ts sets when the visual viewport shrinks under a text field).
+    await page.setViewportSize({ width: 1024, height: 768 })
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+    await page.evaluate(() => document.documentElement.setAttribute('data-kb', ''))
+    await animationsDone(page)
+    const kb = await look()
+    expect(kb, JSON.stringify(kb)).toMatchObject({ band: '0px', scene: 'relative', header: 'absolute', session: 'relative', lid: 'none', padding: 8 })
+    await page.evaluate(() => document.documentElement.removeAttribute('data-kb'))
+    const back = await look()
+    expect(back.band, JSON.stringify(back)).not.toBe('0px')
+    expect(back.scene, JSON.stringify(back)).toBe('sticky')
+  })
+})
+
 test.describe('the light', () => {
   test.use({ webgl: true })
 
-  test('the light runs in its slot, beside the text column', GPU, async ({ page }, testInfo) => {
-    test.skip(!isDesktop(testInfo), 'the scene column of the wide layout')
+  // ADR-013 (P3b): one centred sheet, the character in a band over its top edge — no text column
+  // beside it any more. The canvas is the slot's own size and meets no line of text (as #43 checks the
+  // still orb without WebGL). Not run locally (@gpu): CI's GPU job only.
+  test('the light runs in its slot, over the sheet’s top edge and clear of every line of text', GPU, async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'the band of the presence')
     await openChat(page)
     await expect(html(page)).toHaveAttribute('data-gl', 'on', { timeout: 15_000 })
     const boxes = await page.evaluate(() => {
       const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect()
-      return { canvas: rect('.presence__canvas'), slot: rect('[data-presence-slot]'), text: rect('.chat__text') }
+      return { canvas: rect('.presence__canvas'), slot: rect('[data-presence-slot]'), text: rect('.chat__text'), band: rect('.chat__scene') }
     })
-    expect(boxes.canvas.left).toBeGreaterThanOrEqual(boxes.text.right)
     expect(Math.abs(boxes.canvas.width - boxes.slot.width)).toBeLessThanOrEqual(1)
+    // Centred over the sheet, inside the band, reaching over the sheet's top edge.
+    expect(Math.abs(boxes.canvas.left + boxes.canvas.width / 2 - (boxes.text.left + boxes.text.width / 2))).toBeLessThanOrEqual(1)
+    expect(boxes.canvas.top).toBeGreaterThanOrEqual(boxes.band.top - 0.5)
+    expect(boxes.canvas.bottom).toBeGreaterThan(boxes.text.top)
+    expect(await lightOverText(page, ['.presence__canvas'])).toEqual([])
+    await exchange(page)
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+    await animationsDone(page)
+    expect(await lightOverText(page, ['.presence__canvas'])).toEqual([])
   })
 })
