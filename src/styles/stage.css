@@ -1,221 +1,262 @@
-/* The sky behind the page. Layers, back to front:
-     .stage     CSS sky: gradient, slow haze, grain — the same with or without WebGL
+/* The sky behind the page (ADR-013). Layers, back to front:
+     .stage     CSS sky: the theme's stops, its fields (and at night the ribbon and the stars)
      .hero__orb static light (sections.css), shown while the scene is not on
-     .scene     transparent WebGL canvas: the light, particles, bokeh (src/gl)
-     .vignette  darkens the edges over the light
-   html[data-gl] is set by src/gl/core/boot.ts: loading → on, or off with a reason. */
+     .scene     transparent WebGL canvas (src/gl)
+     .vignette  darkens the edges at night (none by day)
+   html[data-gl] is set by src/gl/core/boot.ts: loading → on, or off with a reason.
 
-/* The sky's colours. R G B channels, so each layer can fade its colour to alpha 0. A sky preset
+   The sky's colours are R G B triples, so each layer can fade its colour to alpha 0. A sky preset
    (/chat/ only: src/ui/sky.ts, and public/theme-init.js before the first frame) overrides the
-   triples and nothing else; the crisis takes the preset off and keeps the theme. The landing paints
-   its own sky (landing.css) and hides the haze and the grain, so these are the chat's.
+   triples and nothing else: the stops' positions, the fields' places and sizes and their alphas
+   belong to the theme, not to the preset. The crisis takes the preset off and keeps the theme. The
+   landing paints a sky per section (landing.css); .stage stays its plain fallback there.
 
-   Each theme has its three skies, and every layer under text stays on its side of the text colours
-   (tests/e2e/chat-core.spec.ts), counted at the worst point — each haze at its full alpha over the
-   lightest (dark) or darkest (light) base, and in the light theme the vignette's edge on top:
-   dark, «вечірня лампа» — nothing lighter than L 0.023 (--color-text-dim ≥ 5.5:1 there);
-   light, «ранковий папір» — nothing darker than L 0.76 (--color-text-dim ≥ 4.8:1 there).
-   The haze alphas belong to the theme, not to the preset. */
+   Three images, defined in every theme block (an undefined one would void a whole layer list):
+   --sky-image        the stops and the fields (and at night the ribbon): .stage, the chat's bands
+                      and the painted sheet;
+   --sky-image-quiet  the stops alone (the crisis);
+   --sky-stars        the stars (night only; none by day) — only where no text stands on bare sky.
+   Every image has the same six layers in both themes (f1 · f2 · f3 · f4 · ribbon · stops), so a list
+   of sizes or attachments set beside it never shifts.
 
-/* Dark: the evening. */
+   Every text token keeps 4.5:1 and every control border 3:1 on every stop, every field at its full
+   alpha and every overlap of fields (light: each pair; dark: each field under the ribbon), counted
+   pair by pair in tests/e2e/chat-core.spec.ts. Unlike the landing's section skies, the night here
+   lets its fields meet (field 1 or 2 with the low field 4, over the left and right thirds): those
+   overlaps are counted by the exact composite of the layers on three windows (16:9, 4:3, a phone),
+   at the alphas they have there. */
+
+/* Dark: the night with the aurora. Flat stops (the preset's base); teal and peach fields high, a
+   ribbon across the whole width, a low rose one. Field 3 is the light theme's: none at night. */
 :root {
-  --sky-top: 22 32 33; /* #162021 */
-  --sky-mid: 18 26 27; /* #121a1b, --color-bg */
-  --sky-bottom: 14 21 22; /* #0e1516 */
-  --sky-glow-teal: 25 37 39; /* #192527, top right */
-  --sky-glow-violet: 27 24 36; /* #1b1824, bottom left */
-  --sky-haze-teal: 38 112 112;
-  --sky-haze-violet: 78 62 150;
-  --sky-haze-amber: 170 102 46;
-  --haze-a-teal: 0.1;
-  --haze-a-violet: 0.16;
-  --haze-a-amber: 0.08;
-  --grain-opacity: 0.08;
+  --sky-1: 4 7 8; /* #040708, --color-bg */
+  --sky-2: 4 7 8;
+  --sky-3: 4 7 8;
+  --sky-4: 4 7 8;
+  --sky-5: 4 7 8;
+  --sky-6: 4 7 8;
+  --sky-7: 4 7 8;
+  --sky-field-1: 46 230 193; /* teal */
+  --sky-field-2: 255 157 107; /* peach */
+  --sky-field-3: 4 7 8;
+  --sky-field-4: 255 111 125; /* rose */
+  --sky-ribbon: 46 230 193;
+  --sky-a-1: 0.28;
+  --sky-a-2: 0.28;
+  --sky-a-3: 0;
+  --sky-a-4: 0.22;
+  --sky-a-ribbon: 0.08;
+  --sky-stops: linear-gradient(180deg, rgb(var(--sky-1)) 0%, rgb(var(--sky-2)) 14%, rgb(var(--sky-3)) 30%, rgb(var(--sky-4)) 46%, rgb(var(--sky-5)) 66%, rgb(var(--sky-6)) 86%, rgb(var(--sky-7)) 100%);
+  --sky-image:
+    radial-gradient(ellipse 30% 40% at 13% 24%, rgb(var(--sky-field-1) / var(--sky-a-1)) 0%, rgb(var(--sky-field-1) / 0) 100%),
+    radial-gradient(ellipse 28% 40% at 88% 22%, rgb(var(--sky-field-2) / var(--sky-a-2)) 0%, rgb(var(--sky-field-2) / 0) 100%),
+    radial-gradient(ellipse 30% 30% at 50% 100%, rgb(var(--sky-field-3) / var(--sky-a-3)) 0%, rgb(var(--sky-field-3) / 0) 100%),
+    radial-gradient(ellipse 62% 16% at 50% 63%, rgb(var(--sky-field-4) / var(--sky-a-4)) 0%, rgb(var(--sky-field-4) / 0) 100%),
+    linear-gradient(104deg, rgb(var(--sky-ribbon) / 0) 70%, rgb(var(--sky-ribbon) / var(--sky-a-ribbon)) 86%, rgb(var(--sky-ribbon) / 0) 99%),
+    var(--sky-stops);
+  --sky-image-quiet: none, none, none, none, none, var(--sky-stops);
+  /* Cream points, 1–1.4 px: a layer of their own, painted by the chat's .stage and its bands only. */
+  --sky-stars:
+    radial-gradient(circle at 5% 12%, rgb(243 239 232) 0 1.1px, rgb(243 239 232 / 0) 1.9px),
+    radial-gradient(circle at 11% 40%, rgb(243 239 232) 0 1.3px, rgb(243 239 232 / 0) 2.1px),
+    radial-gradient(circle at 16% 24%, rgb(243 239 232) 0 1px, rgb(243 239 232 / 0) 1.8px),
+    radial-gradient(circle at 19% 58%, rgb(243 239 232) 0 1.2px, rgb(243 239 232 / 0) 2px),
+    radial-gradient(circle at 24% 9%, rgb(243 239 232) 0 1px, rgb(243 239 232 / 0) 1.8px),
+    radial-gradient(circle at 33% 19%, rgb(243 239 232) 0 1.3px, rgb(243 239 232 / 0) 2.1px),
+    radial-gradient(circle at 41% 10%, rgb(243 239 232) 0 1px, rgb(243 239 232 / 0) 1.8px),
+    radial-gradient(circle at 62% 10%, rgb(243 239 232) 0 1.2px, rgb(243 239 232 / 0) 2px),
+    radial-gradient(circle at 68% 21%, rgb(243 239 232) 0 1px, rgb(243 239 232 / 0) 1.8px),
+    radial-gradient(circle at 77% 30%, rgb(243 239 232) 0 1.3px, rgb(243 239 232 / 0) 2.1px),
+    radial-gradient(circle at 84% 46%, rgb(243 239 232) 0 1px, rgb(243 239 232 / 0) 1.8px),
+    radial-gradient(circle at 89% 15%, rgb(243 239 232) 0 1.2px, rgb(243 239 232 / 0) 2px),
+    radial-gradient(circle at 95% 34%, rgb(243 239 232) 0 1px, rgb(243 239 232 / 0) 1.8px),
+    radial-gradient(circle at 97% 58%, rgb(243 239 232) 0 1.2px, rgb(243 239 232 / 0) 2px),
+    radial-gradient(circle at 3% 66%, rgb(243 239 232) 0 1px, rgb(243 239 232 / 0) 1.8px);
 }
 
-/* Dark presets. */
+/* Dark presets: colours only. */
 html[data-sky='dusk'] {
-  --sky-top: 30 22 36; /* #1e1624, plum */
-  --sky-mid: 22 19 26;
-  --sky-bottom: 17 15 20;
-  --sky-glow-teal: 38 24 40; /* the top-right glow turns violet */
-  --sky-glow-violet: 40 26 28; /* and the bottom-left one ember */
-  --sky-haze-teal: 96 64 120;
-  --sky-haze-violet: 118 50 84;
-  --sky-haze-amber: 184 90 34;
+  --sky-1: 13 10 18; /* #0d0a12 */
+  --sky-2: 13 10 18;
+  --sky-3: 13 10 18;
+  --sky-4: 13 10 18;
+  --sky-5: 13 10 18;
+  --sky-6: 13 10 18;
+  --sky-7: 13 10 18;
+  --sky-field-1: 255 111 125; /* rose */
+  --sky-field-2: 255 157 107; /* peach */
+  --sky-field-3: 13 10 18;
+  --sky-field-4: 255 157 107;
+  --sky-ribbon: 255 111 125;
 }
 
 html[data-sky='dawn'] {
-  --sky-top: 20 28 44; /* #141c2c, deep blue */
-  --sky-mid: 17 22 30;
-  --sky-bottom: 14 18 24;
-  --sky-glow-teal: 24 33 52;
-  --sky-glow-violet: 40 27 34; /* a rose edge low on the left */
-  --sky-haze-teal: 64 100 150;
-  --sky-haze-violet: 104 58 86;
-  --sky-haze-amber: 176 96 60;
+  --sky-1: 5 10 20; /* #050a14 */
+  --sky-2: 5 10 20;
+  --sky-3: 5 10 20;
+  --sky-4: 5 10 20;
+  --sky-5: 5 10 20;
+  --sky-6: 5 10 20;
+  --sky-7: 5 10 20;
+  --sky-field-1: 88 150 255; /* blue */
+  --sky-field-2: 46 230 193; /* teal */
+  --sky-field-3: 5 10 20;
+  --sky-field-4: 255 157 107; /* peach */
+  --sky-ribbon: 46 230 193;
 }
 
-/* Light: the same blocks twice — once for a chosen light theme (html[data-theme]), once for the
-   system's light without a choice. A media query and an attribute cannot share one selector; the
-   test checks that both copies match. An engine without light-dark() keeps the dark theme in
-   tokens.css, so it keeps the dark sky too. */
+/* Light «світанок»: the same blocks twice — once for a chosen light theme (html[data-theme]), once
+   for the system's light without a choice. A media query and an attribute cannot share one selector;
+   the test checks that both copies match. An engine without light-dark() keeps the dark theme in
+   tokens.css, so it keeps the night sky too. The stops of «Вечір» and «Ранок» are their own gradients
+   sampled at the day's positions (the preset changes colours only). */
 @supports (color: light-dark(#000, #fff)) {
   :root[data-theme='light']:not([data-theme-lock]) {
-    --sky-top: 241 237 229; /* «Ніч» becomes the day: paper */
-    --sky-mid: 246 241 234; /* #f6f1ea, --color-bg */
-    --sky-bottom: 243 237 228;
-    --sky-glow-teal: 230 239 235; /* a cool light, top right */
-    --sky-glow-violet: 243 235 238; /* a rose one, bottom left */
-    --sky-haze-teal: 196 228 220;
-    --sky-haze-violet: 222 214 242;
-    --sky-haze-amber: 250 216 186;
-    --haze-a-teal: 0.2;
-    --haze-a-violet: 0.2;
-    --haze-a-amber: 0.2;
-    --grain-opacity: 0.05;
+    --sky-1: 70 180 170; /* #46b4aa, --color-bg */
+    --sky-2: 108 200 187; /* #6cc8bb */
+    --sky-3: 169 224 204; /* #a9e0cc */
+    --sky-4: 243 226 180; /* #f3e2b4 */
+    --sky-5: 255 211 163; /* #ffd3a3 */
+    --sky-6: 255 177 133; /* #ffb185 */
+    --sky-7: 255 154 120; /* #ff9a78 */
+    --sky-field-1: 255 177 133;
+    --sky-field-2: 255 211 163;
+    --sky-field-3: 255 154 120;
+    --sky-field-4: 255 154 120;
+    --sky-ribbon: 255 177 133;
+    --sky-a-1: 0.5;
+    --sky-a-2: 0.42;
+    --sky-a-3: 0.55;
+    --sky-a-4: 0.45;
+    --sky-a-ribbon: 0;
+    --sky-image:
+      radial-gradient(ellipse 30% 26% at 4% 6%, rgb(var(--sky-field-1) / var(--sky-a-1)) 0%, rgb(var(--sky-field-1) / 0) 100%),
+      radial-gradient(ellipse 26% 22% at 97% 16%, rgb(var(--sky-field-2) / var(--sky-a-2)) 0%, rgb(var(--sky-field-2) / 0) 100%),
+      radial-gradient(ellipse 36% 30% at 5% 94%, rgb(var(--sky-field-3) / var(--sky-a-3)) 0%, rgb(var(--sky-field-3) / 0) 100%),
+      radial-gradient(ellipse 34% 30% at 96% 88%, rgb(var(--sky-field-4) / var(--sky-a-4)) 0%, rgb(var(--sky-field-4) / 0) 100%),
+      linear-gradient(104deg, rgb(var(--sky-ribbon) / 0), rgb(var(--sky-ribbon) / var(--sky-a-ribbon)), rgb(var(--sky-ribbon) / 0)),
+      var(--sky-stops);
+    --sky-stars: none;
   }
 
   :root[data-theme='light'][data-sky='dusk']:not([data-theme-lock]) {
-    --sky-top: 246 236 225; /* warm sand */
-    --sky-mid: 247 240 231;
-    --sky-bottom: 244 236 226;
-    --sky-glow-teal: 245 233 226;
-    --sky-glow-violet: 243 233 236;
-    --sky-haze-teal: 230 212 232;
-    --sky-haze-violet: 246 210 212;
-    --sky-haze-amber: 250 212 178;
+    --sky-1: 255 211 163; /* #ffd3a3 */
+    --sky-2: 255 199 153; /* #ffc799 */
+    --sky-3: 255 186 141; /* #ffba8d */
+    --sky-4: 255 173 131; /* #ffad83 */
+    --sky-5: 255 160 123; /* #ffa07b */
+    --sky-6: 251 149 127; /* #fb957f */
+    --sky-7: 245 143 136; /* #f58f88 */
+    --sky-field-1: 255 211 163;
+    --sky-field-2: 255 211 163;
+    --sky-field-3: 245 143 136;
+    --sky-field-4: 245 143 136;
+    --sky-ribbon: 255 211 163;
   }
 
   :root[data-theme='light'][data-sky='dawn']:not([data-theme-lock]) {
-    --sky-top: 236 241 246; /* a blue morning mist */
-    --sky-mid: 245 242 240;
-    --sky-bottom: 242 239 238;
-    --sky-glow-teal: 230 237 247;
-    --sky-glow-violet: 246 234 236;
-    --sky-haze-teal: 206 222 244;
-    --sky-haze-violet: 242 216 228;
-    --sky-haze-amber: 250 220 200;
+    --sky-1: 108 200 187; /* #6cc8bb */
+    --sky-2: 142 213 197; /* #8ed5c5 */
+    --sky-3: 179 227 206; /* #b3e3ce */
+    --sky-4: 212 237 214; /* #d4edd6 */
+    --sky-5: 235 231 193; /* #ebe7c1 */
+    --sky-6: 248 219 173; /* #f8dbad */
+    --sky-7: 255 211 163; /* #ffd3a3 */
+    --sky-field-1: 169 224 204;
+    --sky-field-2: 108 200 187;
+    --sky-field-3: 255 211 163;
+    --sky-field-4: 255 211 163;
+    --sky-ribbon: 169 224 204;
   }
 
   @media (prefers-color-scheme: light) {
     :root:not([data-theme]):not([data-theme-lock]) {
-      --sky-top: 241 237 229;
-      --sky-mid: 246 241 234;
-      --sky-bottom: 243 237 228;
-      --sky-glow-teal: 230 239 235;
-      --sky-glow-violet: 243 235 238;
-      --sky-haze-teal: 196 228 220;
-      --sky-haze-violet: 222 214 242;
-      --sky-haze-amber: 250 216 186;
-      --haze-a-teal: 0.2;
-      --haze-a-violet: 0.2;
-      --haze-a-amber: 0.2;
-      --grain-opacity: 0.05;
+      --sky-1: 70 180 170;
+      --sky-2: 108 200 187;
+      --sky-3: 169 224 204;
+      --sky-4: 243 226 180;
+      --sky-5: 255 211 163;
+      --sky-6: 255 177 133;
+      --sky-7: 255 154 120;
+      --sky-field-1: 255 177 133;
+      --sky-field-2: 255 211 163;
+      --sky-field-3: 255 154 120;
+      --sky-field-4: 255 154 120;
+      --sky-ribbon: 255 177 133;
+      --sky-a-1: 0.5;
+      --sky-a-2: 0.42;
+      --sky-a-3: 0.55;
+      --sky-a-4: 0.45;
+      --sky-a-ribbon: 0;
+      --sky-image:
+        radial-gradient(ellipse 30% 26% at 4% 6%, rgb(var(--sky-field-1) / var(--sky-a-1)) 0%, rgb(var(--sky-field-1) / 0) 100%),
+        radial-gradient(ellipse 26% 22% at 97% 16%, rgb(var(--sky-field-2) / var(--sky-a-2)) 0%, rgb(var(--sky-field-2) / 0) 100%),
+        radial-gradient(ellipse 36% 30% at 5% 94%, rgb(var(--sky-field-3) / var(--sky-a-3)) 0%, rgb(var(--sky-field-3) / 0) 100%),
+        radial-gradient(ellipse 34% 30% at 96% 88%, rgb(var(--sky-field-4) / var(--sky-a-4)) 0%, rgb(var(--sky-field-4) / 0) 100%),
+        linear-gradient(104deg, rgb(var(--sky-ribbon) / 0), rgb(var(--sky-ribbon) / var(--sky-a-ribbon)), rgb(var(--sky-ribbon) / 0)),
+        var(--sky-stops);
+      --sky-stars: none;
     }
 
     :root:not([data-theme]):not([data-theme-lock])[data-sky='dusk'] {
-      --sky-top: 246 236 225;
-      --sky-mid: 247 240 231;
-      --sky-bottom: 244 236 226;
-      --sky-glow-teal: 245 233 226;
-      --sky-glow-violet: 243 233 236;
-      --sky-haze-teal: 230 212 232;
-      --sky-haze-violet: 246 210 212;
-      --sky-haze-amber: 250 212 178;
+      --sky-1: 255 211 163;
+      --sky-2: 255 199 153;
+      --sky-3: 255 186 141;
+      --sky-4: 255 173 131;
+      --sky-5: 255 160 123;
+      --sky-6: 251 149 127;
+      --sky-7: 245 143 136;
+      --sky-field-1: 255 211 163;
+      --sky-field-2: 255 211 163;
+      --sky-field-3: 245 143 136;
+      --sky-field-4: 245 143 136;
+      --sky-ribbon: 255 211 163;
     }
 
     :root:not([data-theme]):not([data-theme-lock])[data-sky='dawn'] {
-      --sky-top: 236 241 246;
-      --sky-mid: 245 242 240;
-      --sky-bottom: 242 239 238;
-      --sky-glow-teal: 230 237 247;
-      --sky-glow-violet: 246 234 236;
-      --sky-haze-teal: 206 222 244;
-      --sky-haze-violet: 242 216 228;
-      --sky-haze-amber: 250 220 200;
+      --sky-1: 108 200 187;
+      --sky-2: 142 213 197;
+      --sky-3: 179 227 206;
+      --sky-4: 212 237 214;
+      --sky-5: 235 231 193;
+      --sky-6: 248 219 173;
+      --sky-7: 255 211 163;
+      --sky-field-1: 169 224 204;
+      --sky-field-2: 108 200 187;
+      --sky-field-3: 255 211 163;
+      --sky-field-4: 255 211 163;
+      --sky-ribbon: 169 224 204;
     }
   }
 }
 
+/* The crisis keeps the person's theme and drops the decoration everywhere the sky is painted — the
+   stage, the chat's bands, the painted sheet: the stops alone, no fields, no stars
+   (src/chat/ui/render.ts sets html[data-screen] and takes the preset off). Important: the light
+   theme's blocks above are more specific than this one. */
+html[data-screen='crisis'] {
+  --sky-image: var(--sky-image-quiet) !important;
+  --sky-stars: none !important;
+}
+
+/* One height with the painted glass's fixed layer (100% × 100lvh), so on a phone with a dynamic bar
+   their stops do not drift apart. */
 .stage {
   position: fixed;
-  inset: 0;
+  inset: 0 0 auto;
+  height: 100vh;
+  height: 100lvh;
   z-index: var(--z-stage);
   overflow: hidden;
   pointer-events: none;
-  background:
-    radial-gradient(120% 85% at 74% -5%, rgb(var(--sky-glow-teal)) 0%, rgb(var(--sky-glow-teal) / 0) 62%),
-    radial-gradient(90% 70% at 10% 105%, rgb(var(--sky-glow-violet)) 0%, rgb(var(--sky-glow-violet) / 0) 70%),
-    linear-gradient(180deg, rgb(var(--sky-top)) 0%, rgb(var(--sky-mid)) 55%, rgb(var(--sky-bottom)) 100%);
+  background-color: var(--color-bg);
+  background-image: var(--sky-stars), var(--sky-image);
 }
 
-.stage__haze {
-  position: absolute;
-  width: 90vmax;
-  height: 90vmax;
-  border-radius: 50%;
-  will-change: transform;
-}
-
-.stage__haze--teal {
-  left: -30vmax;
-  top: -38vmax;
-  background: radial-gradient(closest-side, rgb(var(--sky-haze-teal) / var(--haze-a-teal)), rgb(var(--sky-haze-teal) / 0));
-}
-
-.stage__haze--violet {
-  right: -42vmax;
-  top: 12vh;
-  background: radial-gradient(closest-side, rgb(var(--sky-haze-violet) / var(--haze-a-violet)), rgb(var(--sky-haze-violet) / 0));
-}
-
-/* The warm light rises as the page comes to its end (--progress is set by src/ui/nav.ts). */
-.stage__haze--amber {
-  left: 5vw;
-  bottom: -62vmax;
-  background: radial-gradient(closest-side, rgb(var(--sky-haze-amber) / var(--haze-a-amber)), rgb(var(--sky-haze-amber) / 0));
-  opacity: calc(0.35 + var(--progress, 0) * 0.65);
-}
-
-/* The haze drifts only while motion is on: the pause button stops everything (WCAG 2.2.2). */
-html[data-motion='on'] .stage__haze--teal {
-  animation: haze-teal 80s var(--ease-in-out) infinite alternate;
-}
-
-html[data-motion='on'] .stage__haze--violet {
-  animation: haze-violet 96s var(--ease-in-out) infinite alternate;
-}
-
-html[data-motion='on'] .stage__haze--amber {
-  animation: haze-amber 88s var(--ease-in-out) infinite alternate;
-}
-
-@keyframes haze-teal {
-  to {
-    transform: translate3d(14vmax, 8vmax, 0) scale(1.12);
-  }
-}
-
-@keyframes haze-violet {
-  to {
-    transform: translate3d(-12vmax, 10vmax, 0) scale(0.92);
-  }
-}
-
-@keyframes haze-amber {
-  to {
-    transform: translate3d(10vmax, -6vmax, 0) scale(1.08);
-  }
-}
-
-/* Static film grain under the light: no blend mode, so it costs nothing per frame. */
+/* The old haze and grain: the fields of the sky replace them. */
+.stage__haze,
 .stage__grain {
-  position: absolute;
-  inset: 0;
-  opacity: var(--grain-opacity);
-  background-image: url('../assets/grain.svg');
-  background-size: 240px 240px;
+  display: none;
 }
 
 .scene {

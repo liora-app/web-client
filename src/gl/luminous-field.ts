@@ -18,6 +18,8 @@ export function createLuminousField(low: boolean) {
     uPointer: { value: new Vector2(8, 8) }, uOpacity: { value: 0 },
     uStroke: { value: 1 }, uPixelRatio: { value: 1 }, uSize: { value: 1 },
     uFinal: { value: 0 }, uResolution: { value: new Vector2(1, 1) },
+    // The final's text column (scene.ts measures it): from .x the guard eases off, from .y it is gone.
+    uProtect: { value: new Vector2(0.16, 0.34) },
     uGain: { value: 1.65 },
     // The theme (setPalette): shared by every material below, so one write reaches all of them.
     uFieldBlue: { value: new Vector3() }, uFieldMint: { value: new Vector3() }, uFieldGold: { value: new Vector3() },

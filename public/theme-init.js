@@ -17,12 +17,12 @@
     }
   } catch (e) {}
   try {
-    // The bar in --color-bg, as theme.ts writes it later: paper, or the page's own dark — the hex its
-    // meta ships (the landing's night, the chat's lamp). Without light-dark(): dark.
+    // The bar in --color-bg, as theme.ts writes it later: the day's first stop, or the night — the hex
+    // its meta ships. Without light-dark(): dark.
     var t = root.getAttribute('data-theme')
     var day = t ? t === 'light' : matchMedia('(prefers-color-scheme: light)').matches
     var meta = document.querySelector('meta[name="theme-color"]')
     var n = parseInt(meta.content.slice(1), 16)
-    meta.content = day && CSS.supports('color', 'light-dark(#000, #fff)') ? 'rgb(246, 241, 234)' : 'rgb(' + (n >> 16) + ', ' + ((n >> 8) & 255) + ', ' + (n & 255) + ')'
+    meta.content = day && CSS.supports('color', 'light-dark(#000, #fff)') ? 'rgb(70, 180, 170)' : 'rgb(' + (n >> 16) + ', ' + ((n >> 8) & 255) + ', ' + (n & 255) + ')'
   } catch (e) {}
 })()

@@ -2217,10 +2217,45 @@ async function tabTo(page: Page, from: Locator, target: Locator, key: 'Tab' | 'S
   throw new Error('Tab never reached the target')
 }
 
-const LAYERS = ['.site-header', '[data-el="session"]', '[data-el="composer"]'] as const
+/** Lines of text in <main> that a box of the light (the canvas, the still orb) meets. */
+function lightOverText(page: Page, selectors: readonly string[]): Promise<string[]> {
+  return page.evaluate((selectors) => {
+    const lights = selectors.map((selector) => document.querySelector(selector)!.getBoundingClientRect()).filter((r) => r.width > 0)
+    const found: string[] = []
+    const range = document.createRange()
+    const walker = document.createTreeWalker(document.querySelector('main')!, NodeFilter.SHOW_TEXT)
+    while (walker.nextNode()) {
+      const node = walker.currentNode as Text
+      if (!node.data.trim() || node.parentElement!.closest('.visually-hidden, [hidden]') !== null) continue
+      range.selectNodeContents(node)
+      for (const t of Array.from(range.getClientRects())) {
+        if (t.width === 0) continue
+        for (const r of lights) if (r.left < t.right && t.left < r.right && r.top < t.bottom && t.top < r.bottom) found.push(`"${node.data.trim().slice(0, 30)}" ${Math.round(t.top)}..${Math.round(t.bottom)}`)
+      }
+    }
+    return found
+  }, selectors)
+}
+
+// The sticky layers over the text: the header, the band of the presence (a desktop with the character
+// shown; display: none elsewhere, so its empty box is skipped), the session row and the composer.
+const LAYERS = ['.site-header', '.chat__scene', '[data-el="session"]', '[data-el="composer"]'] as const
+
+/** ADR-013: «Персонаж» shown (the default) and hidden. The layout's promises hold in both. */
+const CHARACTERS = ['on', 'off'] as const
+type CharacterState = (typeof CHARACTERS)[number]
+/** The title's tail: none for the default, so the tests keep their names. */
+const hiddenTitle = (character: CharacterState): string => (character === 'off' ? ' — the character hidden' : '')
+/** The choice already stored when the page loads (as src/ui/character.ts stores it). */
+async function storeCharacter(page: Page, character: CharacterState): Promise<void> {
+  if (character === 'off') await page.addInitScript(() => window.localStorage.setItem('liora:character', 'off'))
+}
+const characterToggle = (page: Page): Locator => page.locator('[data-character-toggle]')
 
 test.describe('layout', () => {
-  test('#43 the composer stays in view at 1440 × 900 and on a Pixel 7; «Надіслати» sits in the middle of a one-line field', async ({ page }, testInfo) => {
+  for (const character of CHARACTERS)
+    test(`#43 the composer stays in view at 1440 × 900 and on a Pixel 7; «Надіслати» sits in the middle of a one-line field${hiddenTitle(character)}`, async ({ page }, testInfo) => {
+    await storeCharacter(page, character)
     await openChat(page)
     await expect(composer(page)).toBeInViewport()
     // 6 px above and below the 44 px button on a desktop, 4 px on the phone (§3.7.3).
@@ -2244,7 +2279,9 @@ test.describe('layout', () => {
     await expect(composer(page)).toBeInViewport()
   })
 
-  test('#43 Pixel 7 (412 × 839), a new conversation: «Не зберігати» is in view above the composer, not under its fade', async ({ page }, testInfo) => {
+  for (const character of CHARACTERS)
+    test(`#43 Pixel 7 (412 × 839), a new conversation: «Не зберігати» is in view above the composer, not under its fade${hiddenTitle(character)}`, async ({ page }, testInfo) => {
+    await storeCharacter(page, character)
     test.skip(testInfo.project.name !== 'mobile', 'a phone layout')
     await openChat(page)
     await page.evaluate(() => document.fonts.ready)
@@ -2258,22 +2295,40 @@ test.describe('layout', () => {
     expect(where.scrollY, JSON.stringify(where)).toBe(0)
   })
 
-  test('#43 at 1024 × 768 and 1100 × 800 the light stays out of the text column', async ({ page }, testInfo) => {
-    test.skip(!isDesktop(testInfo), 'the two-column layout')
+  // ADR-013: the character stands over the sheet's top edge on purpose (--presence-overlap), so the
+  // sheet's box is no longer the line. Stronger: neither the canvas nor the still orb meets a single
+  // line of text anywhere in <main> — the sheet's first line, the session row's words, the label beside
+  // the light — in a new conversation and in a running one.
+  test('#43 at 1024 × 768, 1100 × 800 and 1440 × 900 the light stays clear of every line of text', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'the band of the presence')
+    const hits = (): Promise<string[]> => lightOverText(page, ['.presence__canvas', '.presence .orb'])
+    // The still globe's body (public/presence-*.svg: it ends at 159.4 of 200) reaches over the sheet's
+    // top edge, as in B-chat-* (about 17 px there), while its boxes keep clear of the words.
+    const overlap = (): Promise<number> =>
+      page.evaluate(() => {
+        const orb = document.querySelector('.presence .orb')!
+        const box = orb.getBoundingClientRect()
+        const sheet = document.querySelector('.chat__text')!.getBoundingClientRect()
+        return box.top + parseFloat(getComputedStyle(orb).backgroundPositionY) + (box.width * 159.4) / 200 - sheet.top
+      })
     for (const size of [
       { width: 1024, height: 768 },
       { width: 1100, height: 800 },
+      { width: 1440, height: 900 },
     ]) {
       await page.setViewportSize(size)
       await openChat(page)
-      const overlap = await page.evaluate(() => {
-        const text = document.querySelector('.chat__text')!.getBoundingClientRect()
-        return ['.presence__canvas', '.presence .orb'].filter((selector) => {
-          const r = document.querySelector(selector)!.getBoundingClientRect()
-          return r.width > 0 && r.left < text.right && text.left < r.right && r.top < text.bottom && text.top < r.bottom
-        })
-      })
-      expect(overlap, `${size.width} px`).toEqual([])
+      await page.evaluate(() => document.fonts.ready)
+      await animationsDone(page)
+      expect(await hits(), `${size.width} px: a new conversation`).toEqual([])
+      const over = await overlap()
+      expect(over, `${size.width} px: the body over the sheet's edge`).toBeGreaterThanOrEqual(12)
+      expect(over, `${size.width} px: the body over the sheet's edge`).toBeLessThanOrEqual(24)
+      // A conversation at its top (scrolled, its lines go under the opaque band, where nothing shows).
+      await exchange(page)
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+      await animationsDone(page)
+      expect(await hits(), `${size.width} px: a conversation`).toEqual([])
     }
   })
 
@@ -2374,7 +2429,9 @@ test.describe('layout', () => {
     }
   })
 
-  test('#43 Tab never leaves the focus under the header, the session row or the composer', async ({ page, api }) => {
+  for (const character of CHARACTERS)
+    test(`#43 Tab never leaves the focus under the header, the band of the presence, the session row or the composer${hiddenTitle(character)}`, async ({ page, api }) => {
+    await storeCharacter(page, character)
     const long = Array.from({ length: 12 }, (_, i) => `Абзац ${i + 1}: синтетична відповідь, досить довга, щоб сторінка прокручувалася.\n\n`)
     api.on('POST /chat/turn', { sse: reply(long) }, { sse: meta() + streamError('llm_failed') })
     await openChat(page)
@@ -2414,17 +2471,151 @@ test.describe('layout', () => {
     await expect(composer(page)).toBeFocused()
   })
 
-  test('#43b the /chat/ header fits at 320 px: wordmark, «Якщо важко», motion and sound, «Вигляд», «Акаунт»', async ({ page }, testInfo) => {
+  // ADR-013: the phone's header is two rows in one capsule — the mark and «Якщо важко», then the tiles
+  // «Щоденник», «Пауза», «Звук», «Вигляд», «Персонаж», «Акаунт»: every one inside 320 px, none over
+  // another.
+  test('#43b the /chat/ header fits at 320 and 360 px: the mark, «Якщо важко · 112 · 103», «Щоденник», motion and sound, «Вигляд», «Персонаж», «Акаунт», none over another', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile', 'one engine is enough for the fit')
-    await page.setViewportSize({ width: 320, height: 640 })
+    for (const width of [320, 360]) {
+      await page.setViewportSize({ width, height: 640 })
+      await openChat(page)
+      await exchange(page)
+      await page.evaluate(() => document.fonts.ready)
+      await expect(accountToggle(page)).toBeVisible()
+      // The crisis numbers never go (spec §3.2): under 22.5em the wordmark steps aside for them, its
+      // name kept for screen readers.
+      await expect(page.locator('.chat-header .help-link__numbers'), `${width} px`).toBeVisible()
+      await expect(page.locator('.chat-header .brand'), `${width} px`).toHaveAccessibleName(/Liora/)
+      const selectors = ['.brand', '.help-link', '.journal-toggle', '.motion-toggle', '.sound-toggle', '.theme-toggle', '.character-toggle', '.account-toggle']
+      const boxes: { x: number; y: number; width: number; height: number }[] = []
+      for (const selector of selectors) {
+        const box = await page.locator(`.site-header ${selector}`).boundingBox()
+        expect(box, `${width} px: ${selector}`).not.toBeNull()
+        expect(box!.x + box!.width, `${width} px: ${selector}`).toBeLessThanOrEqual(width)
+        expect(box!.x, `${width} px: ${selector}`).toBeGreaterThanOrEqual(0)
+        boxes.push(box!)
+      }
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          const [a, b] = [boxes[i]!, boxes[j]!]
+          const apart = a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5
+          expect(apart, `${width} px: ${selectors[i]} and ${selectors[j]}`).toBe(true)
+        }
+      }
+      // Nothing inside the pill is cut: its words and numbers end inside its box.
+      const pill = await page.locator('.chat-header .help-link').evaluate((node) => ({ scroll: node.scrollWidth, client: node.clientWidth }))
+      expect(pill.scroll, `${width} px: ${JSON.stringify(pill)}`).toBeLessThanOrEqual(pill.client + 1)
+    }
+  })
+
+  test('#140 the /chat/ header at 1024 and 1440 px: nothing cut off, left to right without overlaps', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'the wide header')
+    for (const width of [1024, 1440]) {
+      await page.setViewportSize({ width, height: 800 })
+      await openChat(page)
+      await exchange(page)
+      await page.evaluate(() => document.fonts.ready)
+      expect(await cutOffAtEdges(page), `${width} px`).toEqual([])
+      const boxes = await page
+        .locator('.chat-header :is(.brand, .ai-chip--header, .help-link, .journal-toggle, .media, .theme-toggle, .character-toggle, .account-toggle):visible')
+        .evaluateAll((items) => items.map((item) => item.getBoundingClientRect()).map(({ left, right }) => ({ left, right })))
+      expect(boxes.length, `${width} px`).toBeGreaterThanOrEqual(8)
+      for (let i = 1; i < boxes.length; i++) expect(boxes[i]!.left, `${width} px: item ${i}`).toBeGreaterThanOrEqual(boxes[i - 1]!.right)
+      // Inside the capsule, not only the window.
+      const capsule = await page.evaluate(() => {
+        const header = document.querySelector('.chat-header')!
+        const style = getComputedStyle(header, '::after')
+        return { left: parseFloat(style.left), right: header.getBoundingClientRect().width - parseFloat(style.right) }
+      })
+      expect(boxes[0]!.left, `${width} px`).toBeGreaterThanOrEqual(capsule.left)
+      expect(boxes[boxes.length - 1]!.right, `${width} px`).toBeLessThanOrEqual(capsule.right)
+    }
+  })
+
+  // ADR-013: the scenarios are one row that scrolls sideways where they do not fit, its ends fading
+  // under a mask. axe does not count a mask, so this does: every pill the arrows reach stands with its
+  // focus ring (5 px around it, 3 px and a 2 px gap) inside the row and clear of the masked ends, and
+  // the row never widens the page.
+  test('#141 the scenario row: each pill the arrows reach has its focus ring inside the row and clear of its masked ends', async ({ page }, testInfo) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    const widths = isDesktop(testInfo) ? [1024, 1440] : [320, 412]
+    for (const width of widths) {
+      await page.setViewportSize({ width, height: 800 })
+      await openChat(page)
+      await page.evaluate(() => document.fonts.ready)
+      const radios = scenarioList(page).getByRole('radio')
+      await expect(radios).toHaveCount(4)
+      await tabTo(page, page.locator('#chat-title'), scenarioList(page).locator('input:checked'))
+      for (let i = 0; i < 4; i++) {
+        if (i > 0) await page.keyboard.press('ArrowRight')
+        await expect(radios.nth(i)).toBeFocused()
+        const where = await scenarioList(page).evaluate(async (row) => {
+          // The row scrolls the pill into view: wait until it holds still for a few frames.
+          await new Promise<void>((resolve) => {
+            let last = row.scrollLeft
+            let still = 0
+            const tick = (): void => {
+              still = row.scrollLeft === last ? still + 1 : 0
+              last = row.scrollLeft
+              if (still >= 4) resolve()
+              else requestAnimationFrame(tick)
+            }
+            requestAnimationFrame(tick)
+          })
+          const pill = document.activeElement!.closest('.pill')!.getBoundingClientRect()
+          const box = row.getBoundingClientRect()
+          // The mask's opaque part starts where its first stop says (computed: a length in px).
+          const mask = getComputedStyle(row).maskImage || getComputedStyle(row).getPropertyValue('-webkit-mask-image')
+          const fade = Number(/rgb\(0, 0, 0\) ([\d.]+)px/.exec(mask)?.[1] ?? NaN)
+          // The end fades over its own width: at least 18 px, so the next pill fades out, not cut off.
+          const fadeEnd = Number(/rgb\(0, 0, 0\) calc\(100% - ([\d.]+)px\)/.exec(mask)?.[1] ?? NaN)
+          return {
+            ring: { left: pill.left - 5, right: pill.right + 5, top: pill.top - 5, bottom: pill.bottom + 5 },
+            row: { left: box.left, right: box.right, top: box.top, bottom: box.bottom },
+            fade,
+            fadeEnd,
+            overflows: row.scrollWidth > row.clientWidth,
+            pageWide: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          }
+        })
+        const label = `${width} px, pill ${i}: ${JSON.stringify(where)}`
+        expect(where.fade, label).toBeGreaterThan(0)
+        expect(where.ring.top, label).toBeGreaterThanOrEqual(where.row.top - 0.5)
+        expect(where.ring.bottom, label).toBeLessThanOrEqual(where.row.bottom + 0.5)
+        expect(where.ring.left, label).toBeGreaterThanOrEqual(where.row.left + where.fade - 0.5)
+        expect(where.fadeEnd, label).toBeGreaterThanOrEqual(Math.max(where.fade, 18) - 0.5)
+        expect(where.ring.right, label).toBeLessThanOrEqual(where.row.right - where.fadeEnd + 0.5)
+        expect(where.pageWide, label).toBeLessThanOrEqual(0)
+        // At 320 px the row is wider than the sheet: the check above is about a scrolled row.
+        if (width === 320) expect(where.overflows, label).toBe(true)
+      }
+    }
+  })
+
+  // ADR-013 §1.1: terracotta only on its own opaque cream. «Якщо важко» by day: the pill's fill has
+  // alpha 1 (on the capsule's glass it would be 4.15:1), here and in the crisis (tests/e2e/header.spec.ts
+  // checks /).
+  test('#142 «Якщо важко» by day is terracotta on its own opaque cream, in the crisis too', async ({ page, api }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'computed colours: one engine is enough')
+    api.on('POST /chat/turn', { sse: meta() + crisis('keyword') })
+    await page.emulateMedia({ colorScheme: 'light' })
     await openChat(page)
-    await page.evaluate(() => document.fonts.ready)
-    await expect(accountToggle(page)).toBeVisible()
-    for (const selector of ['.brand', '.help-link', '.media', '.theme-toggle', '.account-toggle']) {
-      const box = await page.locator(`.site-header ${selector}`).boundingBox()
-      expect(box, selector).not.toBeNull()
-      expect(box!.x + box!.width, selector).toBeLessThanOrEqual(320)
-      expect(box!.x, selector).toBeGreaterThanOrEqual(0)
+    const pill = (): Promise<{ fill: string; ink: string; edge: string }> =>
+      page.locator('.chat-header .help-link').evaluate((node) => {
+        const style = getComputedStyle(node)
+        return { fill: style.backgroundColor, ink: style.color, edge: style.borderTopColor }
+      })
+    for (const where of ['a new conversation', 'the crisis']) {
+      if (where === 'the crisis') {
+        await send(page, CRISIS_TEXT)
+        await onScreen(page, 'crisis')
+        await expect(page.locator('.help-link')).toHaveAttribute('aria-current', 'true')
+      }
+      const p = await pill()
+      expect(p.fill, where).toBe('rgb(255, 246, 236)')
+      expect(p.ink, where).toBe('rgb(143, 52, 20)')
+      expect(p.edge, where).toBe('rgb(143, 52, 20)')
+      expect(contrast(p.ink, p.fill), where).toBeGreaterThanOrEqual(4.5)
     }
   })
 
@@ -2437,6 +2628,14 @@ test.describe('layout', () => {
     await expect(aiMessages(page).last()).toBeInViewport()
     expect(await page.locator('.chat-header').evaluate((node) => getComputedStyle(node).position)).toBe('absolute')
     expect(await page.locator('[data-el="session"]').evaluate((node) => getComputedStyle(node).position)).toBe('relative')
+    // Nor the band of the presence or the sheet's lid (a desktop's sticky layers; a wide low window
+    // has its own test, #144).
+    const band = await page.evaluate(() => ({
+      scene: getComputedStyle(document.querySelector('.chat__scene')!).position,
+      lid: getComputedStyle(document.querySelector('.chat__text')!, '::before').display,
+    }))
+    expect(band.scene).not.toBe('sticky')
+    expect(band.lid).toBe('none')
     await expect(page.locator('.composer__note')).toBeHidden()
     await expect(page.locator('.composer__ai')).toBeVisible()
   })
@@ -2444,7 +2643,7 @@ test.describe('layout', () => {
   test('#44 forced colors draw every control’s border; without them the fields’ borders are --color-field-border', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'one engine is enough for computed styles')
     // --color-field-border of the dark theme (#6f7c78, ≥ 3:1 on its surface and its sky).
-    const FIELD_BORDER = 'rgb(111, 124, 120)'
+    const FIELD_BORDER = 'rgb(148, 170, 165)'
     const border = (selector: string) =>
       page.locator(selector).first().evaluate((node) => {
         const style = getComputedStyle(node)
@@ -2620,6 +2819,10 @@ test.describe('presentation', () => {
     const box = page.locator('[data-el="starters"]')
     const chips = box.locator('button.starter')
     await expect(box).toHaveAttribute('role', 'group')
+    // Named by its visible label (aria-labelledby), shown with it.
+    await expect(page.getByRole('group', { name: 'Почати зі слів', exact: true })).toBeVisible()
+    await expect(page.locator('.starters__label')).toBeVisible()
+    await expect(page.locator('.starters__label')).toHaveText('Почати зі слів')
     await expect(chips).toHaveText([...starters('free')])
     await scenarioList(page).getByRole('radio', { name: 'Розбір дня' }).check()
     await expect(chips).toHaveText([...starters('day')])
@@ -2634,6 +2837,8 @@ test.describe('presentation', () => {
     await answered(page, 1)
     expect(api.count('POST /chat/turn')).toBe(1)
     await expect(box).toBeHidden()
+    // Its visible label goes with it (no «Почати зі слів» over nothing).
+    await expect(page.locator('.starters__label')).toBeHidden()
   })
 
   test('#59 ⓘ beside «Не зберігати» and under the field: Enter opens the note, Esc closes it, the focus stays on ⓘ', async ({ page }) => {
@@ -2936,8 +3141,10 @@ test.describe('accessibility', () => {
 
 // ── The theme (ADR-012): «Як у системі», «Світла», «Темна» ───────────────────────────────────
 
-const PAPER = 'rgb(246, 241, 234)' // --color-bg, light: #f6f1ea
-const LAMP = 'rgb(18, 26, 27)' // --color-bg, dark: #121a1b
+const SKY_TOP = 'rgb(70, 180, 170)' // --color-bg, light: #46b4aa, the day's first stop (ADR-013)
+const NIGHT = 'rgb(4, 7, 8)' // --color-bg, dark: #040708, the night of both pages
+const SHEET_L = 'rgb(255, 246, 236)' // --color-sheet-solid, light: a sheet that covers the window
+const LAMP = 'rgb(18, 26, 27)' // --color-sheet-solid, dark, and «В укритті» (--color-shelter-bg)
 const themeToggle = (page: Page): Locator => page.locator('[data-theme-toggle]')
 const themeMenu = (page: Page): Locator => page.getByRole('menu', { name: 'Вигляд' })
 const themeItem = (page: Page, name: string): Locator => themeMenu(page).getByRole('menuitemradio', { name })
@@ -2963,7 +3170,7 @@ test.describe('theme', () => {
     await expect(toggle).toHaveAccessibleName('Вигляд: як у системі')
     // The suite emulates a dark system: no choice, the evening.
     await expect(html(page)).not.toHaveAttribute('data-theme')
-    await expect(html(page)).toHaveCSS('background-color', LAMP)
+    await expect(html(page)).toHaveCSS('background-color', NIGHT)
     expect(await storedTheme(page)).toBeNull()
 
     await toggle.click()
@@ -2976,16 +3183,16 @@ test.describe('theme', () => {
     await expect(toggle).toHaveAttribute('aria-expanded', 'false')
     await expect(toggle).toBeFocused()
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
-    await expect(html(page)).toHaveCSS('background-color', PAPER)
+    await expect(html(page)).toHaveCSS('background-color', SKY_TOP)
     await expect(toggle).toHaveAccessibleName('Вигляд: світла')
     expect(await storedTheme(page)).toBe('light')
     // One theme-color, following the page.
     await expect(page.locator('meta[name="theme-color"]')).toHaveCount(1)
-    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', PAPER)
+    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', SKY_TOP)
 
     await page.reload()
     await onScreen(page, 'chat')
-    expect(await atDcl()).toEqual({ theme: 'light', bg: PAPER })
+    expect(await atDcl()).toEqual({ theme: 'light', bg: SKY_TOP })
 
     // By keyboard (WAI-ARIA menu button): ↓ opens on the chosen item, End, Enter.
     await toggle.focus()
@@ -2995,7 +3202,7 @@ test.describe('theme', () => {
     await expect(themeItem(page, 'Темна')).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(html(page)).toHaveAttribute('data-theme', 'dark')
-    await expect(html(page)).toHaveCSS('background-color', LAMP)
+    await expect(html(page)).toHaveCSS('background-color', NIGHT)
     expect(await storedTheme(page)).toBe('dark')
 
     // «Як у системі» forgets the choice: no key, no attribute, the system decides (dark here).
@@ -3005,7 +3212,7 @@ test.describe('theme', () => {
     expect(await storedTheme(page)).toBeNull()
     await page.reload()
     await onScreen(page, 'chat')
-    expect(await atDcl()).toEqual({ theme: null, bg: LAMP })
+    expect(await atDcl()).toEqual({ theme: null, bg: NIGHT })
     await storageAudit(page)
   })
 
@@ -3064,8 +3271,28 @@ test.describe('theme', () => {
     await expect(themeMenu(page)).toBeHidden()
     await expect(page.locator('#crisis-title')).toBeFocused()
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
-    await expect(html(page)).toHaveCSS('background-color', PAPER)
+    await expect(html(page)).toHaveCSS('background-color', SKY_TOP)
     for (const decoration of ['.stage__haze--teal', '.stage__grain', '.vignette']) await expect(page.locator(decoration)).toBeHidden()
+    // ADR-013: the sky goes quiet everywhere it is painted — the stage, the header's band and the
+    // painted sheet the contacts stand on: its stops alone, from the day's first stop, no field
+    // (radial-gradient) and no star. The sheet's sticky lid is gone (it kept its old paint after the
+    // change: a seam at its height). The crisis takes the field out of the page, and the composer with it.
+    const skies = await page.evaluate(() =>
+      [
+        ['.stage', null],
+        ['.chat-header', '::before'],
+        ['.chat__text', null],
+        ['[data-el="session"]', '::before'],
+      ]
+        .filter(([selector]) => document.querySelector(selector!) !== null)
+        .map(([selector, pseudo]) => [`${selector}${pseudo ?? ''}`, getComputedStyle(document.querySelector(selector!)!, pseudo).backgroundImage]),
+    )
+    expect(skies.map(([where]) => where)).toEqual(expect.arrayContaining(['.stage', '.chat-header::before', '.chat__text']))
+    for (const [where, image] of skies) {
+      expect(image, where).not.toContain('radial-gradient')
+      expect(image, where).toContain('linear-gradient(rgb(70, 180, 170) 0%')
+    }
+    expect(await page.locator('.chat__text').evaluate((node) => getComputedStyle(node, '::before').display)).toBe('none')
     await storageAudit(page)
   })
 })
@@ -3102,7 +3329,7 @@ test.describe('theme: a light system', () => {
     await openChat(page, '/chat/', 'signed-out')
     // No choice stored: the CSS follows the system.
     await expect(html(page)).not.toHaveAttribute('data-theme')
-    await expect(html(page)).toHaveCSS('background-color', PAPER)
+    await expect(html(page)).toHaveCSS('background-color', SKY_TOP)
     await settled(page)
     await axe(page, 'light: signed-out')
 
@@ -3166,7 +3393,7 @@ test.describe('theme: a light system', () => {
     await send(page, CRISIS_TEXT)
     await onScreen(page, 'crisis')
     await expect(html(page)).not.toHaveAttribute('data-sky')
-    await expect(html(page)).toHaveCSS('background-color', PAPER)
+    await expect(html(page)).toHaveCSS('background-color', SKY_TOP)
     await settled(page)
     await axe(page, 'light: the crisis')
   })
@@ -3289,6 +3516,15 @@ test.describe('diary', () => {
     await openChat(page)
     await send(page, USER)
     await stream.requests(1)
+    // ADR-013: «Щоденник» in the header is there, aria-disabled, and says why instead of opening.
+    const journalToggle = page.locator('.chat-header .journal-toggle')
+    await expect(journalToggle).toBeVisible()
+    await expect(journalToggle).toHaveAttribute('aria-disabled', 'true')
+    // An aria-disabled button stays focusable and pressable (Playwright's click() waits for «enabled»).
+    await journalToggle.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('[data-announcer]')).toContainText('Щоденник відкриється, щойно AI відповість.')
+    await onScreen(page, 'chat')
     await accountToggle(page).click()
     await expect(accountSheet(page)).toBeVisible()
     await expect(accountSheet(page).locator('[data-el="account-journal"]')).toBeHidden()
@@ -3296,6 +3532,7 @@ test.describe('diary', () => {
     await stream.write(reply())
     await stream.close()
     await answered(page, 1)
+    await expect(journalToggle).not.toHaveAttribute('aria-disabled', /.*/)
 
     await endWithoutTheses(page)
     await page.locator('section[data-screen="ended"]').getByRole('button', { name: 'Відкрити щоденник' }).click()
@@ -3632,7 +3869,7 @@ test.describe('diary', () => {
     await openDiary(page)
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
-      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
       await settled(page)
       await axe(page, `${scheme}: the diary`)
       const row = entries(page).first()
@@ -4264,7 +4501,7 @@ test.describe('tools', () => {
   test('#81 «В укритті»: safety first, dark and silent in the light theme too, large controls; breathing and grounding over it come back to it on Esc', async ({ page, api }) => {
     await page.emulateMedia({ colorScheme: 'light' })
     await openChat(page)
-    await expect(html(page)).toHaveCSS('background-color', PAPER)
+    await expect(html(page)).toHaveCSS('background-color', SKY_TOP)
     const dialog = shelterDialog(page)
     await openTool(page, 'В укритті')
     await expect(dialog).toBeVisible()
@@ -4279,7 +4516,7 @@ test.describe('tools', () => {
     // Dark whatever the theme: the dark theme's background and text, and the gutter beside it.
     expect(await dialog.evaluate((node) => ({ bg: getComputedStyle(node).backgroundColor, text: getComputedStyle(node).color }))).toEqual({
       bg: LAMP,
-      text: 'rgb(236, 241, 237)',
+      text: 'rgb(243, 239, 232)',
     })
     await expect(html(page)).toHaveCSS('background-color', LAMP)
     // The browser's own bar goes dark with it (the one theme-color, still theme.ts's).
@@ -4308,8 +4545,8 @@ test.describe('tools', () => {
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
     await expect(toolsButton(page)).toBeFocused()
-    await expect(html(page)).toHaveCSS('background-color', PAPER)
-    await expect(themeColor).toHaveAttribute('content', PAPER)
+    await expect(html(page)).toHaveCSS('background-color', SKY_TOP)
+    await expect(themeColor).toHaveAttribute('content', SKY_TOP)
     await expect(breatheDialog(page)).not.toHaveAttribute('data-shelter', '')
     expect(api.count('GET /helplines')).toBe(0)
   })
@@ -4339,10 +4576,10 @@ test.describe('tools', () => {
       await animationsDone(dialog, { except: '.breathe__circle' })
       // The page under it says which theme is on: its text is --color-text of that theme.
       await page.emulateMedia({ colorScheme: 'dark' })
-      await expect(page.locator('body')).toHaveCSS('color', 'rgb(236, 241, 237)')
+      await expect(page.locator('body')).toHaveCSS('color', 'rgb(243, 239, 232)')
       const dark = await colours(dialog)
       await page.emulateMedia({ colorScheme: 'light' })
-      await expect(page.locator('body')).toHaveCSS('color', 'rgb(28, 38, 38)')
+      await expect(page.locator('body')).toHaveCSS('color', 'rgb(11, 39, 41)')
       expect(await colours(dialog), label).toEqual(dark)
       expect(Object.keys(dark).length, label).toBeGreaterThan(8)
     }
@@ -4436,7 +4673,7 @@ test.describe('tools', () => {
       test.slow()
       await page.emulateMedia({ colorScheme: scheme })
       await openChat(page)
-      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
       await openTool(page, 'Подихати хвилину')
       await axe(page, `${scheme}: breathing, ready`)
       await breatheDialog(page).getByRole('button', { name: 'Почати' }).click()
@@ -4486,7 +4723,7 @@ test.describe('tools', () => {
     await expect(page.locator('section[data-screen="review"] [data-el="mood-line"]')).toHaveText('Спершу — цікавість.')
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
-      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
       await axe(page, `${scheme}: the theses with «А зараз?»`)
     }
   })
@@ -4660,30 +4897,33 @@ test.describe('highlights, the reminder to pause, the soft end', () => {
     await expect(aiMessages(page).first().locator('.said__act:not([hidden])')).toHaveCount(0)
     await expect(keepOf(first)).toHaveAttribute('aria-pressed', 'false')
     const opacity = (l: Locator): Promise<string> => l.evaluate((n) => getComputedStyle(n).opacity)
-    if (isDesktop(testInfo)) {
-      // A mouse: the actions wait for the pointer or the focus.
-      await page.mouse.move(2, 2)
-      await expect.poll(() => opacity(keepOf(first))).toBe('0')
-    } else {
-      await expect(keepOf(first)).toBeVisible()
-      expect(await opacity(keepOf(first))).toBe('1')
+    // ADR-013 (B-chat-*): the actions stand under every reply, with a mouse too — not only under the
+    // pointer (a hidden «Копіювати» left an empty pill's width before a marked «У тези»).
+    await page.mouse.move(2, 2)
+    for (const reply of [first, second]) {
+      for (const action of [keepOf(reply), reply.locator('[data-act="copy-reply"]')]) {
+        await expect(action).toBeVisible()
+        expect(await opacity(action)).toBe('1')
+      }
     }
     await keepOf(first).click()
     await expect(keepOf(first)).toHaveAttribute('aria-pressed', 'true')
     await expect(announcer(page)).toHaveText('Додано до тез · 1 з 5')
     // The words stay the same; pressed says the state (a tick beside them, not colour alone).
     await expect(keepOf(first)).toHaveAccessibleName(`У тези ${await which(first, 1)}`)
-    if (isDesktop(testInfo)) {
-      await page.mouse.move(2, 2)
-      await expect.poll(() => opacity(keepOf(first))).toBe('1')
-      await expect.poll(() => opacity(keepOf(second))).toBe('0')
-    }
+    await page.mouse.move(2, 2)
+    for (const action of [keepOf(first), keepOf(second), first.locator('[data-act="copy-reply"]')]) expect(await opacity(action)).toBe('1')
+    // A phone keeps the five dots in the session row (the words for screen readers): one is filled.
+    if (!isDesktop(testInfo)) await expect(page.locator('[data-el="session-marks-row"] .marks')).toBeVisible()
     await keepOf(first).click()
     await expect(keepOf(first)).toHaveAttribute('aria-pressed', 'false')
     await expect(announcer(page)).toHaveText('Прибрано з тез · 0 з 5')
     await keepOf(first).click()
     await keepOf(second).click()
     await expect(announcer(page)).toHaveText('Додано до тез · 2 з 5')
+    // ADR-013: the session row counts them — five dots by data-marks, and the number in words.
+    await expect(page.locator('[data-el="session-marks"]')).toHaveText('У тезах 2 з 5')
+    await expect(page.locator('[data-el="session-marks-row"]')).toHaveAttribute('data-marks', '2')
     // Nothing of it goes to the server with a turn.
     for (const body of turnBodies(api.bodies('POST /chat/turn'))) expect(Object.keys(body).sort()).toEqual(['messages', 'scenario'])
 
@@ -4983,7 +5223,9 @@ async function borderOnlyControls(page: Page): Promise<string[]> {
 }
 
 test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the names, the borders', () => {
-  test('#93 at rest no line of the conversation sits half under the top fade; the person’s bubble has its own edge; «+» comes before the field in Tab order', async ({ page }, testInfo) => {
+  for (const character of CHARACTERS)
+    test(`#93 at rest no line of the conversation sits half under the top fade; the person’s bubble has its own edge; «+» comes before the field in Tab order${hiddenTitle(character)}`, async ({ page }, testInfo) => {
+    await storeCharacter(page, character)
     await openChat(page)
     // At rest also means with the page's own faces in: line heights are theirs.
     await page.evaluate(async () => {
@@ -5034,7 +5276,9 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     }
   })
 
-  test('#93b without motion the first message lands where it should too: the anchor scrolls once the render is through, and the transcript’s size never transitions', async ({ page }) => {
+  for (const character of CHARACTERS)
+    test(`#93b without motion the first message lands where it should too: the anchor scrolls once the render is through, and the transcript’s size never transitions${hiddenTitle(character)}`, async ({ page }) => {
+    await storeCharacter(page, character)
     // prefers-reduced-motion: base.css gives every property a 0.01 ms transition and the scroll is
     // instant — the anchor used to land short on the first message, the opening line under the fade.
     await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -5046,26 +5290,46 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     expect(await halfFaded(page)).toEqual([])
     const placed = await lastUser(page).evaluate((li) => {
       const root = getComputedStyle(document.documentElement)
-      return Math.round(li.getBoundingClientRect().top - parseFloat(root.scrollPaddingTop) - parseFloat(getComputedStyle(li).scrollMarginTop))
+      return {
+        delta: li.getBoundingClientRect().top - parseFloat(root.scrollPaddingTop) - parseFloat(getComputedStyle(li).scrollMarginTop),
+        dpr: window.devicePixelRatio,
+        scrollY: window.scrollY,
+        padding: root.scrollPaddingTop,
+      }
     })
-    expect(placed).toBe(0)
+    // Chromium puts a scroll offset on the nearest device pixel — a whole CSS pixel at DPR 1 — while
+    // the anchor's target keeps the fraction of the layout above the message: at 1440 × 900 the
+    // message's top is at 377.578 px, scrollY is a whole 82, and it lands 0.42 px above the line; on a
+    // Pixel 7 (DPR 2.625) 0.06 px below. So within half a device pixel either way (plus a layout unit,
+    // 1/64 px), never more: a landing a frame late, or a row that grows after the scroll (P3b gave the
+    // session row its height from the first frame for that), misses by whole pixels.
+    expect(Math.abs(placed.delta), JSON.stringify(placed)).toBeLessThanOrEqual(0.5 / placed.dpr + 1 / 64)
   })
 
-  test('#94 the session row says «AI, не людина» only where its small light is the light (the phone); the desktop has the big light’s label and the line under the field', async ({ page }, testInfo) => {
+  for (const character of CHARACTERS)
+    test(`#94 the session row says «AI, не людина» at both widths (spec §3.4, B-chat-dark); the chip «AI · не людина» stands at both widths, with the line under the field${hiddenTitle(character)}`, async ({ page }, testInfo) => {
+    await storeCharacter(page, character)
     await openChat(page)
     await exchange(page, USER)
     const row = page.locator('[data-el="session"] .session__ai')
     await expect(page.locator('.composer__ai')).toBeVisible()
     await expect(page.locator('.composer__ai')).toHaveText('AI, не людина · може помилятися · не терапія')
     await expect(aiMessages(page).nth(1).locator('.said__who')).toHaveText('AI')
+    // ADR-013: one chip at any width (the header's from 64em, the sheet's below), never both.
+    const chip = page.locator('.ai-chip:visible')
+    await expect(chip).toHaveCount(1)
+    await expect(chip).toHaveText('AI · не людина')
+    await expect(page.locator(isDesktop(testInfo) ? '.ai-chip--header' : '.ai-chip--sheet')).toBeVisible()
+    await expect(page.locator('.presence__ai')).toHaveCount(0)
+    // The sheet's own header says it too, beside the scenario, at any width (the words of the chip and
+    // of the line under the field are out of view once the conversation scrolls).
+    await expect(row).toBeVisible()
     if (isDesktop(testInfo)) {
-      await expect(row).toBeHidden()
-      await expect(page.locator('.presence__ai')).toBeVisible()
-      await expect(page.locator('.presence__ai')).toHaveText('AI · не людина')
-      await expect(page.locator('[data-el="session"] .session__label')).toHaveText('Вільна розмова', { useInnerText: true })
+      await expect(page.locator('[data-el="session"] .session__label')).toHaveText('Вільна розмова · AI, не людина', { useInnerText: true })
     } else {
-      await expect(row).toBeVisible()
-      await expect(page.locator('.session .orb--mini')).toBeVisible()
+      // The small light goes with the character; the words stay.
+      if (character === 'on') await expect(page.locator('.session .orb--mini')).toBeVisible()
+      else await expect(page.locator('.session .orb--mini')).toBeHidden()
     }
   })
 
@@ -5077,15 +5341,15 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     await page.emulateMedia({ colorScheme: 'light' })
     await page.goto('/chat/')
     await expect(themeColor).toHaveCount(1)
-    await expect(themeColor).toHaveAttribute('content', PAPER)
+    await expect(themeColor).toHaveAttribute('content', SKY_TOP)
     await page.emulateMedia({ colorScheme: 'dark' })
     await page.reload()
-    await expect(themeColor).toHaveAttribute('content', LAMP)
+    await expect(themeColor).toHaveAttribute('content', NIGHT)
     // A stored choice wins over the system.
     await page.evaluate(() => localStorage.setItem('liora:theme', 'light'))
     await page.reload()
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
-    await expect(themeColor).toHaveAttribute('content', PAPER)
+    await expect(themeColor).toHaveAttribute('content', SKY_TOP)
     await page.evaluate(() => localStorage.removeItem('liora:theme'))
   })
 
@@ -5118,13 +5382,13 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     await expect.poll(rootBg).toBe(LAMP)
     await page.keyboard.press('Escape')
     await expect(accountSheet(page)).toBeHidden()
-    await expect.poll(rootBg).toBe(LAMP)
+    await expect.poll(rootBg).toBe(NIGHT)
     await page.locator('.help-link').click()
     await expect(page.locator('#help-dialog')).toBeVisible()
-    await expect.poll(rootBg).toBe(gutter ? 'rgb(11, 16, 17)' : LAMP)
+    await expect.poll(rootBg).toBe(gutter ? 'rgb(3, 5, 6)' : NIGHT)
     await page.keyboard.press('Escape')
     await expect(page.locator('#help-dialog')).toBeHidden()
-    await expect.poll(rootBg).toBe(LAMP)
+    await expect.poll(rootBg).toBe(NIGHT)
 
     await page.emulateMedia({ colorScheme: 'light' })
     await accountToggle(page).click()
@@ -5133,16 +5397,16 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     await expect(accountSheet(page).getByRole('radio', { name: 'Вечір' })).toHaveValue('dusk')
     await expect(accountSheet(page).getByRole('radio', { name: 'Ранок' })).toHaveValue('dawn')
     await expect(accountSheet(page).getByRole('radio', { name: 'Сутінки' })).toHaveCount(0)
-    await expect.poll(rootBg).toBe(PAPER)
+    await expect.poll(rootBg).toBe(SHEET_L)
     // A confirm stacked over the sheet scrims both: the gutter takes the scrim's colour again.
     await accountSheet(page).getByRole('button', { name: 'Видалити акаунт…' }).click()
     await expect(confirmDialog(page)).toBeVisible()
-    await expect.poll(rootBg).toBe(gutter ? 'rgb(209, 202, 194)' : PAPER)
+    await expect.poll(rootBg).toBe(gutter ? 'rgb(53, 141, 134)' : SHEET_L)
     await confirmDialog(page).getByRole('button', { name: 'Скасувати', exact: true }).click()
     await expect(confirmDialog(page)).toBeHidden()
-    await expect.poll(rootBg).toBe(PAPER)
+    await expect.poll(rootBg).toBe(SHEET_L)
     // The scrollbar's thumb is its only shape: the fields' border colour, ≥ 3:1.
-    expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollbarColor)).toMatch(/^rgb\(120, 130, 127\) /)
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollbarColor)).toMatch(/^rgb\(12, 74, 74\) /)
   })
 
   test('#97 WCAG 1.4.11: no control relies on a border under 3:1 — in both themes, on the conversation, the theses, the sheets and the tools', async ({ page }, testInfo) => {
@@ -5190,7 +5454,7 @@ const LONG_REPLY = ['Можна почати з одного речення. ', 
 test.describe('what the review of phase C3 found', () => {
   test('#99 the browser’s bar comes back to the page’s colour when a dialog closes: a theme picked in «Акаунт», the shelter over «Якщо важко»', async ({ page }) => {
     await openChat(page)
-    expect(await themeColor(page)).toBe(LAMP)
+    expect(await themeColor(page)).toBe(NIGHT)
     await accountToggle(page).click()
     await expect(accountSheet(page)).toBeVisible()
     await accountSheet(page).getByRole('radio', { name: 'Світла' }).check()
@@ -5198,8 +5462,8 @@ test.describe('what the review of phase C3 found', () => {
     await page.keyboard.press('Escape')
     await expect(accountSheet(page)).toBeHidden()
     // It used to keep the scrim's grey (rgb(209, 202, 194)) read under the open sheet.
-    await expect.poll(() => themeColor(page)).toBe(PAPER)
-    expect(await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)).toBe(PAPER)
+    await expect.poll(() => themeColor(page)).toBe(SKY_TOP)
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)).toBe(SKY_TOP)
     // The shelter over «Якщо важко»: dark while it is open; the help under it, then nothing.
     await page.locator('.help-link').click()
     await expect(page.locator('#help-dialog')).toBeVisible()
@@ -5211,7 +5475,7 @@ test.describe('what the review of phase C3 found', () => {
     await expect(page.locator('#help-dialog')).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.locator('#help-dialog')).toBeHidden()
-    await expect.poll(() => themeColor(page)).toBe(PAPER)
+    await expect.poll(() => themeColor(page)).toBe(SKY_TOP)
     await page.evaluate(() => localStorage.removeItem('liora:theme'))
   })
 
@@ -5366,30 +5630,71 @@ test.describe('what the final review found', () => {
     await page.emulateMedia({ forcedColors: 'none' })
   })
 
-  test('#114 every screen but a running conversation stands on a solid band under the header (nothing of the text shows through), then a 12 px tail', async ({ page }, testInfo) => {
+  // ADR-013: the band under the header is the sky itself — the stage's very layers, fixed to the
+  // window — over the root's opaque colour, from the top of the window to the capsule's bottom edge,
+  // on every screen. It replaced a band of --color-bg with a 12 px tail (--header-tail), and the
+  // pin of that tail with the scroll padding's own formula.
+  test('#114 every screen stands on an opaque band of the sky under the header: nothing of the text shows through', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'computed styles: one engine is enough')
     const band = () =>
       page.evaluate(() => {
+        const root = getComputedStyle(document.documentElement)
         const style = getComputedStyle(document.querySelector('.chat-header')!, '::before')
-        return { bottom: style.bottom, image: style.backgroundImage, root: getComputedStyle(document.documentElement).backgroundColor }
+        const px = (name: string): number => parseFloat(root.getPropertyValue(name)) * (root.getPropertyValue(name).trim().endsWith('rem') ? 16 : 1)
+        return {
+          top: style.top,
+          bottom: style.bottom,
+          colour: style.backgroundColor,
+          root: root.backgroundColor,
+          image: style.backgroundImage,
+          attachment: style.backgroundAttachment,
+          sky: getComputedStyle(document.querySelector('.stage')!).backgroundImage,
+          // The band of the presence under it (ADR-013): the same sky, opaque, fixed, and its top right
+          // at the header's bottom.
+          scene: (() => {
+            const scene = document.querySelector('.chat__scene')!
+            const s = getComputedStyle(scene, '::before')
+            return { colour: s.backgroundColor, image: s.backgroundImage, attachment: s.backgroundAttachment, top: scene.getBoundingClientRect().top, header: document.querySelector('.chat-header')!.getBoundingClientRect().bottom }
+          })(),
+          padding: parseFloat(root.scrollPaddingTop),
+          // ADR-013: under the header the band of the presence (--band-h, registered: px) and the
+          // sheet's own header — the session row, or the sheet's sticky lid where there is none.
+          formula: px('--header-h') + px('--band-h') + Math.max(px('--session-h'), px('--sheet-cap')) + Math.max(8, px('--fade-top') - 8),
+        }
       })
+    const check = (b: Awaited<ReturnType<typeof band>>, label: string): void => {
+      expect([b.top, b.bottom], label).toEqual(['0px', '0px'])
+      expect(b.colour, `${label}: opaque, the root's colour`).toBe(b.root)
+      expect(b.root, label).toMatch(/^rgb\(\d+, \d+, \d+\)$/)
+      expect(b.image.endsWith(b.sky), `${label}: the stage's own sky`).toBe(true)
+      expect(b.attachment.split(',').every((a) => a.trim() === 'fixed'), label).toBe(true)
+      expect(Math.abs(b.padding - b.formula), `${label}: scroll-padding-top ${b.padding} = ${b.formula}`).toBeLessThanOrEqual(1)
+      expect(b.scene.colour, `${label}: the band of the presence is opaque`).toBe(b.root)
+      expect(b.scene.image.endsWith(b.sky), `${label}: the band of the presence is the stage's own sky`).toBe(true)
+      expect(b.scene.attachment.split(',').every((a) => a.trim() === 'fixed'), label).toBe(true)
+      expect(Math.abs(b.scene.top - b.scene.header), `${label}: the band starts at the header's bottom`).toBeLessThanOrEqual(1)
+    }
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
       await openChat(page)
-      // A new conversation: the page's own colour, opaque, as far as the header goes.
-      let b = await band()
-      expect(b.bottom).toBe('-12px')
-      expect(b.image.startsWith(`linear-gradient(${b.root} calc(100% - 12px),`), b.image).toBe(true)
-      // A running conversation: the band ends flat at the header's edge; the session row carries it on.
+      check(await band(), `${scheme}: a new conversation`)
       await exchange(page)
-      b = await band()
-      expect(b.bottom).toBe('0px')
-      // The theses: the solid band again.
+      check(await band(), `${scheme}: a running conversation`)
       await toReview(page)
-      b = await band()
-      expect(b.image.startsWith(`linear-gradient(${b.root} calc(100% - 12px),`), b.image).toBe(true)
-      // What the page scrolls to stops below the tail too.
-      expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--header-tail').trim())).toBe('.75rem')
+      check(await band(), `${scheme}: the theses`)
+      // In pixels: with the theses scrolled under the header, the header's strip looks the same as with
+      // the page's text hidden — no line of it shows through the band.
+      await page.evaluate(() => window.scrollTo({ top: 260, behavior: 'instant' }))
+      await settled(page)
+      const height = await page.evaluate(() => Math.floor(document.querySelector('.chat-header')!.getBoundingClientRect().bottom))
+      const clip = { x: 0, y: 0, width: 1440, height }
+      const shown = await page.screenshot({ clip })
+      await page.evaluate(() => {
+        document.querySelector<HTMLElement>('main')!.style.visibility = 'hidden'
+      })
+      const hidden = await page.screenshot({ clip })
+      await page.evaluate(() => document.querySelector<HTMLElement>('main')!.style.removeProperty('visibility'))
+      expect(shown.equals(hidden), `${scheme}: the band hides what scrolled under it`).toBe(true)
     }
   })
 
@@ -5481,22 +5786,45 @@ test.describe('what the final review found', () => {
     expect(new Set(tops).size, `rows: ${tops.join(', ')}`).toBe(1)
   })
 
-  test('#119 the dark theme’s warm tint is warm: the chosen scenario, a chosen mood cell and the breathing circle are amber, not olive grey', async ({ page }, testInfo) => {
+  // ADR-013: the chosen scenario is a solid pill of the accent now (no tint to read), so the warm tint
+  // is read where it stays — the marked reply, over its opaque base (--color-sheet-solid) — and the
+  // chosen mood cell and the breathing circle take the mark's own warm colour.
+  test('#119 the dark theme’s warm tint is warm: the marked reply, a chosen mood cell and the breathing circle are amber, not olive grey', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'computed colours: one engine is enough')
     await openChat(page)
-    const pill = await page.locator('.pill--on').first().evaluate((node) => {
-      const style = getComputedStyle(node)
-      return { fill: style.backgroundColor, image: style.backgroundImage }
+    await exchange(page, USER)
+    await keepOf(aiMessages(page).nth(1)).click()
+    const marked = await aiMessages(page).nth(1).evaluate((node) => {
+      const style = getComputedStyle(node, '::before')
+      // The layer covers the reply: at least as tall as its label and its words together.
+      const words = node.querySelector('.said__body')!.getBoundingClientRect().bottom - node.querySelector('.said__mark')!.getBoundingClientRect().top
+      return { fill: style.backgroundColor, image: style.backgroundImage, visibility: style.visibility, rule: `${style.borderLeftWidth} ${style.borderLeftColor}`, covers: parseFloat(style.height) >= words }
     })
-    const tint = /rgba?\([^)]*\)/.exec(pill.image)![0]
-    const [r, g, b] = over(tint, pill.fill).match(/\d+/g)!.map(Number) as [number, number, number]
+    expect(marked.visibility).toBe('visible')
+    expect(marked.covers).toBe(true)
+    // Its base is opaque: the tint is warm over it, whatever the sky under the sheet.
+    expect(marked.fill).toMatch(/^rgb\(\d+, \d+, \d+\)$/)
+    const tint = /rgba?\([^)]*\)/.exec(marked.image)![0]
+    const [r, g, b] = over(tint, marked.fill).match(/\d+/g)!.map(Number) as [number, number, number]
     // It was rgb(53, 55, 49): green above red, an olive grey.
     expect(r - g, `${r}, ${g}, ${b}`).toBeGreaterThanOrEqual(5)
     expect(g - b, `${r}, ${g}, ${b}`).toBeGreaterThanOrEqual(5)
-    // The light theme keeps its peach.
+    // The rule on its left is the mark's colour (#ffc58f at night).
+    expect(marked.rule).toBe('3px rgb(255, 197, 143)')
+    // A chosen mood cell and the breathing circle: the mark's own amber.
+    await openTool(page, 'Як ви зараз?')
+    await moodDialog(page).getByRole('radio', { name: 'Багато сил, неприємно' }).click()
+    await expect.poll(() => moodDialog(page).locator('.mood__cell[aria-checked="true"]').evaluate((node) => getComputedStyle(node).backgroundColor)).toBe('rgb(255, 197, 143)')
+    await page.keyboard.press('Escape')
+    await expect(moodDialog(page)).toBeHidden()
+    await openTool(page, 'Подихати хвилину')
+    expect(await breatheDialog(page).locator('.breathe__circle').evaluate((node) => getComputedStyle(node).borderTopColor)).toBe('rgb(255, 197, 143)')
+    await page.keyboard.press('Escape')
+    await expect(breatheDialog(page)).toBeHidden()
+    // The light theme keeps its peach (ADR-013: the coral of the day's sky, #ff9a78).
     await page.emulateMedia({ colorScheme: 'light' })
     await settled(page)
-    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent-tint').trim())).toMatch(/181,? 83,? 42|b5532a/i)
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent-tint').trim())).toMatch(/255,? 154,? 120|ff9a78/i)
   })
 })
 
@@ -5655,7 +5983,7 @@ test.describe('what the accessibility review found', () => {
     // The page's colour is read with no dialog open (under one the root takes the scrim's).
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
-      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
       await openTool(page, 'Як ви зараз?')
       await page.keyboard.press('ArrowDown')
       await page.keyboard.press('Tab')
@@ -5675,7 +6003,7 @@ test.describe('what the accessibility review found', () => {
     await expect(group.getByRole('button')).toHaveText(['Подихати хвилину', 'Заземлення 5-4-3-2-1', 'Як ви зараз?', 'В укритті'])
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
-      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
       await axe(page, `${scheme}: the tools menu, open`)
     }
   })
@@ -5739,7 +6067,7 @@ test.describe('what the accessibility review found', () => {
     await expect.poll(() => label(motion)).toBe(1)
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
-      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
       await expect.poll(() => label(motion)).toBe(1)
       await axe(page, `${scheme}: the header with a label shown`)
     }
@@ -5768,7 +6096,7 @@ test.describe('what the accessibility review found', () => {
     // The page's colour is read with no dialog open (under one the root takes the scrim's).
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
-      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? LAMP : PAPER)
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
       await entryTitled(page, ENTRIES[0]!.title).getByRole('button', { name: 'Видалити' }).click()
       await expect(confirm.getByRole('button', { name: 'Залишити' })).toBeFocused()
       await expect(confirm).toHaveAccessibleName('Видалити запис?')
@@ -5874,7 +6202,7 @@ test.describe('what the theme and motion review found', () => {
     // The CSS stands still under reduce whatever data-motion says (base.css); so does the JS now.
     await choose('Темна')
     await expect(html(page)).toHaveAttribute('data-theme', 'dark')
-    await expect(html(page)).toHaveCSS('background-color', LAMP)
+    await expect(html(page)).toHaveCSS('background-color', NIGHT)
     // The words come as text, every 300 ms (§5.7), not as spans that fade.
     expect(await firstAnswer()).toBe(0)
     const still = await moves()
@@ -5883,18 +6211,478 @@ test.describe('what the theme and motion review found', () => {
   })
 })
 
+// ADR-013 §6: «Персонаж» — the person may hide the character (the light above the conversation and
+// the small one in the session row). On by default, remembered in this browser as liora:character
+// ('off'; shown = no key), written by src/ui/character.ts alone. What answers stays said without it.
+test.describe('the character', () => {
+  const stored = (page: Page): Promise<string | null> => page.evaluate(() => window.localStorage.getItem('liora:character'))
+  /** The scene and the session row's small light: in the layout at all (display), and seen. */
+  const lights = (page: Page) =>
+    page.evaluate(() =>
+      ['.chat__scene', '.session .orb--mini'].map((selector) => {
+        const node = document.querySelector(selector)
+        if (!node) return { selector, display: 'absent', boxes: 0 }
+        const style = getComputedStyle(node)
+        return { selector, display: style.display, boxes: node.getClientRects().length }
+      }),
+    )
+
+  test('#131 on by default; a press hides the character at once and stores "off", another shows it again and removes the key', async ({ page }, testInfo) => {
+    await openChat(page)
+    const toggle = characterToggle(page)
+    await expect(toggle).toBeVisible()
+    await expect(toggle).toHaveAccessibleName('Персонаж')
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(html(page)).toHaveAttribute('data-character', 'on')
+    await expect(page.locator('.chat__scene')).toBeVisible()
+    await expect(page.locator('.presence .orb')).toBeVisible()
+    // A visit without a choice writes nothing.
+    expect(await stored(page)).toBeNull()
+
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    // Out of the layout, not only unseen: no box keeps its place.
+    for (const light of await lights(page)) expect(light, light.selector).toMatchObject({ display: 'none', boxes: 0 })
+    expect(await stored(page)).toBe('off')
+    await expect(toggle).toHaveAccessibleName('Персонаж')
+
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(html(page)).toHaveAttribute('data-character', 'on')
+    await expect(page.locator('.chat__scene')).toBeVisible()
+    await expect(page.locator('.presence .orb')).toBeVisible()
+    expect(await stored(page)).toBeNull()
+    if (!isDesktop(testInfo)) {
+      // The phone's session row has its small light back once a conversation runs.
+      await exchange(page)
+      await expect(page.locator('.session .orb--mini')).toBeVisible()
+      await toggle.click()
+      await expect(page.locator('.session .orb--mini')).toBeHidden()
+    }
+  })
+
+  test('#132 the choice survives a reload: "off" is on <html> before the first screen, and the character is never seen on the way', async ({ page }) => {
+    await openChat(page)
+    await characterToggle(page).click()
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    // Every frame from the document's start: which screen, what <html> says, whether the scene shows.
+    await page.addInitScript(() => {
+      const frames: { screen: string | null; character: string | null; seen: boolean; styled: boolean }[] = []
+      ;(window as unknown as { __frames: typeof frames }).__frames = frames
+      const tick = (): void => {
+        const root = document.documentElement
+        const scene = document.querySelector('.chat__scene')
+        const style = scene ? getComputedStyle(scene) : null
+        frames.push({
+          screen: root.getAttribute('data-screen'),
+          character: root.getAttribute('data-character'),
+          seen: style !== null && style.display !== 'none' && style.visibility !== 'hidden' && scene!.getClientRects().length > 0,
+          // Before the page's styles apply nothing of it is painted: those frames do not count.
+          styled: getComputedStyle(root).getPropertyValue('--color-bg').trim() !== '',
+        })
+        if (frames.length < 600) window.requestAnimationFrame(tick)
+      }
+      window.requestAnimationFrame(tick)
+    })
+    await page.reload()
+    await onScreen(page, 'chat')
+    await expect(characterToggle(page)).toHaveAttribute('aria-pressed', 'false')
+    expect(await stored(page)).toBe('off')
+    const frames = await page.evaluate(() => (window as unknown as { __frames: { screen: string | null; character: string | null; seen: boolean; styled: boolean }[] }).__frames)
+    const painted = frames.filter((frame) => frame.styled)
+    expect(painted.length).toBeGreaterThan(0)
+    expect(painted.filter((frame) => frame.seen)).toEqual([])
+    // Any screen past booting is shown with the choice already on <html> (no data-screen yet is the
+    // markup's own booting section: the module has not rendered).
+    expect(painted.filter((frame) => frame.screen !== null && frame.screen !== 'booting' && frame.character !== 'off')).toEqual([])
+    // And the first screen past booting is there at all in what was recorded.
+    expect(painted.some((frame) => frame.screen === 'chat' && frame.character === 'off')).toBe(true)
+    for (const light of await lights(page)) expect(light, light.selector).toMatchObject({ display: 'none', boxes: 0 })
+  })
+
+  test('#133 what answers is said in both states: the chip, «AI» beside every reply, the line under the field and the session row', async ({ page }) => {
+    await openChat(page)
+    await exchange(page, USER)
+    await exchange(page, 'Друге синтетичне повідомлення.')
+    for (const character of CHARACTERS) {
+      if (character === 'off') await characterToggle(page).click()
+      await expect(html(page)).toHaveAttribute('data-character', character)
+      const chip = page.locator('.ai-chip:visible')
+      await expect(chip, character).toHaveCount(1)
+      await expect(chip, character).toHaveText('AI · не людина')
+      await expect(page.locator('.composer__ai'), character).toHaveText('AI, не людина · може помилятися · не терапія')
+      const replies = aiMessages(page)
+      const count = await replies.count()
+      expect(count, character).toBeGreaterThanOrEqual(3)
+      for (let i = 0; i < count; i++) await expect(replies.nth(i).locator('.said__who'), `${character}: reply ${i}`).toHaveText('AI')
+      await expect(page.locator('[data-el="session"] .session__ai'), character).toBeVisible()
+    }
+  })
+
+  test('#134 from the keyboard: Tab reaches «Персонаж», Space and Enter press it, the focus stays; its label names the press, and Esc hides the label', async ({ page }) => {
+    await openChat(page)
+    const toggle = characterToggle(page)
+    await tabTo(page, page.locator('.site-header .brand'), toggle)
+    const label = (): Promise<{ text: string; opacity: number }> =>
+      toggle.evaluate((node) => {
+        const style = getComputedStyle(node, '::after')
+        return { text: style.content, opacity: Number(style.opacity) }
+      })
+    await expect.poll(label).toEqual({ text: '"Сховати персонажа"', opacity: 1 })
+    await page.keyboard.press('Space')
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await expect(toggle).toBeFocused()
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    await expect.poll(label).toEqual({ text: '"Показати персонажа"', opacity: 1 })
+    await page.keyboard.press('Enter')
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(toggle).toBeFocused()
+    await expect(html(page)).toHaveAttribute('data-character', 'on')
+    // WCAG 1.4.13 (src/ui/tips.ts): Esc hides the label, the focus stays.
+    await page.keyboard.press('Escape')
+    await expect.poll(label).toEqual({ text: '"Сховати персонажа"', opacity: 0 })
+    await expect(toggle).toHaveAttribute('data-tip', 'off')
+    await expect(toggle).toBeFocused()
+  })
+
+  test('#135 with storage blocked (reads, writes and removals throw) the toggle works for this page, and nothing reaches the console', async ({ page }) => {
+    await page.addInitScript(() => {
+      for (const name of ['getItem', 'setItem', 'removeItem'] as const) {
+        Storage.prototype[name] = () => {
+          throw new DOMException('The storage is blocked (a synthetic test).', 'SecurityError')
+        }
+      }
+    })
+    await openChat(page)
+    const toggle = characterToggle(page)
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(html(page)).toHaveAttribute('data-character', 'on')
+    // «Сховати» goes through setItem, «Показати» through removeItem: both throw, both still work.
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    for (const light of await lights(page)) expect(light, light.selector).toMatchObject({ display: 'none', boxes: 0 })
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(html(page)).toHaveAttribute('data-character', 'on')
+    await expect(page.locator('.chat__scene')).toBeVisible()
+    // The fixture fails the test on any console error, warning or uncaught exception.
+  })
+
+  test('#136 the crisis: no character in either state, the toggle still works, and a new conversation keeps the choice', async ({ page, api }) => {
+    api.on('POST /chat/turn', { sse: meta() + crisis('keyword') })
+    await openChat(page)
+    await send(page, CRISIS_TEXT)
+    await onScreen(page, 'crisis')
+    const toggle = characterToggle(page)
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('.chat__scene')).toBeHidden()
+    expect((await lights(page))[0]).toMatchObject({ display: 'none', boxes: 0 })
+    await expect(html(page)).toHaveAttribute('data-slot', 'still')
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    await expect(page.locator('.chat__scene')).toBeHidden()
+    await expect(page.locator('#crisis-title')).toBeVisible()
+
+    await page.locator('[data-act="new-after-crisis"]').click()
+    await confirmDialog(page).getByRole('button', { name: 'Почати нову', exact: true }).click()
+    await onScreen(page, 'chat')
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    await expect(page.locator('.chat__scene')).toBeHidden()
+    expect(await stored(page)).toBe('off')
+    await toggle.click()
+    await expect(page.locator('.chat__scene')).toBeVisible()
+  })
+
+  // ADR-013 (P3b replaces P4's interim layout): the sheet is centred in both states, the band of the
+  // presence sits between the header and the sheet only while the character is shown, and the sheet's
+  // own header (the session row) sticks right under it — right under the page's header once the
+  // character is hidden: no empty band where it stood, nothing of the text under the header.
+  test('#137 the layout without the character: the session row sticks right under the header, no empty band, the sheet centred, the composer band from edge to edge of the sheet, a new conversation still one screen', async ({ page }, testInfo) => {
+    const where = () =>
+      page.evaluate(() => {
+        const header = document.querySelector('.site-header')!.getBoundingClientRect()
+        const text = document.querySelector('.chat__text')!.getBoundingClientRect()
+        // The page's own width: <html> keeps a stable gutter for the scrollbar (scrollbar-gutter).
+        const page = document.querySelector('.chat')!.getBoundingClientRect()
+        const scene = document.querySelector('.chat__scene')!
+        const band = scene.getClientRects().length > 0 ? scene.getBoundingClientRect() : null
+        const row = document.querySelector('[data-el="session"]')!
+        const session = row.getClientRects().length > 0 ? row.getBoundingClientRect() : null
+        // The composer's band (its ::before) from one inner edge of the sheet to the other: text that
+        // scrolls under the field shows at neither side.
+        const sheet = document.querySelector<HTMLElement>('.chat__text')!
+        const bar = document.querySelector('[data-el="composer"]')!
+        const barBox = bar.getBoundingClientRect()
+        const barBand = getComputedStyle(bar, '::before')
+        return {
+          headerBottom: header.bottom,
+          textTop: text.top,
+          leftGap: text.left - page.left,
+          rightGap: page.right - text.right,
+          bandTop: band?.top ?? null,
+          bandBottom: band?.bottom ?? null,
+          sessionTop: session?.top ?? null,
+          scrollY: window.scrollY,
+          extra: document.documentElement.scrollHeight - window.innerHeight,
+          composerBand: {
+            left: barBox.left + parseFloat(barBand.left) - (text.left + sheet.clientLeft),
+            right: text.left + sheet.clientLeft + sheet.clientWidth - (barBox.right - parseFloat(barBand.right)),
+          },
+        }
+      })
+    const bandCovers = (at: { composerBand: { left: number; right: number } }, label: string): void => {
+      // Within half a pixel of each inner edge (a band narrower would show the transcript at its sides;
+      // the sheet clips anything wider).
+      expect(Math.abs(at.composerBand.left), `${label}: ${JSON.stringify(at.composerBand)}`).toBeLessThanOrEqual(0.5)
+      expect(Math.abs(at.composerBand.right), `${label}: ${JSON.stringify(at.composerBand)}`).toBeLessThanOrEqual(0.5)
+    }
+    const desktop = isDesktop(testInfo)
+    await openChat(page)
+    await page.evaluate(() => document.fonts.ready)
+    await animationsDone(page)
+    const fresh = await where()
+    expect(Math.abs(fresh.leftGap - fresh.rightGap), JSON.stringify(fresh)).toBeLessThanOrEqual(1)
+    bandCovers(fresh, "shown, a new conversation")
+    if (desktop) {
+      // Shown: the band right under the header, the sheet right under the band, one screen.
+      expect(Math.abs(fresh.bandTop! - fresh.headerBottom), JSON.stringify(fresh)).toBeLessThanOrEqual(1)
+      expect(Math.abs(fresh.textTop - fresh.bandBottom!), JSON.stringify(fresh)).toBeLessThanOrEqual(1)
+      expect(fresh.scrollY, JSON.stringify(fresh)).toBe(0)
+      expect(fresh.extra, JSON.stringify(fresh)).toBeLessThanOrEqual(1)
+    }
+
+    // A conversation long enough to scroll: the session row is stuck.
+    for (const text of [USER, 'Друге синтетичне повідомлення.', 'Третє синтетичне повідомлення.']) await exchange(page, text)
+    await animationsDone(page)
+    const talking = await where()
+    expect(talking.scrollY, JSON.stringify(talking)).toBeGreaterThan(0)
+    bandCovers(talking, "shown, a conversation")
+    // Under the band on a desktop; a phone has no band in a running conversation.
+    expect(Math.abs(talking.sessionTop! - (desktop ? talking.bandBottom! : talking.headerBottom)), JSON.stringify(talking)).toBeLessThanOrEqual(1)
+
+    await characterToggle(page).click()
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    await animationsDone(page)
+    const hiddenTalking = await where()
+    expect(hiddenTalking.bandTop, JSON.stringify(hiddenTalking)).toBeNull()
+    bandCovers(hiddenTalking, "hidden, a conversation")
+    expect(Math.abs(hiddenTalking.sessionTop! - hiddenTalking.headerBottom), JSON.stringify(hiddenTalking)).toBeLessThanOrEqual(1)
+    expect(Math.abs(hiddenTalking.leftGap - hiddenTalking.rightGap), JSON.stringify(hiddenTalking)).toBeLessThanOrEqual(1)
+    await expect(composer(page)).toBeInViewport()
+
+    // A new conversation with the choice stored: the sheet right under the header, still one screen.
+    await page.reload()
+    await onScreen(page, 'chat')
+    await page.evaluate(() => document.fonts.ready)
+    await animationsDone(page)
+    const hidden = await where()
+    expect(hidden.bandTop, JSON.stringify(hidden)).toBeNull()
+    bandCovers(hidden, "hidden, a new conversation")
+    // Never under the header.
+    expect(hidden.textTop, JSON.stringify(hidden)).toBeGreaterThanOrEqual(hidden.headerBottom - 0.5)
+    expect(Math.abs(hidden.leftGap - hidden.rightGap), JSON.stringify(hidden)).toBeLessThanOrEqual(1)
+    if (desktop) {
+      expect(Math.abs(hidden.textTop - hidden.headerBottom), JSON.stringify(hidden)).toBeLessThanOrEqual(1)
+      expect(hidden.scrollY, JSON.stringify(hidden)).toBe(0)
+      expect(hidden.extra, JSON.stringify(hidden)).toBeLessThanOrEqual(1)
+    } else {
+      // The light's place above the sheet is given back to the text.
+      expect(hidden.textTop, JSON.stringify({ fresh, hidden })).toBeLessThan(fresh.textTop - 64)
+    }
+    await expect(composer(page)).toBeInViewport()
+  })
+
+  test('#138 axe in both themes with the character hidden; the storage audit knows the key', async ({ page, consoleLines }) => {
+    await storeCharacter(page, 'off')
+    await openChat(page)
+    await exchange(page, USER)
+    await expect(characterToggle(page)).toHaveAttribute('aria-pressed', 'false')
+    for (const scheme of ['dark', 'light'] as const) {
+      await page.emulateMedia({ colorScheme: scheme })
+      await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
+      await axe(page, `${scheme}: the character hidden`)
+    }
+    await storageAudit(page, USER, consoleLines)
+    expect(await stored(page)).toBe('off')
+  })
+
+  test('#139 with reduced motion and with «Пауза» the toggle moves nothing: the character goes and comes back in one frame', async ({ page }) => {
+    // What moves after a press: anything but a colour settling, longer than the reduced-motion
+    // 0.01 ms (base.css), outside the toggle itself.
+    const pressAndLook = async () => {
+      // What was moving before the press (a label fading in under the pointer) is not the press's.
+      await expect.poll(() => page.evaluate(() => document.getAnimations().filter((a) => a.playState === 'running').length)).toBe(0)
+      return page.evaluate(() => {
+        document.querySelector<HTMLButtonElement>('[data-character-toggle]')!.click()
+        return document
+          .getAnimations()
+          .filter((a) => a.playState === 'running' && Number(a.effect?.getTiming().duration ?? 0) > 1)
+          .map((a) => (a instanceof CSSTransition ? a.transitionProperty : a instanceof CSSAnimation ? `animation ${a.animationName}` : 'script'))
+          .filter((what) => !/^(color|background-color|border-color|outline-color|box-shadow)$/.test(what))
+      })
+    }
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await openChat(page)
+    await expect(html(page)).toHaveAttribute('data-motion', 'off')
+    expect(await pressAndLook(), 'reduced motion: hide').toEqual([])
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    expect(await pressAndLook(), 'reduced motion: show').toEqual([])
+    await expect(html(page)).toHaveAttribute('data-character', 'on')
+
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.reload()
+    await onScreen(page, 'chat')
+    await page.locator('[data-motion-toggle]').click()
+    await expect(html(page)).toHaveAttribute('data-motion', 'off')
+    expect(await pressAndLook(), '«Пауза»: hide').toEqual([])
+    await expect(html(page)).toHaveAttribute('data-character', 'off')
+    expect(await pressAndLook(), '«Пауза»: show').toEqual([])
+    await expect(html(page)).toHaveAttribute('data-character', 'on')
+  })
+})
+
+test.describe('the crisis numbers and the band in a low window (review of #24)', () => {
+  // Spec §3.6: 112 and 103 on the first screen at 1440 × 900, 1366 × 768, 412 × 839 and 320 × 640, in
+  // either state of the character. Nothing stands over them (the header is fixed and taller on a phone
+  // now: toBeInViewport does not see it), and by day they are terracotta on their own opaque cream —
+  // on the crisis screen and in «Якщо важко» — while at night they are peach with no fill.
+  for (const character of CHARACTERS)
+    test(`#143 the crisis: 112 and 103 in view without scrolling, nothing over them, terracotta on its own cream by day${hiddenTitle(character)}`, async ({ page, api }, testInfo) => {
+      await storeCharacter(page, character)
+      api.on('POST /chat/turn', { sse: meta() + crisis('keyword') })
+      const sizes = isDesktop(testInfo)
+        ? [
+            { width: 1440, height: 900 },
+            { width: 1366, height: 768 },
+          ]
+        : [
+            { width: 412, height: 839 },
+            { width: 320, height: 640 },
+          ]
+      const capsules = (scope: string) =>
+        page.evaluate((scope) => {
+          const header = document.querySelector('.site-header')!.getBoundingClientRect()
+          return ['112', '103'].map((number) => {
+            const link = document.querySelector<HTMLAnchorElement>(`${scope} a.help__number[href="tel:${number}"]`)!
+            const box = link.getBoundingClientRect()
+            const style = getComputedStyle(link)
+            const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+            return {
+              number,
+              inView: box.top >= 0 && box.bottom <= window.innerHeight && box.left >= 0 && box.right <= document.documentElement.clientWidth,
+              belowHeader: box.top >= header.bottom - 0.5,
+              onTop: hit !== null && hit.closest('a') === link,
+              fill: style.backgroundColor,
+              ink: style.color,
+              edge: style.borderTopColor,
+            }
+          })
+        }, scope)
+      for (const size of sizes) {
+        await page.setViewportSize(size)
+        for (const scheme of ['light', 'dark'] as const) {
+          await page.emulateMedia({ colorScheme: scheme })
+          await openChat(page)
+          await send(page, CRISIS_TEXT)
+          await onScreen(page, 'crisis')
+          await page.evaluate(() => document.fonts.ready)
+          const label = `${size.width} × ${size.height}, ${scheme}`
+          expect(await page.evaluate(() => window.scrollY), label).toBe(0)
+          const [fill, ink] = scheme === 'light' ? ['rgb(255, 246, 236)', 'rgb(143, 52, 20)'] : ['rgba(255, 197, 143, 0)', 'rgb(255, 197, 143)']
+          for (const c of await capsules('section[data-screen="crisis"]')) {
+            expect(c, label).toEqual({ number: c.number, inView: true, belowHeader: true, onTop: true, fill, ink, edge: ink })
+          }
+          // «Якщо важко» over the crisis: the same capsules in the same colours.
+          await page.locator('.chat-header .help-link').click()
+          await expect(page.locator('#help-dialog')).toBeVisible()
+          for (const c of await capsules('#help-dialog')) expect({ fill: c.fill, ink: c.ink, edge: c.edge }, `${label}: «Якщо важко»`).toEqual({ fill, ink, edge: ink })
+          await page.keyboard.press('Escape')
+          await expect(page.locator('#help-dialog')).toBeHidden()
+        }
+      }
+    })
+
+  // A desktop window under 40em high keeps the band of the presence but lets it scroll away (--band-h
+  // 0px), and with the on-screen keyboard (html[data-kb], src/chat/ui/keyboard.ts) the band, the header
+  // and the session row all scroll with the page and the sheet's lid goes. No test opened a wide, low
+  // window before.
+  test('#144 a low desktop window (1280 × 600) and the on-screen keyboard: the band scrolls away, scroll-padding-top follows its formula', async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'the band of the presence')
+    const look = () =>
+      page.evaluate(() => {
+        const root = getComputedStyle(document.documentElement)
+        const px = (name: string): number => parseFloat(root.getPropertyValue(name)) * (root.getPropertyValue(name).trim().endsWith('rem') ? 16 : 1)
+        const scene = document.querySelector('.chat__scene')!
+        const row = document.querySelector('[data-el="session"]')!
+        return {
+          band: root.getPropertyValue('--band-h').trim(),
+          scene: getComputedStyle(scene).position,
+          header: getComputedStyle(document.querySelector('.chat-header')!).position,
+          session: getComputedStyle(row).position,
+          lid: getComputedStyle(document.querySelector('.chat__text')!, '::before').display,
+          padding: parseFloat(root.scrollPaddingTop),
+          formula: px('--header-h') + px('--band-h') + Math.max(px('--session-h'), px('--sheet-cap')) + Math.max(8, px('--fade-top') - 8),
+          sceneBottom: scene.getBoundingClientRect().bottom,
+          headerBottom: document.querySelector('.site-header')!.getBoundingClientRect().bottom,
+          sessionTop: row.getBoundingClientRect().top,
+          scrollY: window.scrollY,
+        }
+      })
+    await page.setViewportSize({ width: 1280, height: 600 })
+    await openChat(page)
+    for (const text of [USER, 'Друге синтетичне повідомлення.', 'Третє синтетичне повідомлення.']) await exchange(page, text)
+    await animationsDone(page)
+    const low = await look()
+    expect(low.band, JSON.stringify(low)).toBe('0px')
+    expect(low.scene, JSON.stringify(low)).toBe('relative')
+    expect(Math.abs(low.padding - low.formula), JSON.stringify(low)).toBeLessThanOrEqual(0.5)
+    // Scrolled: the band went up with the page, the session row sticks right under the header.
+    expect(low.scrollY, JSON.stringify(low)).toBeGreaterThan(0)
+    expect(low.sceneBottom, JSON.stringify(low)).toBeLessThanOrEqual(low.headerBottom + 0.5)
+    expect(Math.abs(low.sessionTop - low.headerBottom), JSON.stringify(low)).toBeLessThanOrEqual(1)
+
+    // The keyboard (what keyboard.ts sets when the visual viewport shrinks under a text field).
+    await page.setViewportSize({ width: 1024, height: 768 })
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+    await page.evaluate(() => document.documentElement.setAttribute('data-kb', ''))
+    await animationsDone(page)
+    const kb = await look()
+    expect(kb, JSON.stringify(kb)).toMatchObject({ band: '0px', scene: 'relative', header: 'absolute', session: 'relative', lid: 'none', padding: 8 })
+    await page.evaluate(() => document.documentElement.removeAttribute('data-kb'))
+    const back = await look()
+    expect(back.band, JSON.stringify(back)).not.toBe('0px')
+    expect(back.scene, JSON.stringify(back)).toBe('sticky')
+  })
+})
+
 test.describe('the light', () => {
   test.use({ webgl: true })
 
-  test('the light runs in its slot, beside the text column', GPU, async ({ page }, testInfo) => {
-    test.skip(!isDesktop(testInfo), 'the scene column of the wide layout')
+  // ADR-013 (P3b): one centred sheet, the character in a band over its top edge — no text column
+  // beside it any more. The canvas is the slot's own size and meets no line of text (as #43 checks the
+  // still orb without WebGL). @gpu: CI filters it out (ci-e2e.sh), so it runs only on a GPU machine
+  // with the owner's leave.
+  test('the light runs in its slot, over the sheet’s top edge and clear of every line of text', GPU, async ({ page }, testInfo) => {
+    test.skip(!isDesktop(testInfo), 'the band of the presence')
     await openChat(page)
     await expect(html(page)).toHaveAttribute('data-gl', 'on', { timeout: 15_000 })
     const boxes = await page.evaluate(() => {
       const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect()
-      return { canvas: rect('.presence__canvas'), slot: rect('[data-presence-slot]'), text: rect('.chat__text') }
+      return { canvas: rect('.presence__canvas'), slot: rect('[data-presence-slot]'), text: rect('.chat__text'), band: rect('.chat__scene') }
     })
-    expect(boxes.canvas.left).toBeGreaterThanOrEqual(boxes.text.right)
     expect(Math.abs(boxes.canvas.width - boxes.slot.width)).toBeLessThanOrEqual(1)
+    // Centred over the sheet, inside the band, reaching over the sheet's top edge.
+    expect(Math.abs(boxes.canvas.left + boxes.canvas.width / 2 - (boxes.text.left + boxes.text.width / 2))).toBeLessThanOrEqual(1)
+    expect(boxes.canvas.top).toBeGreaterThanOrEqual(boxes.band.top - 0.5)
+    expect(boxes.canvas.bottom).toBeGreaterThan(boxes.text.top)
+    expect(await lightOverText(page, ['.presence__canvas'])).toEqual([])
+    await exchange(page)
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
+    await animationsDone(page)
+    expect(await lightOverText(page, ['.presence__canvas'])).toEqual([])
   })
 })

@@ -1,150 +1,64 @@
-/* Landing art direction. Loaded only by main.ts: the chat keeps its own UI scale.
-   Onest carries the voice; mono is reserved for small wayfinding details. */
+/* Landing art direction: «Аврора» (ADR-013). Loaded only by main.ts: the chat keeps its own UI
+   scale. Onest 800 with tight tracking carries the display; mono is reserved for small labels. Glass
+   only as floating cards with an opaque fallback (components.css); no card grids, no gradient text. */
 :root {
-  --gutter: clamp(1.5rem, 5.5vw, 5.5rem);
-  --frame: 80rem;
-  --chapter-space: clamp(5rem, 12vw, 10rem);
-  --leading-display: 1.06;
-  --display-2: clamp(2.4rem, 4.5vw, 4.5rem);
+  --gutter: clamp(1rem, 4vw, 3rem);
+  --frame: 90rem;
+  --chapter-space: clamp(5rem, 10vw, 8rem);
+  --leading-display: 1.05;
 }
 
-/* ---------- The landing's two themes (ADR-012) ----------
-   Light is the chat's «ранковий папір»: the same tokens with the same values. Dark is the night the
-   landing was drawn in, not the chat's «вечірня лампа»: every token of tokens.css whose dark side
-   differs from the night of its :root is restated here as light-dark(<the chat's light>, <the
-   night>), with the same selector — this file loads after tokens.css, on this page only.
-   tests/e2e/chat-core.spec.ts derives both sides from tokens.css and checks every one, and the list.
-   The --landing-* tokens are this page's own: its sky, its pale button, the soft title line, the
-   example's card and the footer. */
+/* ---------- The landing's own tokens (ADR-013) ----------
+   One palette for both pages: this file restates no token of tokens.css (the night of the dark theme is
+   the chat's too). Its own colours are the footer's ground and the wordmark's glow; the skies of its
+   sections are images (explicit blocks below), which light-dark() cannot hold. */
 :root:not([data-theme-lock]) {
-  --color-bg: light-dark(#f6f1ea, #040708);
-  --color-sky: light-dark(#f6f1ea, #0b1a1e);
-  --color-surface: light-dark(#fffcf7, rgb(4 8 9 / 0.82));
-  --color-bubble-you: light-dark(#dce9e4, #0b1416);
-  --color-panel: light-dark(rgb(255 252 247 / 0.62), rgb(4 8 9 / 0.62));
-  --color-text: light-dark(#1c2626, #eef2ee);
-  --color-text-soft: light-dark(#36423f, #c2ccc8);
-  --color-text-muted: light-dark(#4f5b58, #8e9b97);
-  --color-text-dim: light-dark(#58635f, #84918d);
-  --color-line: light-dark(rgb(28 38 38 / 0.13), rgb(238 242 238 / 0.13));
-  --color-line-strong: light-dark(rgb(28 38 38 / 0.26), rgb(238 242 238 / 0.26));
-  --color-on-accent: light-dark(#ffffff, #040708);
-  --color-accent-line: light-dark(#c2714f, rgb(255 197 143 / 0.45));
-  --color-accent-tint: light-dark(rgb(181 83 42 / 0.08), rgb(255 197 143 / 0.12));
-  --color-accent-tint-strong: light-dark(rgb(181 83 42 / 0.12), rgb(255 197 143 / 0.14));
-  --color-hover: light-dark(rgb(28 38 38 / 0.06), rgb(238 242 238 / 0.08));
-  --color-pressed: light-dark(rgb(28 38 38 / 0.1), rgb(238 242 238 / 0.14));
-  --color-field-border: light-dark(#78827f, #84918d);
-  --color-scrim: light-dark(rgb(60 48 36 / 0.2), rgb(4 7 8 / 0.6));
-  --color-band-top: light-dark(rgb(246 241 234 / 0.97), rgb(4 7 8 / 0.97));
-  --color-band-mid: light-dark(rgb(246 241 234 / 0.9), rgb(4 7 8 / 0.9));
-  --color-band-tail: light-dark(rgb(246 241 234 / 0.45), rgb(4 7 8 / 0.45));
-  --color-fade-0: light-dark(rgb(246 241 234 / 0), rgb(4 7 8 / 0));
-  --color-field-shadow: light-dark(rgb(60 44 28 / 0.07), rgb(0 0 0 / 0));
-  --color-vignette: light-dark(rgb(120 96 70 / 0.04), rgb(3 5 5 / 0.62));
-  --color-vignette-0: light-dark(rgb(120 96 70 / 0), rgb(3 5 5 / 0));
-
-  /* The sky: paper with a cool light top right and a warm one lower down (text ≥ 4.5:1 on each). */
-  --landing-sky: light-dark(#f6f1ea, #050b10);
-  --landing-sky-cool: light-dark(#e4eeea, #101b21);
-  --landing-sky-warm: light-dark(#f5e6d7, #18140f);
-  /* The second line of a big title: a soft teal ink by day (≥ 5.2:1), a pale teal at night. */
-  --landing-title-soft: light-dark(#346661, #a9c4c5);
-  /* The filled button: terracotta with white by day (the chat's accent), pale paper at night. */
-  --landing-cta: light-dark(#b5532a, #e9e6de);
-  --landing-cta-hover: light-dark(#9a4318, #fff9ed);
-  --landing-cta-ink: light-dark(#ffffff, #111817);
-  /* The example session's card. */
-  --landing-card: light-dark(#fffcf7, #101916);
-  --landing-card-line: light-dark(#e2dbd1, #35413b);
-  --landing-card-shadow: light-dark(rgb(60 44 28 / 0.08), rgb(0 0 0 / 0.16));
-  --landing-footer: light-dark(#efe9e0, #060b0a);
-  --landing-mark-glow: light-dark(rgb(217 119 58 / 0.18), rgb(255 190 120 / 0.16));
+  --landing-footer: light-dark(#0b2729, #060b0a);
+  --landing-mark-glow: light-dark(rgb(255 177 133 / 0.45), rgb(143 227 212 / 0.22));
 }
 
-/* An engine without light-dark() would drop every colour above: it keeps the night (themes need
-   light-dark(), and «Вигляд» stays hidden there). Both selectors of tokens.css's own fallback. */
+/* An engine without light-dark() would drop both: it keeps the night. */
 @supports not (color: light-dark(#000, #fff)) {
   :root:not([data-theme-lock]),
   :root[data-theme]:not([data-theme-lock]) {
-    --color-bg: #040708;
-    --color-sky: #0b1a1e;
-    --color-surface: rgb(4 8 9 / 0.82);
-    --color-bubble-you: #0b1416;
-    --color-panel: rgb(4 8 9 / 0.62);
-    --color-text: #eef2ee;
-    --color-text-soft: #c2ccc8;
-    --color-text-muted: #8e9b97;
-    --color-text-dim: #84918d;
-    --color-line: rgb(238 242 238 / 0.13);
-    --color-line-strong: rgb(238 242 238 / 0.26);
-    --color-on-accent: #040708;
-    --color-accent-line: rgb(255 197 143 / 0.45);
-    --color-accent-tint: rgb(255 197 143 / 0.12);
-    --color-accent-tint-strong: rgb(255 197 143 / 0.14);
-    --color-hover: rgb(238 242 238 / 0.08);
-    --color-pressed: rgb(238 242 238 / 0.14);
-    --color-field-border: #84918d;
-    --color-scrim: rgb(4 7 8 / 0.6);
-    --color-band-top: rgb(4 7 8 / 0.97);
-    --color-band-mid: rgb(4 7 8 / 0.9);
-    --color-band-tail: rgb(4 7 8 / 0.45);
-    --color-fade-0: rgb(4 7 8 / 0);
-    --color-field-shadow: rgb(0 0 0 / 0);
-    --color-vignette: rgb(3 5 5 / 0.62);
-    --color-vignette-0: rgb(3 5 5 / 0);
-    --landing-sky: #050b10;
-    --landing-sky-cool: #101b21;
-    --landing-sky-warm: #18140f;
-    --landing-title-soft: #a9c4c5;
-    --landing-cta: #e9e6de;
-    --landing-cta-hover: #fff9ed;
-    --landing-cta-ink: #111817;
-    --landing-card: #101916;
-    --landing-card-line: #35413b;
-    --landing-card-shadow: rgb(0 0 0 / 0.16);
     --landing-footer: #060b0a;
-    --landing-mark-glow: rgb(255 190 120 / 0.16);
+    --landing-mark-glow: rgb(143 227 212 / 0.22);
   }
 }
 
 /* ---------- The art without WebGL ----------
    Night: the rendered stills (public/*-still.png). They are dark, so the light theme never shows
-   them (nor loads them): it draws the same subjects in CSS — rings of the theme's teal ink and
-   terracotta, the contours the scene draws by day. Images cannot go through light-dark(): the
-   light theme swaps the variables, once chosen (html[data-theme]) and once from the system — the
-   same pair of blocks as stage.css, and only where light-dark() exists (else the night stays). */
+   them (nor loads them): it draws the same subjects in CSS — rings of the stroke's ink (≥ 3:1 on the
+   day's sky, ADR-013) and terracotta, the contours the scene draws by day. Under the final's words the
+   rings stay at an alpha of .15 (the text keeps 4.5:1 over them). Images cannot go through
+   light-dark(): the light theme swaps the variables, once chosen (html[data-theme]) and once from the
+   system — the same pair of blocks as stage.css, and only where light-dark() exists (else the night
+   stays). */
 :root {
   --still-field: url('/field-still.png');
+  --still-final: url('/field-still.png');
   --still-portrait: url('/portrait-still.png');
   --still-portrait-mobile: url('/portrait-mobile-still.png');
-  --still-conversation: url('/conversation-still.png');
-  --still-atlas: url('/atlas-still.png');
 
-  --day-ink: color-mix(in srgb, var(--color-ai) 30%, transparent);
-  --day-ink-soft: color-mix(in srgb, var(--color-ai) 16%, transparent);
-  --day-warm: color-mix(in srgb, var(--color-accent) 36%, transparent);
-  --day-warm-soft: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  --day-ink: var(--color-stroke);
+  --day-ink-soft: color-mix(in srgb, var(--color-stroke) 16%, transparent);
+  --day-warm: var(--color-light);
+  --day-warm-soft: color-mix(in srgb, var(--color-light) 14%, transparent);
+  --day-faint: color-mix(in srgb, var(--color-stroke) 15%, transparent);
   /* The hero's and the final's light: two woven sets of rings, a warm heart. */
   --day-field:
     radial-gradient(circle closest-side at 56% 58%, var(--day-warm-soft), transparent 58%),
     repeating-radial-gradient(circle closest-side at 47% 46%, transparent 0 6.6%, var(--day-ink) 6.9% 7.3%, transparent 7.6% 8%),
     repeating-radial-gradient(circle closest-side at 55% 55%, transparent 0 8.1%, var(--day-warm) 8.4% 8.7%, transparent 9% 9.5%);
+  /* The same rings under the final's words, at .15. */
+  --day-final:
+    repeating-radial-gradient(circle closest-side at 47% 46%, transparent 0 6.6%, var(--day-faint) 6.9% 7.3%, transparent 7.6% 8%),
+    repeating-radial-gradient(circle closest-side at 55% 55%, transparent 0 8.1%, var(--day-faint) 8.4% 8.7%, transparent 9% 9.5%);
   /* The contour study: a head's topography, lit warm along the jaw. */
   --day-portrait:
     repeating-radial-gradient(ellipse 30% 40% at 52% 42%, transparent 0 13%, var(--day-ink) 14% 15.5%, transparent 16.5% 18%),
     repeating-radial-gradient(ellipse 22% 18% at 40% 70%, transparent 0 18%, var(--day-warm) 20% 22%, transparent 24% 26%),
     radial-gradient(ellipse 46% 50% at 50% 46%, var(--day-ink-soft), transparent 70%);
-  /* Thought → dialogue: two voices, each a few loops, meeting in the middle. */
-  --day-conversation:
-    radial-gradient(ellipse 30% 42% at 40% 50%, transparent 0 74%, var(--day-ink) 75% 77%, transparent 78% 86%, var(--day-ink) 87% 89%, transparent 90%),
-    radial-gradient(ellipse 30% 42% at 60% 50%, transparent 0 74%, var(--day-warm) 75% 77%, transparent 78% 86%, var(--day-warm) 87% 89%, transparent 90%),
-    radial-gradient(ellipse 22% 30% at 50% 50%, var(--day-warm-soft), transparent 80%);
-  /* The diary's map: one large contour map, a warm summit. */
-  --day-atlas:
-    repeating-radial-gradient(ellipse 58% 50% at 48% 52%, transparent 0 7%, var(--day-ink) 7.5% 8.2%, transparent 8.7% 9.5%),
-    radial-gradient(ellipse 22% 18% at 58% 44%, var(--day-warm-soft), transparent 100%),
-    repeating-radial-gradient(ellipse 22% 18% at 58% 44%, transparent 0 20%, var(--day-warm) 22% 26%, transparent 28% 34%);
   /* The day's drawings fade at their edge (the PNGs carry their own alpha). The final's rings rise
      under the words and end before the art's box does: no cut edge. */
   --day-fade: radial-gradient(closest-side, #000 52%, transparent 100%);
@@ -154,10 +68,9 @@
 @supports (color: light-dark(#000, #fff)) {
   :root[data-theme='light']:not([data-theme-lock]) {
     --still-field: var(--day-field);
+    --still-final: var(--day-final);
     --still-portrait: var(--day-portrait);
     --still-portrait-mobile: var(--day-portrait);
-    --still-conversation: var(--day-conversation);
-    --still-atlas: var(--day-atlas);
     --still-fade: var(--day-fade);
     --still-final-fade: var(--day-final-fade);
   }
@@ -165,126 +78,349 @@
   @media (prefers-color-scheme: light) {
     :root:not([data-theme]):not([data-theme-lock]) {
       --still-field: var(--day-field);
+      --still-final: var(--day-final);
       --still-portrait: var(--day-portrait);
       --still-portrait-mobile: var(--day-portrait);
-      --still-conversation: var(--day-conversation);
-      --still-atlas: var(--day-atlas);
       --still-fade: var(--day-fade);
       --still-final-fade: var(--day-final-fade);
     }
   }
 }
 
-.stage {
-  background:
-    radial-gradient(ellipse at 84% 28%, var(--landing-sky-cool), transparent 57%),
-    radial-gradient(ellipse at 78% 72%, var(--landing-sky-warm), transparent 46%),
-    var(--landing-sky);
-}
-.stage__haze,
-.stage__grain { display: none; }
+/* The sections paint their own sky; the stage is the page's plain colour behind them. */
+.stage { background-image: none; }
 
 /* A disposed/lost GPU buffer can become white. Hide it immediately on fallback,
    rather than fading that invalid buffer over otherwise readable content. */
 html[data-gl='off'] .scene { transition: none; }
 html[data-gl='off'] .hero__orb { transition: none; }
 
+/* ---------- The skies of the sections (ADR-013 §1.4, spec §2.1–2.2) ----------
+   Each section paints its own sky; the stage behind them is the page's plain colour. A sky is two
+   lists: --sky-fields (the aurora's fields and ribbon, translucent) over --sky-stops (opaque). They
+   are declared on the section itself, so var(--drift) and the hero's measured --light-* resolve
+   there. The sections create no stacking context (no z-index, transform, opacity < 1, filter,
+   isolation…): their backgrounds stay in the root context under the scene (z 2), the text over it
+   (z 4). Night (the dark theme, and engines without light-dark()): the night with the theme's
+   fields, never stronger than the chat's (.28; the ribbon .08); in the dark the fields never meet.
+   Day: the sky in bands, from the teal of the morning to the peach of the evening. The night
+   subtree (.night, the footer) keeps the night's tokens by day too (tokens.css). */
+@property --drift {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
+:is(.hero, .mind, .how, .scenarios, .diary, .night, .final) {
+  background-color: var(--color-bg);
+  background-image: var(--sky-fields), var(--sky-stops);
+  background-repeat: no-repeat;
+}
+
+.hero {
+  --sky-fields:
+    radial-gradient(ellipse 30% 42% at calc(8% + var(--drift, 0%)) 30%, rgb(46 230 193 / 0.28), rgb(46 230 193 / 0) 100%),
+    radial-gradient(ellipse 30% 42% at calc(92% - var(--drift, 0%)) 72%, rgb(255 157 107 / 0.28), rgb(255 157 107 / 0) 100%),
+    linear-gradient(104deg, rgb(46 230 193 / 0) 30%, rgb(46 230 193 / 0.08) 50%, rgb(46 230 193 / 0) 70%);
+  --sky-stops: linear-gradient(#040708, #040708);
+}
+
+.mind {
+  --sky-fields: none;
+  --sky-stops: linear-gradient(#040708, #040708);
+}
+
+.how {
+  --sky-fields: radial-gradient(ellipse 34% 40% at calc(90% - var(--drift, 0%)) 40%, rgb(46 230 193 / 0.28), rgb(46 230 193 / 0) 100%);
+  --sky-stops: linear-gradient(#040708, #040708);
+}
+
+.scenarios {
+  --sky-fields: radial-gradient(ellipse 34% 40% at calc(10% + var(--drift, 0%)) 78%, rgb(46 230 193 / 0.22), rgb(46 230 193 / 0) 100%);
+  --sky-stops: linear-gradient(#040708, #040708);
+}
+
+.diary {
+  --sky-fields: none;
+  --sky-stops: linear-gradient(#040708, #040708);
+}
+
+/* The dome: a surface of the night with a teal edge, lit teal at its crown. */
+.night {
+  --sky-fields: radial-gradient(ellipse 46% 22% at calc(50% + var(--drift, 0%)) 0%, rgb(46 230 193 / 0.2), rgb(46 230 193 / 0) 100%);
+  --sky-stops: linear-gradient(#0b1f22, #040708 18rem, #040708);
+}
+
+.final {
+  --sky-fields: radial-gradient(ellipse 46% 40% at calc(50% + var(--drift, 0%)) 100%, rgb(255 157 107 / 0.22), rgb(255 157 107 / 0) 100%);
+  --sky-stops: linear-gradient(#040708, #040708);
+}
+
+/* Day: the chosen light theme and the system's, the same blocks (images cannot go through
+   light-dark(); without it the night stays). */
+@supports (color: light-dark(#000, #fff)) {
+  :root[data-theme='light']:not([data-theme-lock]) .hero {
+    --sky-fields:
+      radial-gradient(circle calc(var(--light-d, 18rem) * 0.72) at var(--light-x, 50%) var(--light-y, 46%), rgb(255 247 232 / 0.92) 0 58%, rgb(255 247 232 / 0) 100%),
+      radial-gradient(ellipse 34% 40% at calc(2% + var(--drift, 0%)) 96%, rgb(255 177 133 / 0.55), rgb(255 177 133 / 0) 100%),
+      radial-gradient(ellipse 34% 40% at calc(98% - var(--drift, 0%)) 92%, rgb(255 177 133 / 0.45), rgb(255 177 133 / 0) 100%);
+    --sky-stops: linear-gradient(180deg, #46b4aa 0%, #6cc8bb 18%, #a9e0cc 40%, #f3e2b4 58%, #ffd3a3 76%, #ffb185 100%);
+  }
+
+  :root[data-theme='light']:not([data-theme-lock]) .mind {
+    --sky-fields: none;
+    --sky-stops: linear-gradient(#ffb185, #ffb185);
+  }
+
+  :root[data-theme='light']:not([data-theme-lock]) .how {
+    --sky-fields: none;
+    --sky-stops: linear-gradient(180deg, #ffb185 0%, #ffc497 45%, #ffd3a3 100%);
+  }
+
+  :root[data-theme='light']:not([data-theme-lock]) .scenarios {
+    --sky-fields: none;
+    --sky-stops: linear-gradient(180deg, #ffd3a3 0%, #f3e2b4 30%, #a9e0cc 78%, #8edcc8 100%);
+  }
+
+  :root[data-theme='light']:not([data-theme-lock]) .diary {
+    --sky-fields: none;
+    --sky-stops: linear-gradient(180deg, #8edcc8 0%, #a9e0cc 100%);
+  }
+
+  :root[data-theme='light']:not([data-theme-lock]) .night {
+    --sky-fields:
+      radial-gradient(ellipse 46% 22% at calc(50% + var(--drift, 0%)) 0%, rgb(46 230 193 / 0.15), rgb(46 230 193 / 0) 100%),
+      radial-gradient(ellipse 50% 26% at calc(50% - var(--drift, 0%)) 100%, rgb(255 157 107 / 0.2), rgb(255 157 107 / 0) 100%),
+      linear-gradient(104deg, rgb(46 230 193 / 0) 30%, rgb(46 230 193 / 0.1) 50%, rgb(46 230 193 / 0) 70%);
+    --sky-stops: linear-gradient(180deg, #0b3133 0%, #0a2628 100%);
+  }
+
+  :root[data-theme='light']:not([data-theme-lock]) .final {
+    --sky-fields:
+      radial-gradient(ellipse 50% 34% at calc(50% + var(--drift, 0%)) 0%, rgb(255 120 90 / 0.35), rgb(255 120 90 / 0) 100%),
+      radial-gradient(ellipse 34% 30% at 50% 100%, rgb(255 240 217 / 0.9) 0 46%, rgb(255 240 217 / 0) 100%);
+    --sky-stops: linear-gradient(180deg, #ff9a78 0%, #ffb185 45%, #ffd3a3 100%);
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]):not([data-theme-lock]) .hero {
+      --sky-fields:
+        radial-gradient(circle calc(var(--light-d, 18rem) * 0.72) at var(--light-x, 50%) var(--light-y, 46%), rgb(255 247 232 / 0.92) 0 58%, rgb(255 247 232 / 0) 100%),
+        radial-gradient(ellipse 34% 40% at calc(2% + var(--drift, 0%)) 96%, rgb(255 177 133 / 0.55), rgb(255 177 133 / 0) 100%),
+        radial-gradient(ellipse 34% 40% at calc(98% - var(--drift, 0%)) 92%, rgb(255 177 133 / 0.45), rgb(255 177 133 / 0) 100%);
+      --sky-stops: linear-gradient(180deg, #46b4aa 0%, #6cc8bb 18%, #a9e0cc 40%, #f3e2b4 58%, #ffd3a3 76%, #ffb185 100%);
+    }
+
+    :root:not([data-theme]):not([data-theme-lock]) .mind {
+      --sky-fields: none;
+      --sky-stops: linear-gradient(#ffb185, #ffb185);
+    }
+
+    :root:not([data-theme]):not([data-theme-lock]) .how {
+      --sky-fields: none;
+      --sky-stops: linear-gradient(180deg, #ffb185 0%, #ffc497 45%, #ffd3a3 100%);
+    }
+
+    :root:not([data-theme]):not([data-theme-lock]) .scenarios {
+      --sky-fields: none;
+      --sky-stops: linear-gradient(180deg, #ffd3a3 0%, #f3e2b4 30%, #a9e0cc 78%, #8edcc8 100%);
+    }
+
+    :root:not([data-theme]):not([data-theme-lock]) .diary {
+      --sky-fields: none;
+      --sky-stops: linear-gradient(180deg, #8edcc8 0%, #a9e0cc 100%);
+    }
+
+    :root:not([data-theme]):not([data-theme-lock]) .night {
+      --sky-fields:
+        radial-gradient(ellipse 46% 22% at calc(50% + var(--drift, 0%)) 0%, rgb(46 230 193 / 0.15), rgb(46 230 193 / 0) 100%),
+        radial-gradient(ellipse 50% 26% at calc(50% - var(--drift, 0%)) 100%, rgb(255 157 107 / 0.2), rgb(255 157 107 / 0) 100%),
+        linear-gradient(104deg, rgb(46 230 193 / 0) 30%, rgb(46 230 193 / 0.1) 50%, rgb(46 230 193 / 0) 70%);
+      --sky-stops: linear-gradient(180deg, #0b3133 0%, #0a2628 100%);
+    }
+
+    :root:not([data-theme]):not([data-theme-lock]) .final {
+      --sky-fields:
+        radial-gradient(ellipse 50% 34% at calc(50% + var(--drift, 0%)) 0%, rgb(255 120 90 / 0.35), rgb(255 120 90 / 0) 100%),
+        radial-gradient(ellipse 34% 30% at 50% 100%, rgb(255 240 217 / 0.9) 0 46%, rgb(255 240 217 / 0) 100%);
+      --sky-stops: linear-gradient(180deg, #ff9a78 0%, #ffb185 45%, #ffd3a3 100%);
+    }
+  }
+}
+
+/* Beside the crisis contacts the night goes quiet at once: its stops alone, no field, no drift
+   (ADR-011). */
+.stage[data-quiet] ~ main .night {
+  background-image: var(--sky-stops);
+  animation: none;
+}
+
+/* The dome rises over the diary's sky: its corners show the diary's colour, which runs on under them
+   (the diary's padding and negative margin are the dome's height). */
+/* The dome's height (the radius of --radius-dome). */
+:root {
+  --dome-h: clamp(2.5rem, 6vw, 6.5rem);
+}
+
+.diary {
+  padding-bottom: calc(var(--chapter-space) + var(--dome-h));
+  margin-bottom: calc(-1 * var(--dome-h));
+}
+
+/* The night subtree restates the tokens (tokens.css), but colour is inherited as a computed value:
+   its own text colour starts again here, or the day's ink would come down into the night. */
+.night,
+.site-footer {
+  color: var(--color-text);
+}
+
+.night {
+  position: relative;
+  border-radius: var(--radius-dome);
+  box-shadow: inset 0 1px 0 rgb(143 227 212 / 0.32);
+}
+
+.site-footer {
+  position: relative;
+}
+
+/* ---------- Type: Onest 800 with tight tracking carries the display (ADR-013 §3) ---------- */
 .display,
 .display-2,
 .row__title,
 .step__title,
 .qa summary {
-  font-family: var(--font-body);
+  font-family: var(--font-display);
   font-stretch: normal;
-  font-weight: 400;
+  font-weight: 800;
   text-transform: none;
-  letter-spacing: -0.045em;
+  letter-spacing: var(--tracking-display);
 }
 
-.display-2 { max-width: 20ch; }
-.lead { font-size: clamp(1rem, 1.3vw, 1.1875rem); line-height: 1.7; }
-.tag { font-size: 0.6875rem; letter-spacing: 0.08em; }
-.tag__index { color: var(--color-text-muted); }
+.display-2 { max-width: 20ch; font-size: var(--display-m); line-height: 1.1; }
+.lead { font-size: clamp(1.0625rem, 1.35vw, 1.21875rem); font-weight: 450; line-height: 1.55; }
+.tag { font-size: 0.75rem; font-weight: 500; letter-spacing: 0.18em; }
+.tag__index { color: var(--color-text-soft); }
 .tag__index::after { width: 1.5rem; }
-.chapter__head { gap: 1.75rem; margin-bottom: 3.75rem; }
+.chapter { padding-block: max(var(--chapter-space), clamp(3rem, 4.6vw, 4rem)); }
+.chapter__head { gap: 1.25rem; margin-bottom: 3rem; }
 .chapter:not(.safety) .chapter__head > .tag,
 .final__inner > .tag { display: inline-flex; }
 .chapter,
 html[data-gl='on'] .chapter { text-shadow: none; }
-.row__title { font-size: 1.5rem; line-height: 1.35; letter-spacing: -0.025em; }
-.row__body { font-size: 1rem; line-height: 1.75; }
-.row { padding-block: 2rem; }
-.arrow-link { font-family: var(--font-body); text-transform: none; letter-spacing: 0; }
+.row__title { font-size: 1.375rem; font-weight: 700; line-height: 1.3; letter-spacing: -0.02em; }
+.row__body { font-size: 1rem; line-height: 1.7; }
+.row { padding-block: 1.75rem; }
+.arrow-link { font-family: var(--font-body); font-weight: 600; text-transform: none; letter-spacing: 0; text-underline-offset: 0.22em; }
 
-/* A light, predictable header. Playback controls recede beside navigation. */
-.site-header { min-height: 5.5rem; gap: clamp(2rem, 5vw, 5rem); }
-.site-header::before { bottom: -1rem; }
-.brand { gap: 0.65rem; font-size: 1.6rem; font-weight: 500; letter-spacing: -0.065em; }
-.brand__mark { width: 0.8rem; height: 0.8rem; box-shadow: 0 0 12px var(--landing-mark-glow); }
-.site-nav { gap: clamp(1rem, 2.4vw, 2.25rem); }
-.site-nav a { font-size: 0.8125rem; }
-.site-header__actions { gap: 0.75rem; }
-.site-header .help-link { border-color: transparent; background: transparent; padding-inline: 0.5rem; color: var(--color-text-soft); font-size: 0.8125rem; }
-.site-header .help-link:hover { color: var(--color-light-strong); }
-.site-header .help-link[aria-current] { border-color: var(--color-light); color: var(--color-light); }
-.media { border-color: transparent; background: transparent; }
-/* «Вигляд» (the chat's menu button) as quiet as «Пауза» and «Звук» beside it: no ring, the icon says it. */
-.theme-toggle { width: 2.25rem; height: 2.25rem; border-color: transparent; background: transparent; }
-.theme-toggle:hover,
-.theme-toggle[aria-expanded='true'] { background: var(--color-hover); }
-.cta { background: var(--landing-cta); color: var(--landing-cta-ink); font-weight: 500; text-shadow: none; }
-.cta:hover { background: var(--landing-cta-hover); }
-.site-header__cta { font-size: 0.8125rem; }
+/* The header is the shared glass capsule (layout.css); the landing's wordmark glows a little. */
+.brand__mark { box-shadow: inset 0 0 0 1.5px var(--brand-ring), 0 0 12px var(--landing-mark-glow); }
 .hud { display: none; }
 
-/* Hero: a woven light form occupies the space beside the title. */
+/* ---------- Hero: «Менше шуму.» · the presence · «Більше себе.» ----------
+   The slot is an empty, aria-hidden part of the title (the name stays «Менше шуму. Більше себе.»):
+   src/ui/hero-light.ts measures it, and the WebGL light, the static still and the day's sun stand
+   in it — never on the glyphs (the slot keeps ≥ 16 px from both halves). */
 .hero {
   overflow-x: clip;
   justify-content: center;
-  min-height: max(48rem, 100svh);
-  padding-block: 9rem 10rem;
+  min-height: max(46rem, 100svh);
+  padding-block: 8rem 7rem;
 }
-.hero__frame { row-gap: 2rem; }
+.hero__frame { justify-items: center; row-gap: 1.75rem; text-align: center; }
 .hero__tag { color: var(--color-text-soft); }
 .hero__tag::before { display: none; }
 .hero__title {
-  font-size: clamp(3.4rem, 6.8vw, 7rem);
-  letter-spacing: -0.065em;
-  line-height: 1.06;
-  width: max-content;
-  max-width: 100%;
+  display: grid;
+  justify-items: center;
+  align-items: center;
+  row-gap: 1rem;
+  width: 100%;
+  font-size: var(--display-xl);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: var(--tracking-display);
   text-shadow: none;
 }
-.hero__title-soft { color: var(--landing-title-soft); }
+.hero__half { text-wrap: balance; }
+.hero__half--strong { font-weight: 800; }
+.hero__slot { display: block; width: min(62vw, 15rem); aspect-ratio: 1; }
 .hero__orb { border-radius: 0; background: none; box-shadow: none; }
 .hero__orb::after { display: none; }
 .hero__orb::before,
-.final__art::before { content: ''; display: block; position: absolute; inset: -20%; border-radius: 0; padding: 0; opacity: 1; background-image: var(--still-field); background-position: center; background-size: contain; background-repeat: no-repeat; mask: radial-gradient(closest-side, #000 82%, transparent 100%); mask-composite: add; }
+.final__art::before { content: ''; display: block; position: absolute; inset: 0; border-radius: 0; padding: 0; opacity: 1; background-image: var(--still-field); background-position: center; background-size: contain; background-repeat: no-repeat; mask: radial-gradient(closest-side, #000 82%, transparent 100%); mask-composite: add; }
 .hero__orb-link { clip-path: circle(48%); }
-.hero__aside { gap: 1.15rem; max-width: 28rem; }
-.hero__lead { font-size: clamp(1rem, 1.3vw, 1.1875rem); line-height: 1.7; text-shadow: none; }
+.hero__aside { justify-items: center; gap: 1.15rem; max-width: 36rem; }
+.hero__lead { color: var(--color-text); text-shadow: none; }
+/* «AI» in an ink circle: the sentence says it already, so the badge is generated content with an
+   empty alternative. */
 .hero__note {
-  max-width: 26rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: 100%;
+  padding: 0.3rem 0.9rem 0.3rem 0.3rem;
+  border: 1px solid var(--color-glass-edge);
+  border-radius: 999px;
+  background: var(--color-capsule);
   font-family: var(--font-body);
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
+  font-weight: 500;
   letter-spacing: 0;
-  line-height: 1.6;
+  line-height: 1.35;
+  text-align: left;
   text-transform: none;
-  color: var(--color-text-muted);
+  color: var(--color-text);
   text-shadow: none;
   text-wrap: pretty;
 }
-.hero__links { display: flex; align-items: center; gap: 1.75rem; padding-top: 0.25rem; }
-.cta--primary {
-  min-height: 3.5rem;
-  padding-inline: 1.6rem;
-  gap: 2rem;
-  font-size: 0.9375rem;
+.hero__note::before {
+  content: 'AI';
+  content: 'AI' / '';
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 0.6875rem;
+  font-weight: 800;
 }
-.cta--primary span { font-size: 1.3rem; transition: transform 0.25s ease; }
-.cta--primary:hover span { transform: translate(2px, -2px); }
-.text-link { display: inline-flex; align-items: center; gap: 0.9rem; min-height: 2.75rem; font-size: 0.875rem; text-decoration: none; }
-.text-link:hover { color: var(--color-light-strong); }
+.hero__links { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.75rem 1rem; padding-top: 0.25rem; }
+/* The order is lead → the two actions → the AI note (B-landing-*, spec §4.1), while the DOM keeps the
+   note in .hero__aside and the actions in .hero__links (the entrance cascade animates both boxes):
+   the aside spans three rows of the frame as a subgrid, its lead in the first and its note in the
+   third, and the links take the middle one (later in the DOM, so they paint and take the pointer over
+   the aside's empty middle). Without subgrid the note stays above the actions. */
+@supports (grid-template-rows: subgrid) {
+  .hero__aside { grid-column: 1; grid-row: 3 / span 3; grid-template-rows: subgrid; row-gap: inherit; }
+  .hero__lead { grid-row: 1; }
+  .hero__note { grid-row: 3; }
+  /* Both placed in the one column explicitly: an item locked to a row the aside holds would
+     otherwise open a second column. */
+  .hero__links { grid-column: 1; grid-row: 4; padding-top: 0; }
+}
+.cta--primary { min-height: 3.25rem; padding: 0 0.35rem 0 1.4rem; gap: 1rem; font-size: 0.9375rem; }
+.cta--primary > span[aria-hidden='true'] { width: 2.5rem; height: 2.5rem; font-size: 1.1rem; }
+.cta--primary:hover > span[aria-hidden='true'] { transform: translate(2px, -2px); }
+/* «Як це працює ↓»: the secondary action, a pill of glass with a 1.5 px stroke (≥ 3:1 on every sky). */
+.hero__links .text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 3.25rem;
+  padding: 0 1.4rem;
+  border: 1.5px solid var(--color-stroke);
+  border-radius: 999px;
+  background: var(--color-capsule);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-text);
+  text-decoration: none;
+}
+.hero__links .text-link:hover { text-decoration: underline; text-underline-offset: 0.22em; }
 .hero__foot {
   position: absolute;
   z-index: var(--z-text);
@@ -293,23 +429,23 @@ html[data-gl='on'] .chapter { text-shadow: none; }
   right: max(var(--gutter), (100% - var(--frame)) / 2);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 2rem;
-  padding-top: 1.5rem;
+  padding-top: 1.25rem;
   border-top: 1px solid var(--color-line);
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
+  color: var(--color-text-soft);
+  font-size: 0.8125rem;
 }
 
-/* A single visual transition: light becomes the contours of a face. */
+/* ---------- #mind: light becomes the contours of a face (ADR-011, unchanged in place) ---------- */
 .mind { position: relative; height: 190svh; }
 .mind__stage { position: sticky; top: 0; height: 100svh; min-height: 40rem; perspective: 1600px; }
 .mind__copy { position: relative; padding-top: clamp(10rem, 25vh, 18rem); }
-.mind__copy .tag { color: var(--color-text-muted); }
-.mind__copy h2 { margin-block: 2rem; font-size: clamp(3.4rem, 7.3vw, 7.5rem); line-height: 1.04; letter-spacing: -0.065em; font-weight: 400; }
-.mind__copy h2 span { color: var(--landing-title-soft); }
-.mind__note { font-size: 1rem; line-height: 1.8; color: var(--color-text-soft); }
-.mind__foot { position: absolute; bottom: 3rem; left: 0; right: 0; display: flex; justify-content: space-between; padding-top: 1.5rem; border-top: 1px solid var(--color-line); font-size: 0.6875rem; color: var(--color-text-muted); }
+.mind__copy .tag { color: var(--color-text); }
+.mind__copy h2 { margin-block: 2rem; font-family: var(--font-display); font-size: clamp(3.2rem, 6.6vw, 6.75rem); font-weight: 800; line-height: 1; letter-spacing: var(--tracking-display); }
+.mind__copy h2 span { color: var(--color-text); }
+.mind__note { font-size: 1.0625rem; line-height: 1.7; color: var(--color-text); }
+.mind__foot { position: absolute; bottom: 3rem; left: 0; right: 0; display: flex; justify-content: space-between; padding-top: 1.5rem; border-top: 1px solid var(--color-line); font-size: 0.75rem; color: var(--color-text-soft); }
 .mind__still { position: absolute; width: min(45vw, 75vh); aspect-ratio: 1; right: 5%; top: 15%; background-image: var(--still-portrait); background-position: center; background-size: contain; background-repeat: no-repeat; mask-image: var(--still-fade, none); }
 html[data-gl='on'] .mind__still { visibility: hidden; }
 html:not([data-motion='on']) .mind,
@@ -319,158 +455,277 @@ html[data-gl='off'] .mind__stage { position: relative; }
 /* Pausing an already running scene must not change the scroll position. */
 html[data-gl='off'][data-gl-reason='user'] .mind { height: 190svh; }
 html[data-gl='off'][data-gl-reason='user'] .mind__stage { position: sticky; }
-@media (max-width: 63.999em) {
-  .mind__stage { min-height: 40rem; }
-  .mind__copy { padding-top: 6.5rem; }
-  .mind__copy h2 { margin-top: 1rem; font-size: 3.2rem; }
-  .mind__copy h2 br { display: none; }
-  .mind__copy h2 span { display: block; }
-  .mind__note { position: absolute; top: max(31rem, 79vh); font-size: 0.8125rem; line-height: 1.6; }
-  .mind__foot { bottom: 1.5rem; font-size: 0.625rem; }
-  .mind__foot > span:first-child { display: none; }
-  .mind__foot { justify-content: flex-end; }
-  .mind__still { width: min(100%, max(164px, calc(92.825svh - 352.5px))); top: calc(39.5svh + 140px); right: auto; left: 50%; translate: -50% -50%; background-image: var(--still-portrait-mobile); }
-}
 
-/* The four moments of a conversation, with a recognisable product preview. */
+/* ---------- #how: four beads on a dashed thread, then the example read in full ---------- */
 .how .chapter__head { max-width: 49rem; }
-.how__layout { gap: 4rem; }
-.step {
-  grid-template-columns: 2rem minmax(0, 1fr);
-  column-gap: 1rem;
-  row-gap: 0.9rem;
-  padding-block: 2.25rem;
-  border-top: 1px solid var(--color-line);
-  align-content: center;
+.how__layout { display: grid; gap: clamp(2.5rem, 5vw, 4rem); }
+.steps { --steps-gap: 2rem; position: relative; display: grid; gap: var(--steps-gap); }
+/* The thread through the beads' centres (decoration): a piece from each bead to the next, so it ends
+   on 04 — one line from the first to the last bead's centre would run on past 04, the last step being
+   taller than its bead (a phone) or the row wider than the last bead (a desktop). */
+.step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 1.5rem;
+  bottom: calc(-1 * var(--steps-gap) - 1.5rem);
+  left: calc(1.5rem - 1px);
+  border-left: 2px dashed var(--color-stroke);
+  pointer-events: none;
 }
-.step__index { grid-row: span 2; padding-top: 0.35rem; font-size: 0.75rem; line-height: 1.5; letter-spacing: 0; }
-.step__title { font-size: clamp(1.5rem, 2.2vw, 2.25rem); line-height: 1.2; letter-spacing: -0.035em; }
-.step p { font-size: 1rem; }
-.how__visual { display: none; }
-.how__drawing { position: sticky; top: 24vh; }
-.how__motion { width: 100%; height: min(46vh, 28rem); background-image: var(--still-conversation); background-position: center; background-size: contain; background-repeat: no-repeat; mask-image: var(--still-fade, none); }
-html[data-gl='on'] .how__motion { background-image: none; }
-.how__phases { display: flex; gap: 0.75rem; align-items: center; margin: 1rem 12% 0; font-family: var(--font-mono); font-size: 0.5625rem; color: var(--color-text-muted); }
-.how__phases i { flex: 1; height: 1px; background: var(--color-line); }
-.how__phases i::before { content: ''; display: block; height: 1px; background: var(--color-light); transform: scaleX(var(--journey-progress, 0)); transform-origin: left; }
+.step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  column-gap: 1.25rem;
+  row-gap: 0.5rem;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  align-content: start;
+}
+.step__index {
+  position: relative;
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  padding: 0;
+  border: 1.5px solid var(--color-stroke);
+  border-radius: 50%;
+  background: var(--color-sheet-solid);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-weight: 800;
+  font-stretch: normal;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--color-text);
+}
+.step:nth-child(2) .step__index,
+.step:nth-child(3) .step__index { border-color: transparent; background: var(--color-mark); color: var(--color-on-mark); }
+.step:nth-child(4) .step__index { border-color: transparent; background: var(--color-accent); color: var(--color-on-accent); }
+.step:nth-child(4) .step__index::after { content: '✦'; content: '✦' / ''; position: absolute; top: -0.35rem; right: -0.35rem; font-size: 0.875rem; color: var(--color-light); }
+.step__title { font-size: clamp(1.25rem, 1.6vw, 1.5rem); font-weight: 800; line-height: 1.2; letter-spacing: -0.02em; }
+.step p { max-width: 22rem; font-size: 1rem; line-height: 1.6; color: var(--color-text-soft); }
+
+/* The example: a card of glass in the chat's own voice — «Ви» in the bubble on the right, the AI on
+   the left with its label. Every line reads in full at any width. */
 .transcript {
-  gap: 1.75rem;
-  padding: clamp(1.25rem, 2.5vw, 2.5rem);
-  border: 1px solid var(--landing-card-line);
-  border-radius: 1.25rem;
-  background: var(--landing-card);
-  box-shadow: 0 24px 80px var(--landing-card-shadow);
+  display: grid;
+  gap: 1.5rem;
+  width: min(100%, 48rem);
+  margin-inline: auto;
+  padding: clamp(1.25rem, 3vw, 2.25rem);
+  border-radius: var(--radius-sheet);
   text-shadow: none;
 }
-.transcript__heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-bottom: 1.2rem; border-bottom: 1px solid var(--color-line); }
-.transcript__brand { font-size: 1.25rem; letter-spacing: -0.04em; }
-.transcript__brand > span { font-family: var(--font-mono); font-size: 0.625rem; margin-left: 0.4rem; color: var(--color-text-muted); letter-spacing: 0; }
-.transcript .caption { font-family: var(--font-body); font-size: 0.75rem; text-transform: none; letter-spacing: 0; }
-.said { grid-template-columns: 1.5rem minmax(0, 1fr); gap: 0.75rem; }
-.said__who { font-size: 0.625rem; letter-spacing: 0; }
-.said p { font-size: 0.9375rem; line-height: 1.6; }
-.said--ai p { font-family: var(--font-body); font-stretch: normal; font-size: 1rem; }
-.theses { gap: 0.875rem; }
-.theses__title { font-family: var(--font-body); font-size: 0.8125rem; text-transform: none; letter-spacing: 0; }
-.theses__list { gap: 0.65rem; font-size: 0.875rem; line-height: 1.55; }
-.theses__list li { grid-template-columns: 1.5rem minmax(0, 1fr); gap: 0.75rem; }
-.theses__actions { padding-left: 2.25rem; }
-.theses__actions .mark { font-family: var(--font-body); font-size: 0.75rem; letter-spacing: 0; text-transform: none; }
-.transcript__foot { padding-top: 0.75rem; font-size: 0.6875rem; color: var(--color-text-muted); }
+.transcript__heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--color-line); }
+.transcript__brand { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.04em; }
+.transcript__brand > span { font-family: var(--font-mono); font-size: 0.6875rem; font-weight: 500; margin-left: 0.4rem; color: var(--color-text-soft); letter-spacing: 0.08em; }
+.transcript .caption { font-family: var(--font-body); font-size: 0.8125rem; text-transform: none; letter-spacing: 0; color: var(--color-text-soft); }
+.transcript__lines { display: grid; gap: 0.9rem; }
+.said { display: grid; justify-items: end; gap: 0.3rem; }
+.said--ai { grid-template-columns: 2rem minmax(0, 1fr); justify-items: start; column-gap: 0.65rem; align-items: start; }
+.said__who { font-family: var(--font-mono); font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.08em; color: var(--color-text-soft); }
+.said:not(.said--ai) .said__who { order: -1; }
+.said--ai .said__who { display: grid; place-items: center; width: 2rem; height: 2rem; border: 1.5px solid var(--color-stroke); border-radius: 50%; letter-spacing: 0; color: var(--color-text); }
+.said p { max-width: 34rem; font-size: 1rem; line-height: 1.55; color: var(--color-text); }
+.said:not(.said--ai) p { padding: 0.7rem 1rem; border-radius: 1.375rem 1.375rem 0.375rem 1.375rem; background: var(--color-bubble-you); color: var(--color-on-bubble-you); }
+.said--ai p { padding-top: 0.25rem; font-family: var(--font-body); font-stretch: normal; }
+.theses { display: grid; gap: 0.8rem; padding-top: 1.25rem; border-top: 1px solid var(--color-line); }
+.theses__title { font-family: var(--font-mono); font-size: 0.75rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.18em; color: var(--color-text-soft); }
+.theses__list { display: grid; gap: 0.6rem; font-size: 0.9375rem; line-height: 1.55; }
+.theses__list li { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr); gap: 0.6rem; color: var(--color-text); }
+.theses__n { color: var(--color-light); }
+.theses__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; padding-left: 0; }
+.theses__actions .mark { font-family: var(--font-body); font-size: 0.8125rem; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--color-text-soft); }
+.theses__actions .mark--on { padding: 0.35rem 0.85rem; border-radius: 999px; background: var(--color-accent); color: var(--color-on-accent); }
+.theses__or { color: var(--color-text-soft); }
+.transcript__foot { padding-top: 0.5rem; font-size: 0.75rem; color: var(--color-text-soft); }
 
-/* Topics read like an index. The change in scale sets a different pace. */
-.scenarios { padding-top: 5rem; }
-.scenario-list { counter-reset: topic; }
-.scenario-list .row { position: relative; counter-increment: topic; }
-.scenario-list .row__title { display: flex; align-items: baseline; gap: 1.5rem; font-size: clamp(1.4rem, 2.4vw, 2.5rem); }
-.scenario-list .row__title::before { content: '0' counter(topic); font-family: var(--font-mono); font-size: 0.6875rem; letter-spacing: 0; color: var(--color-text-muted); }
-.scenario-list .row__arrow { display: none; }
-.row__note { font-size: 0.625rem; color: var(--color-light); }
-.flow { font-family: var(--font-body); font-size: 0.8125rem; text-transform: none; letter-spacing: 0; }
+/* ---------- #scenarios: the horizon of eight names, the key one in an ink pill ---------- */
+.scenarios .chapter__head { justify-items: center; max-width: 46rem; margin-inline: auto; text-align: center; }
+.scenarios .display-2 { max-width: none; font-size: var(--display-l); line-height: 1.05; }
+.poster {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.6rem 0.75rem;
+  max-width: 66rem;
+  margin: 0 auto 2.5rem;
+  text-align: center;
+}
+.poster__name {
+  position: relative;
+  padding: 0.3rem 0;
+  font-family: var(--font-display);
+  font-size: var(--poster);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  color: var(--color-text);
+}
+/* The separators follow each name but the last, inside its item (decoration: an empty alternative):
+   a line that wraps ends on a ✦ and never opens with one (B-landing-*), and the wrap counts the ✦,
+   so nothing runs past the edge at 320 px. The key name's pill is its inner span, the ✦ outside it. */
+.poster__name:not(:last-child)::after {
+  content: '✦';
+  content: '✦' / '';
+  display: inline-block;
+  margin-left: 0.75rem;
+  vertical-align: 0.15em;
+  font-size: 0.75rem;
+  line-height: 1;
+  color: var(--color-light);
+}
+.poster__name--key { padding: 0; }
+.poster__pill { display: inline-block; padding: 0.3rem 1.1rem; border-radius: 999px; background: var(--color-accent); color: var(--color-on-accent); }
+.scenario-card {
+  position: relative;
+  display: grid;
+  gap: 0.75rem;
+  width: min(100%, 42rem);
+  margin-inline: auto;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border-radius: var(--radius-sheet);
+}
+.scenario-card__title { font-family: var(--font-display); font-size: 1.375rem; font-weight: 800; line-height: 1.25; letter-spacing: -0.02em; }
+.scenario-card__label { font-family: var(--font-mono); font-size: 0.75rem; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-text-soft); }
+.scenario-card p { line-height: 1.6; color: var(--color-text); }
+/* Trigger → reaction → another view: a chain of pills, the last one filled (B-landing-*). The pills
+   carry words, not controls: their edge is the 1.5 px stroke (≥ 3:1 on the glass and its fallback). */
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.6rem; font-family: var(--font-body); font-size: 0.875rem; font-weight: 600; line-height: 1.2; text-transform: none; letter-spacing: 0; color: var(--color-text); }
+.flow__step { display: inline-flex; align-items: center; min-height: 2rem; padding: 0.3rem 0.85rem; border: 1.5px solid var(--color-stroke); border-radius: 999px; }
+.flow__step--last { border-color: var(--color-accent); background: var(--color-accent); color: var(--color-on-accent); }
+.flow__arrow { color: var(--color-light); }
+.scenario-notes { display: grid; gap: 1.5rem; width: min(100%, 66rem); margin: 2.75rem auto 0; }
+.scenario-notes dt { font-size: 1.0625rem; font-weight: 800; letter-spacing: -0.01em; color: var(--color-text); }
+.scenario-notes dd { margin-top: 0.35rem; font-size: 0.9375rem; line-height: 1.6; color: var(--color-text-soft); }
 
+/* ---------- #diary: one spread of glass, two pages and a fold ---------- */
 .diary .chapter__head { margin-bottom: 3rem; }
-.diary__art { display: block; position: relative; width: min(100%, 28rem); margin: 0 auto 3rem; }
-.diary__sky { display: block; position: relative; inset: auto; width: 100%; aspect-ratio: 1; margin-block: 1rem; }
-.diary__sky::before { content: ''; position: absolute; inset: 0; background-image: var(--still-atlas); background-position: center; background-size: contain; background-repeat: no-repeat; mask-image: var(--still-fade, none); }
-html[data-gl='on'] .diary__sky { opacity: 0; }
-.diary__art-kicker { font-family: var(--font-mono); font-size: 0.625rem; letter-spacing: 0.08em; color: var(--color-text-muted); text-transform: uppercase; }
-.diary__art-caption { display: flex; justify-content: space-between; gap: 1rem; padding-top: 1.25rem; border-top: 1px solid var(--color-line); font-size: 0.75rem; color: var(--color-text-soft); }
-.diary__art-caption > span:last-child { font-family: var(--font-mono); font-size: 0.625rem; color: var(--color-light); }
-.log__entry { padding-block: 1.6rem; row-gap: 0.7rem; }
-.log__text { font-size: 1.0625rem; line-height: 1.65; }
-.log__tags { font-family: var(--font-body); font-size: 0.75rem; text-transform: none; letter-spacing: 0; color: var(--color-text-muted); }
-.weekly__stat dd { font-family: var(--font-body); letter-spacing: -0.03em; }
-.weekly__stat--big dd { font-weight: 300; }
-.nosave__switch { font-family: var(--font-body); font-size: 0.8125rem; letter-spacing: 0; text-transform: none; }
-.nosave { margin-top: 2.5rem; }
-.facts { margin-top: 1.5rem; font-size: 0.875rem; }
+.spread {
+  position: relative;
+  display: grid;
+  gap: 1.75rem;
+  padding: clamp(1.25rem, 3vw, 2.5rem);
+  border-radius: var(--radius-sheet);
+}
+.spread__page { display: grid; gap: 1.5rem; align-content: start; min-width: 0; }
+.spread__fold { height: 1px; background: var(--color-line-strong); box-shadow: 0 0 14px 1px var(--color-shadow); }
+.log__list { border-bottom: 0; }
+.log__entry { padding-block: 1.25rem; row-gap: 0.5rem; }
+.log__entry:first-child { border-top: 0; }
+.log__text { font-size: 1.0625rem; line-height: 1.6; }
+.log__tags { font-family: var(--font-body); font-size: 0.8125rem; text-transform: none; letter-spacing: 0; color: var(--color-text-soft); }
+.weekly__stat dd { font-family: var(--font-display); font-weight: 800; letter-spacing: -0.03em; text-transform: none; }
+.weekly__stat--big dd { font-weight: 800; }
+.nosave { margin-top: 0; padding: 1.25rem 0 0; border-bottom: 0; }
+.nosave__switch { font-family: var(--font-body); font-size: 0.875rem; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.facts { margin-top: 0; font-size: 0.9375rem; }
 
-/* Privacy is a quiet reading section, followed by direct access to help. */
-.privacy { padding-bottom: 4rem; }
-.privacy .chapter__head { margin-bottom: 4rem; }
-.principles .row__title { font-size: clamp(1.2rem, 1.7vw, 1.6rem); max-width: 25ch; }
-.principles .row__body { max-width: 41rem; font-size: 0.9375rem; }
-.safety .display-2 { max-width: 22ch; font-size: clamp(2rem, 4vw, 3.5rem); }
-.help__number { font-family: var(--font-body); font-size: clamp(3.5rem, 6vw, 6rem); letter-spacing: -0.065em; }
-.help__link { font-family: var(--font-body); font-size: 1.25rem; letter-spacing: -0.025em; text-transform: none; }
+/* ---------- The night: privacy, the crisis contacts, the FAQ under one dome ---------- */
+.night { padding-top: var(--dome-h); }
+.privacy { padding-bottom: 3rem; }
+.principles .row__title { display: flex; align-items: baseline; gap: 0.75rem; font-size: clamp(1.15rem, 1.5vw, 1.375rem); max-width: 30ch; }
+/* The line icon: a ring of the stroke (cream-teal on the night). */
+.principles .row__title::before { content: ''; flex: none; width: 0.875rem; height: 0.875rem; border: 1.5px solid var(--color-stroke); border-radius: 50%; translate: 0 0.1em; }
+.principles .row__body { max-width: 41rem; font-size: 0.9375rem; color: var(--color-text-soft); }
+.safety .display-2 { max-width: 22ch; }
+/* The crisis card: the night's glass (its own tone, so its own opaque fallback, components.css). */
+.help-card {
+  position: relative;
+  padding: clamp(1.25rem, 3vw, 2.25rem);
+  border: 1.5px solid rgb(255 197 143 / 0.55);
+  border-radius: var(--radius-sheet);
+  background: rgb(5 20 22 / 0.5);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow: var(--shadow-capsule);
+}
+.help { border-bottom: 0; }
+.help__item { border-top: 0; padding-block: clamp(0.75rem, 2vh, 1.25rem); }
+.help__number {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.3rem 1.25rem 0.3rem 0.3rem;
+  border: 1.5px solid var(--color-crisis-line);
+  border-radius: 1.5rem;
+  font-family: var(--font-display);
+  font-size: var(--numeral);
+  font-weight: 800;
+  font-stretch: normal;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--color-crisis-ink);
+}
+.help__number:hover { color: var(--color-crisis-ink); }
+.help__dial { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border-radius: 50%; background: var(--color-crisis-ink); color: var(--color-bg); }
+.help__dial svg { width: 1.25rem; height: 1.25rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+.help__link { font-family: var(--font-body); font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; text-transform: none; color: var(--color-crisis-ink); }
 .help__check { margin-top: 2rem; font-size: 0.9375rem; }
 .help__check .row__title { font-size: 1.25rem; }
-.qa summary { font-size: 1.125rem; line-height: 1.5; letter-spacing: -0.02em; padding-block: 1.5rem; }
-.qa summary::after { color: var(--color-text-muted); font-size: 1.25rem; }
-.qa p { font-size: 0.9375rem; line-height: 1.75; }
+.qa summary { font-size: 1.125rem; font-weight: 700; line-height: 1.45; letter-spacing: -0.015em; padding-block: 1.4rem; }
+.qa summary::after { color: var(--color-light); font-size: 1.25rem; }
+.qa p { font-size: 0.9375rem; line-height: 1.7; }
 
+/* ---------- Final: the sun below, the form from the hero behind the words (ADR-011) ---------- */
 .final { min-height: 100svh; overflow: clip; }
 .final::before { display: none; }
-.final__inner { gap: 2rem; justify-items: center; text-align: center; padding-bottom: 9vh; }
-.final__title { font-size: clamp(3rem, 6.3vw, 6rem); max-width: 22ch; }
+.final__inner { gap: 1.75rem; justify-items: center; text-align: center; padding-bottom: 9vh; }
+.final__title { font-size: var(--display-l); line-height: 1.05; max-width: 22ch; }
 .final .lead { max-width: 40rem; text-wrap: pretty; }
-.final__meta { gap: 2rem; margin-top: 0.75rem; justify-content: center; }
+.final__meta { gap: 1.5rem; margin-top: 0.5rem; justify-content: center; }
 .final__art { --final-size: min(94vw, 132svh); position: absolute; left: 50%; top: 93%; transform: translate(-50%, -50%); width: min(100%, var(--final-size)); height: var(--final-size); pointer-events: none; opacity: 0.62; mask-image: linear-gradient(transparent 1%, #000 34%); }
-.final__art::before { inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); width: calc(var(--final-size) * 1.4); height: calc(var(--final-size) * 1.4); mask-image: var(--still-final-fade, radial-gradient(ellipse at 50% 20%, transparent, #000 68%)); }
+.final__art::before { background-image: var(--still-final); inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); width: calc(var(--final-size) * 1.4); height: calc(var(--final-size) * 1.4); mask-image: var(--still-final-fade, radial-gradient(ellipse at 50% 20%, transparent, #000 68%)); }
 html[data-gl='on'] .final__art::before { visibility: hidden; }
+
+/* ---------- Footer: the ink ground of the night subtree, cream text ---------- */
 .site-footer { padding-top: 2.5rem; background: var(--landing-footer); }
-.site-footer__brand { font-family: var(--font-body); font-size: 2rem; text-transform: none; letter-spacing: -0.055em; }
-.site-footer__note { font-size: 0.75rem; line-height: 1.8; gap: 0.8rem; }
+.site-footer__brand { font-family: var(--font-display); font-size: 2rem; font-weight: 800; text-transform: none; letter-spacing: -0.045em; }
+.site-footer__note { font-size: 0.8125rem; line-height: 1.75; gap: 0.8rem; }
 .site-footer__links { flex-direction: column; gap: 0; }
 .site-footer__links a,
-.site-footer__copy { font-family: var(--font-body); font-size: 0.75rem; text-transform: none; letter-spacing: 0; }
+.site-footer__copy { font-family: var(--font-body); font-size: 0.8125rem; text-transform: none; letter-spacing: 0; }
 
 @media (min-width: 64em) {
-  .how__layout { grid-template-columns: minmax(0, 0.95fr) minmax(8rem, 0.55fr) minmax(0, 1.2fr); gap: clamp(1.5rem, 3vw, 3rem); }
-  .how__visual { display: block; }
-  .how .steps { padding-bottom: 18vh; }
-  .step { min-height: 55vh; align-content: center; }
-  .transcript { top: 16vh; margin-top: 4vh; }
-  .scenario-list .row:not(:has(.row__index)) { column-gap: 7rem; }
-  .scenarios .chapter__head { display: grid; grid-template-columns: 1fr 1fr; column-gap: 7rem; }
-  .scenarios .chapter__head > .tag { grid-column: 1 / -1; }
-  .scenarios .lead { align-self: end; max-width: 31rem; }
-  .diary__layout { gap: 3rem; }
-  .diary__art { position: absolute; right: 0; top: 0; bottom: 0; width: min(45%, 36rem); margin: 0; }
-  .diary__art-inner { position: sticky; top: 18vh; }
-  .privacy .chapter__head { max-width: 52%; }
-  .principles .row { column-gap: 7rem; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
+  /* Hero: the slot is a column of its own between the halves. */
+  .hero__title { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); column-gap: clamp(1rem, 2.4vw, 2.5rem); }
+  .hero__half { justify-self: end; text-align: right; }
+  .hero__half--strong { justify-self: start; text-align: left; }
+  .hero__slot { width: clamp(240px, 25vw, 360px); }
+  /* The beads in one row, the thread across their centres. */
+  .steps { --steps-gap: clamp(1.5rem, 3vw, 3rem); grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .step:not(:last-child)::before { top: calc(1.5rem - 1px); bottom: auto; left: 1.5rem; right: calc(-1 * var(--steps-gap) - 1.5rem); border-left: 0; border-top: 2px dashed var(--color-stroke); }
+  .step { grid-template-columns: minmax(0, 1fr); row-gap: 0.75rem; }
+  .step__index { grid-row: auto; margin-bottom: 0.5rem; }
+  .scenario-notes { grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: clamp(1.5rem, 3vw, 3rem); }
+  .spread { grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr); column-gap: clamp(1.5rem, 3.5vw, 3.5rem); }
+  .spread__fold { width: 1px; height: auto; align-self: stretch; }
+  .privacy .frame { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); column-gap: clamp(3rem, 6vw, 7rem); align-items: start; }
+  .privacy .chapter__head { max-width: none; margin-bottom: 0; }
+  .principles .row { column-gap: 2rem; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
   .faq .frame { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: 6rem; }
   .site-footer__inner { grid-template-columns: 0.6fr 2.2fr 0.8fr auto; gap: 3rem; }
 }
 
 @media (max-width: 63.999em) {
-  .site-header { min-height: 4.75rem; padding-top: 0.75rem; padding-bottom: 0.75rem; }
-  .hero { justify-content: flex-start; min-height: 56rem; padding-top: 22rem; padding-bottom: 9rem; }
-  .hero__frame { gap: 1.5rem; }
-  .hero__title { font-size: clamp(3.1rem, 8vw, 5.75rem); }
-  .hero__aside { max-width: 32rem; }
-  .hero__tag { position: absolute; top: 7rem; }
+  .hero { justify-content: flex-start; min-height: 0; padding-top: 7rem; padding-bottom: 8rem; }
+  .hero__frame { row-gap: 1.5rem; }
   .hero__foot { bottom: 1.5rem; }
-  .hero__orb,
-  .hero__orb-link { top: var(--light-y, 14rem); width: var(--light-d, 12rem); }
-  .step { min-height: 0; }
-  .transcript { max-width: 36rem; }
-  .how__layout { gap: 2rem; }
-  .diary .chapter__head,
-  .diary__layout,
-  .nosave,
-  .facts { max-width: 38rem; }
+  .mind__stage { min-height: 40rem; }
+  .mind__copy { padding-top: 6.5rem; }
+  .mind__copy h2 { margin-top: 1rem; font-size: 3.2rem; }
+  .mind__copy h2 br { display: none; }
+  .mind__copy h2 span { display: block; }
+  .mind__note { position: absolute; top: max(31rem, 79vh); font-size: 0.875rem; line-height: 1.6; }
+  .mind__foot { bottom: 1.5rem; font-size: 0.6875rem; }
+  .mind__foot > span:first-child { display: none; }
+  .mind__foot { justify-content: flex-end; }
+  .mind__still { width: min(100%, max(164px, calc(92.825svh - 352.5px))); top: calc(39.5svh + 140px); right: auto; left: 50%; translate: -50% -50%; background-image: var(--still-portrait-mobile); }
   .final { padding-block: 7rem; }
   .final__art { --final-size: 145vw; top: 84%; }
   .final__inner { padding-bottom: 3rem; }
@@ -484,46 +739,47 @@ html[data-gl='on'] .final__art::before { visibility: hidden; }
 @media (max-width: 35em) {
   .brand { font-size: 1.4rem; }
   .brand__name { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
-  .site-header { gap: 0.5rem; }
   .site-header__actions { gap: 0.125rem; }
-  .site-header .help-link { padding-inline: 0.35rem; font-size: 0.75rem; }
-  .site-header .media { padding: 0; gap: 0; }
+  .site-header .help-link { padding-inline: 0.6rem; font-size: 0.8125rem; }
+  .site-header .media { padding: 0; gap: 0; border-color: transparent; }
   .media__button,
-  .theme-toggle { width: 2rem; }
-  .menu-toggle { width: 2.25rem; height: 2.5rem; border-color: transparent; background: transparent; }
-  .hero { min-height: 52rem; padding-top: 20rem; }
-  .hero__title { font-size: clamp(2.55rem, 10.6vw, 3.6rem); }
-  .hero__tag { top: 6.5rem; font-size: 0.625rem; }
-  .hero__lead { font-size: 1rem; }
-  .hero__note { max-width: 23rem; font-size: 0.75rem; }
-  .hero__links { gap: 1.25rem; flex-wrap: wrap; }
-  .hero__links .cta--primary { padding-inline: 1.25rem; min-height: 3.25rem; gap: 1rem; font-size: 0.875rem; }
-  .hero__links .text-link { font-size: 0.8125rem; gap: 0.5rem; }
-  .hero__foot { font-size: 0.6875rem; gap: 1rem; }
-  .chapter__head { gap: 1.25rem; margin-bottom: 2.5rem; }
-  .display-2 { font-size: clamp(2.1rem, 8.8vw, 3rem); }
-  .scenario-list .row { gap: 1rem; }
-  .scenario-list .row__title { gap: 1rem; }
+  .theme-toggle { min-width: 2.1rem; }
+  .theme-toggle { border-color: transparent; }
+  .menu-toggle { width: 2.25rem; height: 2.5rem; border-color: transparent; }
+  .hero__tag { font-size: 0.6875rem; }
+  .hero__note { font-size: 0.8125rem; }
+  .hero__links .cta--primary,
+  .hero__links .text-link { min-height: 3rem; font-size: 0.875rem; }
+  .hero__foot { font-size: 0.75rem; gap: 1rem; }
+  .chapter__head { gap: 1rem; margin-bottom: 2.25rem; }
+  .poster { column-gap: 0.5rem; }
+  .poster__name:not(:last-child)::after { margin-left: 0.5rem; }
   .row__body { font-size: 0.9375rem; }
   .final { min-height: 42rem; }
-  .final__title { font-size: clamp(2.4rem, 9vw, 3.6rem); }
   .final__meta { flex-direction: column; gap: 1rem; }
 }
 
 @media (max-width: 23em) {
-  .brand__mark { display: none; }
-  /* With «Вигляд» the row is full at 320 px: the wordmark's hit area stops where «Якщо важко» starts. */
+  /* With «Вигляд» the row is full at 320 px: the sun mark alone (the name stays for screen readers, as
+     on the chat), and the wordmark's hit area stops where «Якщо важко» starts. */
+  .site-header { gap: 0.5rem; }
+  .brand__name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
   .brand { padding-inline: 0.25rem; margin-inline: -0.25rem; }
   /* The crisis chapter in view: a ring round «Якщо важко» came 3 px from «Liora» here. The current
      chapter is a small light under the words instead, as in the navigation — still not colour alone
      (SC 1.4.1). */
-  .site-header .help-link[aria-current] { position: relative; border-color: transparent; }
-  .site-header .help-link[aria-current]::after { content: ''; position: absolute; left: 50%; bottom: 0.3rem; width: 4px; height: 4px; border-radius: 50%; background: var(--color-light); translate: -50% 0; }
-  .site-header { gap: 0.25rem; }
-  .hero__links { gap: 0.75rem; }
-  .hero__links .cta--primary { padding-inline: 1rem; gap: 0.65rem; font-size: 0.8125rem; }
-  .hero__links .text-link { font-size: 0.75rem; }
+  .site-header .help-link[aria-current] { position: relative; border-color: transparent; box-shadow: none; }
+  .site-header .help-link[aria-current]::after { content: ''; position: absolute; left: 50%; bottom: 0.3rem; width: 4px; height: 4px; border-radius: 50%; background: currentColor; translate: -50% 0; }
+  .hero__links .cta--primary { padding-left: 1rem; gap: 0.65rem; font-size: 0.8125rem; }
+  .hero__links .text-link { padding-inline: 1rem; font-size: 0.8125rem; }
   .transcript { padding: 1rem; }
+  .help__number { gap: 0.5rem; padding-right: 1rem; }
+}
+
+/* Beside the sections (64em–90em) the crisis pill keeps its words and its icon; the numbers come back
+   where the capsule has room (the name says them in any case). */
+@media (min-width: 64em) and (max-width: 89.99em) {
+  .site-header .help-link__numbers { display: none; }
 }
 
 /* ---------- Motion between the chapters (ADR-012 «Рух», spec §9.4 п. 8) ----------
@@ -534,10 +790,10 @@ html[data-gl='on'] .final__art::before { visibility: hidden; }
    layout shifts. Opacity is a start that ends at 1, never a resting dimness. */
 
 /* «Пауза» ends what is under way at once (a reveal half-way, the FAQ's «+» turning) instead of letting
-   it run out — a transition no longer named stops — and what follows the scroll changes its ink at
-   once: the example session's lines, the steps' numbers, the header's current chapter. */
+   it run out — a transition no longer named stops — and what follows the scroll changes at once: the
+   header's current chapter. */
 html:not([data-motion='on']) [data-reveal],
-html:not([data-motion='on']) :is(.step__index, .transcript [data-for] :is(p, span, li), .site-nav a),
+html:not([data-motion='on']) .site-nav a,
 html:not([data-motion='on']) .qa summary::after {
   transition: none;
 }
@@ -668,46 +924,22 @@ html:not([data-motion='on']) .qa summary::after {
   to { rotate: y 5deg; scale: 0.98; }
 }
 
-/* The sky through the long stretch without a scene (#scenarios → #faq): two soft lights in the sky's
-   own colours — so nothing under the text gets lighter at night or darker by day than the sky
-   already is — drift with the page's progress (--progress, src/ui/nav.ts), transform only. They
-   go out beside the crisis contacts (.stage[data-quiet], ADR-011) and do not exist on pause. */
-.stage::before,
-.stage::after {
-  content: '';
-  position: absolute;
-  width: 90vmax;
-  height: 90vmax;
-  border-radius: 50%;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.stage::before {
-  left: -34vmax;
-  top: -10vh;
-  background: radial-gradient(closest-side, var(--landing-sky-cool), transparent);
-}
-
-.stage::after {
-  right: -38vmax;
-  top: 40vh;
-  background: radial-gradient(closest-side, var(--landing-sky-warm), transparent);
+/* The aurora drifts: the fields of the section skies move a few per cent over a minute and more
+   (--drift, registered above, inside their positions), the stops stand. Only with motion and without
+   prefers-reduced-motion; beside the crisis contacts the night is quiet (above), and on «Пауза»
+   nothing runs. The fields of the dark sky never meet, the drift included (chat-core.spec.ts). */
+@keyframes sky-drift {
+  to { --drift: 4%; }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  html[data-motion='on'] .stage::before,
-  html[data-motion='on'] .stage::after {
-    opacity: 1;
-    will-change: transform;
-    transition: opacity var(--dur-5) var(--ease-standard);
+  html[data-motion='on'] :is(.hero, .how, .scenarios, .night, .final) {
+    animation: sky-drift 75s var(--ease-in-out) infinite alternate;
   }
 
-  html[data-motion='on'] .stage::before { transform: translate3d(calc(var(--progress, 0) * 42vw), calc(var(--progress, 0) * 55vh), 0); }
-  html[data-motion='on'] .stage::after { transform: translate3d(calc(var(--progress, 0) * -34vw), calc(var(--progress, 0) * -60vh), 0); }
-
-  html[data-motion='on'] .stage[data-quiet]::before,
-  html[data-motion='on'] .stage[data-quiet]::after { opacity: 0; }
+  html[data-motion='on'] .stage[data-quiet] ~ main .night {
+    animation: none;
+  }
 }
 
 /* A FAQ answer opens (and closes) smoothly where details' content box and keyword sizes can be
@@ -732,11 +964,9 @@ html:not([data-motion='on']) .qa summary::after {
 }
 
 @media (forced-colors: active) {
-  .mind__still, .final__art, .how__visual, .diary__art { display: none; }
-  .hero__title-soft { color: CanvasText; }
-  .transcript { background: Canvas; border-color: CanvasText; }
+  .mind__still, .final__art { display: none; }
+  .hero__note::before, .step__index, .poster__pill, .theses__actions .mark--on, .said p { forced-color-adjust: auto; border: 1px solid CanvasText; }
   .cta { background: ButtonFace; color: ButtonText; border-color: ButtonText; }
-  .site-header .help-link { border-color: LinkText; }
   /* The small light of a narrow header is a background, which forced colours drop: the ring again. */
   .site-header .help-link[aria-current] { border-color: Highlight; }
 }

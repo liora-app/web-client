@@ -1,4 +1,5 @@
-// Continuous light filaments in the hero; a contour portrait in the scroll transition.
+// Continuous light filaments in the hero's slot and behind the final's words; a contour portrait in the
+// scroll transition (ADR-011, ADR-013: the conversation drawing and the diary's map are gone).
 // The chat has its own independent scene.
 // One palette per theme (core/palette.ts GL_PALETTES[theme].scene): light that adds up on the night,
 // ink that covers the paper by day. The theme event (THEME_EVENT) swaps uniforms and blending in
@@ -13,7 +14,6 @@ import { PointerTracker } from './pointer'
 import { ScrollStates, damp } from './scroll'
 import { createLuminousField } from './luminous-field'
 import { createContourPortrait } from './contour-portrait'
-import { createConversationFlow } from './conversation-flow'
 import { THEME_EVENT, resolvedTheme } from '../ui/theme'
 
 export interface SceneStats {
@@ -26,7 +26,6 @@ export interface SceneStats {
   fps: number
   quiet: number
   activity: number
-  conversation: number
   draws: number
   layout: 'wide' | 'column'
 }
@@ -73,26 +72,21 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
     renderer.forceContextLoss()
     throw error
   })
-  const conversation = createConversationFlow(tier.name === 'low')
-  scene.add(field.root, portrait.root, conversation.root)
+  scene.add(field.root, portrait.root)
   let theme: GlTheme = resolvedTheme()
   const applyPalette = (next: GlTheme): void => {
     theme = next
     const palette = GL_PALETTES[next].scene
     field.setPalette(palette)
     portrait.setPalette(palette)
-    conversation.setPalette(palette)
   }
   applyPalette(theme)
   const pointer = new PointerTracker()
   const scroll = new ScrollStates()
   const transition = document.querySelector<HTMLElement>('[data-portrait]')
-  const diaryArt = document.querySelector<HTMLElement>('.diary__sky')
   const finalArt = document.querySelector<HTMLElement>('.final__art')
   const finalSection = document.querySelector<HTMLElement>('.final')
-  const howArt = document.querySelector<HTMLElement>('.how__motion')
-  const howDrawing = document.querySelector<HTMLElement>('.how__drawing')
-  const steps = Array.from(document.querySelectorAll<HTMLElement>('[data-step]'))
+  const finalText = Array.from(document.querySelectorAll<HTMLElement>('.final__inner > *'))
   const governor = new FrameGovernor()
   let width = 1
   let height = 1
@@ -117,7 +111,6 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
   let mouseX = 0
   let mouseY = 0
   let portraitProgress = 0
-  let conversationProgress = 0
 
   const resize = (): void => {
     if (destroyed) return
@@ -168,7 +161,6 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
     let opacity = lerp(a.opacity, b.opacity, fraction) * (1 - Math.min(1, quiet * 2))
     let x = lerp(a.x, b.x, fraction)
     let y = lerp(a.y, b.y, fraction)
-    let atlas = false
     let finale = false
     let portraitOpacity = 0
     const rect = transition?.getBoundingClientRect()
@@ -184,16 +176,8 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
     // Each artwork owns a measured space in the document, so it cannot drift across a card.
     const inView = (box: DOMRect): number => box.width > 0 && box.height > 0
       ? ease((height - box.top) / (height * 0.24)) * ease(box.bottom / (height * 0.24)) : 0
-    const diaryBox = diaryArt?.getBoundingClientRect()
     const finalBox = finalArt?.getBoundingClientRect()
     const finalSectionBox = finalSection?.getBoundingClientRect()
-    if (diaryBox && inView(diaryBox) > 0) {
-      x = diaryBox.left + diaryBox.width / 2
-      y = diaryBox.top + diaryBox.height / 2
-      size = diaryBox.width * 0.88
-      opacity = inView(diaryBox)
-      atlas = true
-    }
     if (finalBox && finalSectionBox && inView(finalSectionBox) > 0) {
       x = finalBox.left + finalBox.width / 2
       y = finalBox.top + finalBox.height / 2
@@ -201,42 +185,34 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
       opacity = inView(finalSectionBox) * (wide ? 0.82 : 0.52)
       finale = true
     }
-    const howBox = howArt?.getBoundingClientRect()
-    const howOpacity = howBox ? inView(howBox) : 0
-    conversation.root.visible = howOpacity > 0.005
-    if (howBox && conversation.root.visible) {
-      const centers = steps.map(step => { const box = step.getBoundingClientRect(); return box.top + box.height / 2 })
-      const focus = height * 0.45
-      let progress = 0
-      for (let i = 0; i < centers.length - 1; i++) progress += clamp((focus - centers[i]) / Math.max(1, centers[i + 1] - centers[i]))
-      conversationProgress = damp(conversationProgress, progress, 5, dt)
-      conversation.root.position.set(howBox.left + howBox.width / 2 - width / 2, height / 2 - howBox.top - howBox.height / 2, 40)
-      conversation.root.scale.setScalar(Math.min(howBox.width / 1.85, howBox.height / 2.85))
-      conversation.root.rotation.set(0.08 + mouseY * 0.025, Math.sin(elapsed * 0.12) * 0.16 + mouseX * 0.035, -0.03)
-      conversation.uniforms.uOpacity.value = howOpacity
-      conversation.uniforms.uTime.value = elapsed
-      conversation.uniforms.uStage.value = conversationProgress
-      howDrawing?.style.setProperty('--journey-progress', String(conversationProgress / 3))
-    }
-    activity = Math.max(opacity, portraitOpacity, howOpacity)
+    activity = Math.max(opacity, portraitOpacity)
     field.root.visible = opacity > 0.005
     field.root.position.set(x - width / 2, height / 2 - y, 0)
     field.root.scale.setScalar(size / 2.2)
-    field.body.rotation.set(atlas ? 0.35 : 0.4 + mouseY * 0.045, atlas ? -0.3 + Math.sin(elapsed * 0.12) * 0.045 : -0.48 + elapsed * 0.035 + mouseX * 0.07, atlas ? -0.18 : 0.06 * Math.sin(elapsed * 0.12))
-    field.inner.visible = !atlas
-    field.orbits.visible = !atlas
+    field.body.rotation.set(0.4 + mouseY * 0.045, -0.48 + elapsed * 0.035 + mouseX * 0.07, 0.06 * Math.sin(elapsed * 0.12))
+    field.inner.visible = true
+    field.orbits.visible = true
     field.inner.rotation.z = 1.4 - elapsed * 0.035
     field.uniforms.uTime.value = elapsed
-    field.uniforms.uState.value = atlas ? 4 : 0
+    field.uniforms.uState.value = 0
     field.uniforms.uOpacity.value = opacity
     field.uniforms.uHover.value = 0.35
     field.uniforms.uPointer.value.set(mouseX * 1.5, mouseY * 1.5)
     field.uniforms.uPixelRatio.value = pixelRatio
     field.uniforms.uSize.value = Math.min(1.1, size / 400)
-    field.uniforms.uStroke.value = atlas ? 0.72 : wide ? 0.58 : 0.48
-    field.uniforms.uGain.value = atlas ? 2.6 : 1.65
+    field.uniforms.uStroke.value = wide ? 0.58 : 0.48
+    field.uniforms.uGain.value = 1.65
     field.uniforms.uResolution.value.set(width * pixelRatio, height * pixelRatio)
-    field.uniforms.uFinal.value = finale ? 0.72 : 0
+    field.uniforms.uFinal.value = finale ? 0.85 : 0
+    if (finale) {
+      let half = 0
+      for (const item of finalText) {
+        const box = item.getBoundingClientRect()
+        if (box.width > 0) half = Math.max(half, Math.abs(box.left - width / 2), Math.abs(box.right - width / 2))
+      }
+      const inner = Math.min(0.48, half / Math.max(1, width) + 0.02)
+      field.uniforms.uProtect.value.set(inner, Math.min(0.5, inner + 0.08))
+    }
     const headSize = wide ? Math.min(width * 0.35, height * 0.68) : Math.min(width * 0.85, Math.max(140, height * 0.79 - 300))
     portrait.root.visible = portraitOpacity > 0.005
     portrait.root.position.set(width * (wide ? 0.22 : 0.04), wide ? height * -0.005 : height * 0.105 - 140, 60)
@@ -294,7 +270,7 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
   canvas.addEventListener('webglcontextlost', onLost)
   canvas.addEventListener('webglcontextrestored', onRestored)
   window.__lioraScene = {
-    stats: () => ({ tier: tier.name, vertices: field.vertices + portrait.vertices + conversation.vertices, particles: field.particles, pixelRatio, state, frames, fps, quiet, activity, conversation: conversationProgress, draws: renderer.info.render.calls, layout: WIDE_LAYOUT.matches ? 'wide' : 'column' }),
+    stats: () => ({ tier: tier.name, vertices: field.vertices + portrait.vertices, particles: field.particles, pixelRatio, state, frames, fps, quiet, activity, draws: renderer.info.render.calls, layout: WIDE_LAYOUT.matches ? 'wide' : 'column' }),
     sample: () => {
       if (lost) return []
       renderer.render(scene, camera)
@@ -332,7 +308,6 @@ export async function createScene(canvas: HTMLCanvasElement, callbacks: SceneCal
       canvas.removeEventListener('webglcontextrestored', onRestored)
       field.dispose()
       portrait.dispose()
-      conversation.dispose()
       renderer.dispose()
       renderer.forceContextLoss()
       delete window.__lioraScene

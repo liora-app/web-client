@@ -1,4 +1,5 @@
-/* Chapters. Every chapter is one "station" of the scene (data-gl-state in index.html). */
+/* Chapters. Every chapter is one "station" of the scene (data-gl-state in index.html). The «Аврора»
+   look of each (ADR-013) is in landing.css; this file holds their structure. */
 
 .chapter {
   position: relative;
@@ -162,7 +163,7 @@ html[data-motion='on'] .scroll-cue::after {
 }
 
 /* Static light for when the scene is off (reduced motion, no WebGL2, slow device…).
-   src/ui/hero-light.ts measures where the light goes — beside the title lines, never on them — and
+   src/ui/hero-light.ts measures where the light goes — the slot between the title's halves — and
    writes --light-x/-y/-d; the WebGL light reads the same numbers, so switching does not jump.
    The fallbacks are the same formulas before the measurement (or without JS). */
 .hero__orb {
@@ -232,9 +233,9 @@ html[data-gl='on'] .hero__orb {
 
   .hero__orb,
   .hero__orb-link {
-    left: var(--light-x, 72.5%);
-    top: var(--light-y, 49%);
-    width: var(--light-d, min(45.6vh, 29.6vw));
+    left: var(--light-x, 50%);
+    top: var(--light-y, 50%);
+    width: var(--light-d, clamp(240px, 25vw, 360px));
   }
 
   .scroll-cue {
@@ -280,11 +281,6 @@ html[data-gl='on'] .hero__orb {
   color: var(--color-text-soft);
 }
 
-/* Without JS every step is equally bright; with it, the current one leads. */
-.how__layout[data-js] .step:not([data-current]) .step__index {
-  color: var(--color-text-dim);
-}
-
 .transcript {
   display: grid;
   gap: 1.5rem;
@@ -305,20 +301,18 @@ html[data-gl='on'] .hero__orb {
   align-items: baseline;
 }
 
-/* --ink is set on lines that are not part of the current step (see below). The active label is
-   soft, so it still reads as lit next to a dimmed one. */
 .said__who {
-  color: var(--ink, var(--color-text-soft));
+  color: var(--color-text-soft);
 }
 
 .said--ai .said__who {
-  color: var(--ink, var(--color-teal));
+  color: var(--color-teal);
 }
 
 .said p {
   font-size: var(--step-1);
   line-height: 1.5;
-  color: var(--ink, var(--color-text));
+  color: var(--color-text);
 }
 
 .said--ai p {
@@ -326,7 +320,7 @@ html[data-gl='on'] .hero__orb {
   font-size: var(--step-0);
   font-stretch: 87.5%;
   line-height: 1.55;
-  color: var(--ink, var(--color-teal));
+  color: var(--color-teal);
 }
 
 .theses {
@@ -337,7 +331,7 @@ html[data-gl='on'] .hero__orb {
 }
 
 .theses__title {
-  color: var(--ink, var(--color-light));
+  color: var(--color-light);
 }
 
 .theses__list {
@@ -349,22 +343,22 @@ html[data-gl='on'] .hero__orb {
   display: grid;
   grid-template-columns: 2.25rem minmax(0, 1fr);
   gap: 0.9rem;
-  color: var(--ink, var(--color-text));
+  color: var(--color-text);
 }
 
 .theses__n {
   font-family: var(--font-mono);
   font-size: var(--step--1);
-  color: var(--ink, var(--color-light));
+  color: var(--color-light);
   line-height: 1.9;
 }
 
 .theses__actions .mark {
-  color: var(--ink, var(--color-text-soft));
+  color: var(--color-text-soft);
 }
 
 .theses__actions .mark--on {
-  color: var(--ink, var(--color-light));
+  color: var(--color-light);
 }
 
 .theses__actions {
@@ -376,42 +370,7 @@ html[data-gl='on'] .hero__orb {
 }
 
 .theses__or {
-  color: var(--ink, var(--color-text-dim));
-}
-
-.transcript [data-for] :is(p, span, li) {
-  transition: color var(--dur-med) var(--ease-out);
-}
-
-@media (min-width: 64em) {
-  /* The example follows the step in the middle of the viewport (src/ui/steps.ts) — only here, where
-     it stands next to the steps. Lines of other steps step back to the dim ink (≥ 4.5:1 on the sky
-     under the example), never faded with opacity. On one column the example comes after the steps
-     and is read in full colour. */
-  .how__layout[data-js] .transcript[data-active-step='1'] [data-for]:not([data-for~='1']),
-  .how__layout[data-js] .transcript[data-active-step='2'] [data-for]:not([data-for~='2']),
-  .how__layout[data-js] .transcript[data-active-step='3'] [data-for]:not([data-for~='3']),
-  .how__layout[data-js] .transcript[data-active-step='4'] [data-for]:not([data-for~='4']) {
-    --ink: var(--color-text-dim);
-  }
-
-  /* Steps left, example right, the light in the gap between them. */
-  .how__layout {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    column-gap: clamp(8rem, 22vw, 22rem);
-  }
-
-  .step {
-    min-height: 78vh;
-    align-content: center;
-  }
-
-  .transcript {
-    position: sticky;
-    top: 24vh;
-    align-self: start;
-    margin-top: 12vh;
-  }
+  color: var(--color-text-dim);
 }
 
 /* ======================= 02 Scenarios ======================= */
@@ -425,47 +384,7 @@ html[data-gl='on'] .hero__orb {
   color: var(--color-light);
 }
 
-.scenario-list .row__title {
-  font-size: clamp(1.35rem, 1.05rem + 1.3vw, 2.25rem);
-}
-
-@media (min-width: 64em) {
-  .scenario-list .row:not(:has(.row__index)) {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    column-gap: clamp(8rem, 22vw, 22rem);
-  }
-
-  /* The lead ends before the lane where the theses stand. */
-  .scenarios .lead {
-    max-width: min(40rem, 34vw);
-  }
-}
-
 /* ======================= 03 Diary ======================= */
-
-/* The static map (landing.css draws it: the night's still or the day's contours): the WebGL one
-   takes over when the scene is on. */
-.diary__sky {
-  display: none;
-}
-
-@media (min-width: 64em) {
-  .diary__sky {
-    display: block;
-    position: absolute;
-    z-index: var(--z-behind);
-    top: var(--chapter-space);
-    bottom: var(--chapter-space);
-    right: max(var(--gutter), (100% - var(--frame)) / 2);
-    width: min(40vw, 36rem);
-    pointer-events: none;
-    transition: opacity 1.2s var(--ease-out);
-  }
-
-  html[data-gl='on'] .diary__sky {
-    opacity: 0;
-  }
-}
 
 .diary__layout {
   display: grid;
@@ -590,20 +509,6 @@ html[data-gl='on'] .hero__orb {
   color: var(--color-light);
 }
 
-@media (min-width: 64em) {
-  /* Text on the left, the constellation of themes on the right. */
-  .diary .chapter__head,
-  .diary__layout,
-  .nosave,
-  .facts {
-    max-width: min(46rem, 50%);
-  }
-
-  .diary__layout {
-    gap: 4.5rem;
-  }
-}
-
 /* ======================= 04 Privacy ======================= */
 
 /* Long statements stay in the mono voice, narrower so they wrap in even lines. */
@@ -612,13 +517,6 @@ html[data-gl='on'] .hero__orb {
 .qa summary {
   font-stretch: 75%;
   text-wrap: balance;
-}
-
-@media (min-width: 64em) {
-  /* The head on the left; on the right the diary's light is kept in glass (scene state 5). */
-  .privacy .chapter__head {
-    max-width: min(46rem, 50%);
-  }
 }
 
 /* ======================= 05 Safety ======================= */
@@ -867,7 +765,6 @@ html[data-gl='on'] .final::before {
 @media (forced-colors: active) {
   .hero__orb,
   .hero__orb-link,
-  .diary__sky,
   .final::before {
     display: none;
   }

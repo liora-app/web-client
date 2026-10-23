@@ -107,7 +107,9 @@ import { conversationText, entryMarkdown, thesesText } from '../../src/chat/ui/c
 import { moodLine, moodSentence, sayAnswer, sayRetry } from '../../src/chat/ui/copy'
 import { KEYBOARD_DROP, keyboardInset, keyboardShown } from '../../src/chat/ui/keyboard'
 import { presenceOf } from '../../src/chat/ui/presence'
+import { CHARACTER_KEY, parseCharacter } from '../../src/ui/character'
 import { SKY_KEY, parseSky, skyAttribute } from '../../src/ui/sky'
+import { block, checkAll, colour, fieldsMeet, grounds, hexOf, lum, over, props, ratio, sampled, sectionGrounds, sectionSky, sky, themes, worst, type Check, type Ground, type Rgb } from './sky-contrast'
 
 test.beforeEach(({}, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'pure core tests: one project is enough')
@@ -4030,48 +4032,33 @@ test.describe('sky presets', () => {
     expect(skyAttribute('dawn', true)).toBeNull()
   })
 
-  // ADR-012: the dark theme («вечірня лампа») keeps every layer under text at L ≤ 0.023, the light
-  // one («ранковий папір») at L ≥ 0.76, counted at the worst point: each haze at its full alpha
-  // over the lightest (dark) or darkest (light) base of the preset, and in the light theme the
-  // vignette's edge on top. --color-text-dim keeps 4.5:1 and the field border 3:1 there.
-  test('each theme keeps its three skies on its side of the text: dark ≤ L 0.023, light ≥ L 0.76', () => {
+  // ADR-013: «Персонаж» is on unless the person hid it; only the stored 'off' hides it, so an old,
+  // odd or hand-edited value never takes the character away.
+  test('the character: only "off" hides it; anything else, a missing key included, is on', () => {
+    expect(CHARACTER_KEY).toBe('liora:character')
+    expect(parseCharacter('off')).toBe('off')
+    for (const other of [null, undefined, '', 'on', 'OFF', 'Off', ' off', 'false', '0', '{"character":"off"}', 1, 0, false]) {
+      expect(parseCharacter(other), String(other)).toBe('on')
+    }
+  })
+
+  // ADR-013 («Аврора»): the threshold of luminance (ADR-012: dark ≤ L 0.023, light ≥ L 0.76) became a
+  // list of pairs. Every text token keeps 4.5:1, and every sole boundary of a control (its stroke, a
+  // field's border, the focus ring, the edge of the primary fill) keeps 3:1, on every ground of every
+  // theme × preset: each stop, each field at its full alpha, the ribbon over each field, by day each
+  // pair of fields, the exact composite of the layers over three windows (tests/e2e/sky-contrast.ts),
+  // and the glass over the worst of them, its opaque fallback included. Values come from the CSS.
+  // The chat's dark fields meet (teal or peach with the low rose one, stage.css) — unlike the landing's
+  // section skies, whose dark fields never do (fieldsMeet below): their overlaps are counted by the
+  // composite at the alphas they really have there. Both at full alpha is no place on the screen (and
+  // would fail: dusk and dawn, field 2 over field 4, 4.18:1 for the dim ink).
+  test('each theme × preset keeps text ≥ 4.5:1 and sole boundaries ≥ 3:1 on its sky, its fields, their overlaps and its glass', () => {
     const styles = resolve(test.info().project.testDir, '..', '..', 'src', 'styles')
-    const css = readFileSync(join(styles, 'stage.css'), 'utf8')
+    const stage = readFileSync(join(styles, 'stage.css'), 'utf8')
     const tokens = readFileSync(join(styles, 'tokens.css'), 'utf8')
-    const body = (text: string, selector: string): string => {
-      const start = text.indexOf(`${selector} {`)
-      expect(start, selector).toBeGreaterThanOrEqual(0)
-      return text.slice(start, text.indexOf('}', start))
-    }
-    const props = (selector: string): Record<string, string> =>
-      Object.fromEntries([...body(css, selector).matchAll(/--([a-z-]+):\s*([^;]+);/g)].map((m) => [m[1]!, m[2]!.trim()]))
-    const triples = (selector: string): Record<string, number[]> =>
-      Object.fromEntries(
-        [...body(css, selector).matchAll(/--(sky-[a-z-]+):\s*(\d+)\s+(\d+)\s+(\d+)/g)].map((m) => [m[1]!, [Number(m[2]), Number(m[3]), Number(m[4])]]),
-      )
-    const alphas = (selector: string): Record<string, number> =>
-      Object.fromEntries([...body(css, selector).matchAll(/--haze-a-([a-z]+):\s*([\d.]+)/g)].map((m) => [m[1]!, Number(m[2])]))
-    const color = (value: string): number[] => {
-      const hex = value.match(/^#([0-9a-f]{6})$/i)
-      if (hex) return [0, 2, 4].map((i) => parseInt(hex[1]!.slice(i, i + 2), 16)).concat(1)
-      const rgb = value.match(/^rgb\((\d+) (\d+) (\d+)(?: \/ ([\d.]+))?\)$/)
-      expect(rgb, value).not.toBeNull()
-      return [Number(rgb![1]), Number(rgb![2]), Number(rgb![3]), rgb![4] === undefined ? 1 : Number(rgb![4])]
-    }
-    // The chat's tokens: light-dark(<light>, <dark>).
-    const chat = body(tokens, ':root:not([data-theme-lock])')
-    const token = (name: string, theme: 'light' | 'dark'): number[] => {
-      const m = chat.match(new RegExp(`--${name}:\\s*light-dark\\((#[0-9a-f]{6}|rgb\\([^)]*\\)),\\s*(#[0-9a-f]{6}|rgb\\([^)]*\\))\\)`, 'i'))
-      expect(m, name).not.toBeNull()
-      return color(m![theme === 'light' ? 1 : 2]!)
-    }
-    const over = (fg: number[], alpha: number, bg: number[]): number[] => [0, 1, 2].map((i) => fg[i]! * alpha + bg[i]! * (1 - alpha))
-    const lin = (c: number): number => (c / 255 <= 0.04045 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4)
-    const lum = (c: number[]): number => 0.2126 * lin(c[0]!) + 0.7152 * lin(c[1]!) + 0.0722 * lin(c[2]!)
-    const contrast = (a: number, b: number): number => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
-    const BASES = ['sky-top', 'sky-mid', 'sky-bottom', 'sky-glow-teal', 'sky-glow-violet']
-    const HAZES = ['teal', 'violet', 'amber']
-    const KEYS = [...BASES, ...HAZES.map((h) => `sky-haze-${h}`)].sort()
+    const T = themes(tokens)
+    const stopsImage = props(block(stage, ':root')).get('sky-stops') ?? ''
+    expect(stopsImage).toMatch(/^linear-gradient\(180deg,/)
     const SKIES = {
       dark: { night: ':root', dusk: "html[data-sky='dusk']", dawn: "html[data-sky='dawn']" },
       light: {
@@ -4080,34 +4067,81 @@ test.describe('sky presets', () => {
         dawn: ":root[data-theme='light'][data-sky='dawn']:not([data-theme-lock])",
       },
     } as const
+    const TEXT = ['color-text', 'color-text-soft', 'color-text-muted', 'color-text-dim', 'color-ai', 'color-teal', 'color-light', 'color-light-strong']
+    // --color-stroke-warm: the mark's edge (the breathing circle, the marked reply's rule, a marked dot).
+    const BOUNDS = ['color-stroke', 'color-stroke-warm', 'color-field-border', 'color-focus', 'color-accent']
+    const TRIPLE = /^sky-(?:\d|field-\d|ribbon)$/
+    const checks: Check[] = []
+    const all: Record<'light' | 'dark', Ground[]> = { light: [], dark: [] }
 
     for (const theme of ['dark', 'light'] as const) {
-      const dark = theme === 'dark'
-      const alpha = alphas(SKIES[theme].night)
-      expect(Object.keys(alpha).sort(), `${theme}: the haze alphas`).toEqual([...HAZES].sort())
-      const vignette = token('color-vignette', theme)
-      const dim = lum(token('color-text-dim', theme))
-      const border = lum(token('color-field-border', theme))
+      const day = theme === 'light'
+      const own = props(block(stage, SKIES[theme].night))
+      const text = Object.fromEntries(TEXT.map((n) => [n, T[theme](n).rgb]))
+      const bounds = Object.fromEntries(BOUNDS.map((n) => [n, T[theme](n).rgb]))
       for (const preset of ['night', 'dusk', 'dawn'] as const) {
-        const sky = triples(SKIES[theme][preset])
         const label = `${theme} ${preset}`
-        expect(Object.keys(sky).sort(), label).toEqual(KEYS)
-        // The alphas belong to the theme: a preset changes colours only.
-        if (preset !== 'night') expect(Object.keys(alphas(SKIES[theme][preset])), label).toEqual([])
-        const bases = BASES.map((k) => sky[k]!)
-        const extreme = bases.reduce((a, b) => ((dark ? lum(b) > lum(a) : lum(b) < lum(a)) ? b : a))
-        const layers = [...bases, ...HAZES.map((h) => over(sky[`sky-haze-${h}`]!, alpha[h]!, extreme))]
-        // The light vignette darkens the edges a little; the dark one only makes them darker.
-        const seen = dark ? layers : [...layers, ...layers.map((c) => over(vignette, vignette[3]!, c))]
-        for (const [i, c] of seen.entries()) {
-          if (dark) expect(lum(c), `${label} layer ${i}`).toBeLessThanOrEqual(0.023)
-          else expect(lum(c), `${label} layer ${i}`).toBeGreaterThanOrEqual(0.76)
-        }
-        const worst = dark ? Math.max(...seen.map(lum)) : Math.min(...seen.map(lum))
-        expect(contrast(dim, worst), `${label}: --color-text-dim`).toBeGreaterThanOrEqual(4.5)
-        expect(contrast(border, worst), `${label}: --color-field-border`).toBeGreaterThanOrEqual(3)
+        const block_ = preset === 'night' ? own : props(block(stage, SKIES[theme][preset]))
+        // A preset changes colours only: the theme's triples, no alphas, no geometry (stage.css).
+        expect([...block_.keys()].filter((k) => TRIPLE.test(k)).sort(), label).toEqual([...own.keys()].filter((k) => TRIPLE.test(k)).sort())
+        if (preset !== 'night') expect([...block_.keys()].filter((k) => !TRIPLE.test(k)), `${label}: colours only`).toEqual([])
+        const s = sky(label, own, block_, stopsImage)
+        expect(s.stops, label).toHaveLength(7)
+        expect(s.fields.map((f) => f.slot), label).toEqual(['1', '2', '3', '4'])
+        const list = [...grounds(s, day), ...sampled(s)]
+        all[theme].push(...list)
+        checks.push(...checkAll(text, list, 4.5), ...checkAll(bounds, list, 3))
+      }
+      // The glass over the worst ground of the theme, and its opaque fallback.
+      const w = worst(all[theme], day)
+      const capsule = T[theme]('color-capsule')
+      const panel = T[theme]('color-panel')
+      const solid = T[theme]('color-sheet-solid')
+      expect(solid.a, '--color-sheet-solid is opaque: the fallback of all glass').toBe(1)
+      const glass: Ground[] = [
+        { label: `${theme} capsule over the worst sky`, rgb: over(capsule.rgb, capsule.a, w.rgb) },
+        { label: `${theme} painted sheet over the worst sky`, rgb: over(panel.rgb, panel.a, w.rgb) },
+        { label: `${theme} fallback --color-sheet-solid`, rgb: solid.rgb },
+        { label: `${theme} --color-surface`, rgb: T[theme]('color-surface').rgb },
+      ]
+      for (const tint of ['color-accent-tint', 'color-accent-tint-strong']) {
+        const c = T[theme](tint)
+        glass.push({ label: `${theme} ${tint} over --color-sheet-solid`, rgb: over(c.rgb, c.a, solid.rgb) })
+      }
+      checks.push(...checkAll(text, glass, 4.5), ...checkAll(bounds, glass, 3))
+      // The capsule floats over the page's own text (the landing scrolls under it): its text, its
+      // control strokes and the crisis ink (no fill at night) hold over solid text of any colour.
+      const under: Ground[] = Object.entries(text).map(([n, c]) => ({ label: `${theme} capsule over solid ${n}`, rgb: over(capsule.rgb, capsule.a, c) }))
+      const capsuleText = Object.fromEntries(['color-text', 'color-text-soft'].map((n) => [n, T[theme](n).rgb]))
+      checks.push(...checkAll(capsuleText, under, 4.5), ...checkAll({ 'color-stroke': T[theme]('color-stroke').rgb }, under, 3))
+      // The painted sheet's opaque ground is its worst composite (#97 reads backgroundColor).
+      const ground = T[theme]('color-sheet-ground').rgb
+      const derived = over(panel.rgb, panel.a, w.rgb)
+      for (const i of [0, 1, 2]) expect(Math.abs(ground[i]! - derived[i]!), `${theme} --color-sheet-ground ${hexOf(ground)} = panel over ${w.label} ${hexOf(derived)}`).toBeLessThanOrEqual(2)
+      // Fills: the text on its own fill, the ring on its gap, the gap on the primary fill.
+      const fill = (fg: string, bg: string, min: number): void => {
+        checks.push({ pair: `${theme} --${fg} on --${bg}`, ratio: ratio(T[theme](fg).rgb, T[theme](bg).rgb), min })
+      }
+      fill('color-on-accent', 'color-accent', 4.5)
+      fill('color-on-accent', 'color-accent-strong', 4.5)
+      fill('color-on-mark', 'color-mark', 4.5)
+      fill('color-on-bubble-you', 'color-bubble-you', 4.5)
+      fill('color-text-soft', 'color-sheet-solid', 4.5)
+      fill('color-focus', 'color-focus-gap', 3)
+      fill('color-focus-gap', 'color-accent', 3)
+      fill('color-crisis-line', 'color-sheet-solid', 3)
+      if (day) {
+        // Terracotta only on its own opaque cream (never on glass or bare sky).
+        expect(T.light('color-crisis-fill').a, 'the crisis pill is opaque by day').toBe(1)
+        fill('color-crisis-ink', 'color-crisis-fill', 4.5)
+      } else {
+        checks.push(...checkAll({ 'color-crisis-ink': T.dark('color-crisis-ink').rgb }, [...glass, ...under, w], 4.5))
       }
     }
+
+    const failures = checks.filter((c) => c.ratio < c.min).map((c) => `${c.ratio.toFixed(2)} < ${c.min}: ${c.pair}`)
+    expect(failures.slice(0, 25), `${failures.length} of ${checks.length} pairs`).toEqual([])
+    expect(checks.length).toBeGreaterThan(50_000)
 
     // The system's light (no choice made) is a copy of the chosen light theme, preset by preset.
     const SYSTEM = {
@@ -4116,8 +4150,78 @@ test.describe('sky presets', () => {
       dawn: ":root:not([data-theme]):not([data-theme-lock])[data-sky='dawn']",
     } as const
     for (const preset of ['night', 'dusk', 'dawn'] as const) {
-      expect(props(SYSTEM[preset]), `system light ${preset}`).toEqual(props(SKIES.light[preset]))
+      expect(props(block(stage, SYSTEM[preset])), `system light ${preset}`).toEqual(props(block(stage, SKIES.light[preset])))
     }
+    // The crisis drops the fields and the stars everywhere the sky is painted.
+    const crisis = props(block(stage, "html[data-screen='crisis']"))
+    expect(crisis.get('sky-image')).toBe('var(--sky-image-quiet) !important')
+    expect(crisis.get('sky-stars')).toBe('none !important')
+    expect(props(block(stage, ':root')).get('sky-image-quiet')).toBe('none, none, none, none, none, var(--sky-stops)')
+  })
+
+  // ADR-013 §1.4 (the landing): each section paints its own sky in literal colours (landing.css). Every
+  // text token keeps 4.5:1 and every sole boundary 3:1 on every ground of every section × theme —
+  // its stops, each field and ribbon over them, by day each pair of fields — with the night subtree's
+  // tokens (the dark side) over the night band and the footer, and the glass over the worst of them.
+  // In the dark (and in the night band by day) the fields never meet, the drift included.
+  test('the landing: each section sky keeps text ≥ 4.5:1 and sole boundaries ≥ 3:1, and in the dark its fields never meet', () => {
+    const styles = resolve(test.info().project.testDir, '..', '..', 'src', 'styles')
+    const tokens = readFileSync(join(styles, 'tokens.css'), 'utf8')
+    const landing = readFileSync(join(styles, 'landing.css'), 'utf8')
+    const T = themes(tokens)
+    const TEXT = ['color-text', 'color-text-soft', 'color-text-muted', 'color-text-dim', 'color-ai', 'color-teal', 'color-light', 'color-light-strong']
+    const BOUNDS = ['color-stroke', 'color-field-border', 'color-focus', 'color-accent']
+    const SECTIONS = ['.hero', '.mind', '.how', '.scenarios', '.diary', '.night', '.final'] as const
+    const DAY = ":root[data-theme='light']:not([data-theme-lock])"
+    const SYSTEM = ':root:not([data-theme]):not([data-theme-lock])'
+    const amplitude = Number(/@keyframes sky-drift \{\s*to \{ --drift: ([\d.]+)%; \}/.exec(landing)?.[1]) / 100
+    expect(amplitude, 'the drift of the fields').toBeGreaterThan(0)
+    // Every section paints its two lists, and the crisis quiets the night to its stops.
+    expect(props(block(landing, '.stage[data-quiet] ~ main .night')).size).toBe(0)
+    expect(block(landing, '.stage[data-quiet] ~ main .night')).toContain('background-image: var(--sky-stops);')
+
+    const checks: Check[] = []
+    const met: string[] = []
+    const pick = (theme: 'light' | 'dark', names: readonly string[]): Record<string, Rgb> => Object.fromEntries(names.map((n) => [n, T[theme](n).rgb]))
+    for (const theme of ['dark', 'light'] as const) {
+      const worst: Record<'own' | 'night', Ground[]> = { own: [], night: [] }
+      for (const section of SECTIONS) {
+        const own = props(block(landing, theme === 'dark' ? section : `${DAY} ${section}`))
+        if (theme === 'light') expect(props(block(landing, `${SYSTEM} ${section}`)), `system light ${section}`).toEqual(own)
+        const fields = own.get('sky-fields')
+        const stops = own.get('sky-stops')
+        expect([fields, stops].every(Boolean), `${theme} ${section}: --sky-fields and --sky-stops`).toBe(true)
+        const night = section === '.night' // the night subtree: the dark side by day too (tokens.css)
+        const sky = sectionSky(`${theme} ${section}`, fields!, stops!)
+        const day = theme === 'light' && !night
+        const list = sectionGrounds(sky, day)
+        if (!day) met.push(...fieldsMeet(sky, amplitude))
+        worst[night ? 'night' : 'own'].push(...list)
+        const inks = night ? 'dark' : theme
+        checks.push(...checkAll(pick(inks, TEXT), list, 4.5), ...checkAll(pick(inks, BOUNDS), list, 3))
+      }
+      // Glass over the worst ground: the cards of the sections (the theme's capsule), the night's
+      // (the dark capsule) and the crisis card (its own night glass, ADR-013 §1.5).
+      const capsule = T[theme]('color-capsule')
+      const dark = T.dark('color-capsule')
+      const w = worst.own.reduce((a, b) => ((theme === 'light' ? lum(b.rgb) < lum(a.rgb) : lum(b.rgb) > lum(a.rgb)) ? b : a))
+      const n = worst.night.reduce((a, b) => (lum(b.rgb) > lum(a.rgb) ? b : a))
+      const card = colour(/\.help-card \{[^}]*background: (rgb\([^)]*\));/.exec(landing)![1]!)
+      checks.push(
+        ...checkAll(pick(theme, TEXT), [{ label: `${theme} glass over ${w.label}`, rgb: over(capsule.rgb, capsule.a, w.rgb) }], 4.5),
+        ...checkAll(pick('dark', TEXT), [{ label: `${theme} night glass over ${n.label}`, rgb: over(dark.rgb, dark.a, n.rgb) }], 4.5),
+        ...checkAll({ ...pick('dark', TEXT), 'color-crisis-ink': T.dark('color-crisis-ink').rgb }, [{ label: `${theme} crisis card over ${n.label}`, rgb: over(card.rgb, card.a, n.rgb) }], 4.5),
+      )
+    }
+    // The footer: the night subtree on its own ground.
+    const footer = /--landing-footer: light-dark\((#[0-9a-f]{6}), (#[0-9a-f]{6})\)/.exec(landing)!
+    const grounds = [footer[1]!, footer[2]!].map((hex) => ({ label: `footer ${hex}`, rgb: colour(hex).rgb }))
+    checks.push(...checkAll(pick('dark', TEXT), grounds, 4.5), ...checkAll(pick('dark', BOUNDS), grounds, 3))
+
+    expect(met, 'in the dark the fields never meet').toEqual([])
+    const failures = checks.filter((c) => c.ratio < c.min).map((c) => `${c.ratio.toFixed(2)} < ${c.min}: ${c.pair}`)
+    expect(failures.slice(0, 25), `${failures.length} of ${checks.length} pairs`).toEqual([])
+    expect(checks.length).toBeGreaterThan(1_000)
   })
 })
 
@@ -4158,9 +4262,11 @@ test.describe('source rules', () => {
     }
   })
 
-  test('localStorage.setItem only in src/ui/motion.ts, src/ui/sky.ts and src/ui/theme.ts', () => {
+  // ADR-013 adds the fourth writer, «Персонаж» (liora:character); the list stays closed.
+  test('localStorage.setItem only in src/ui/motion.ts, src/ui/sky.ts, src/ui/theme.ts and src/ui/character.ts', () => {
     const writers = offenders(sources(''), /localStorage\s*\.\s*setItem\b/).map((o) => o.split(':')[0])
-    const allowed = ['src/ui/motion.ts', 'src/ui/sky.ts', 'src/ui/theme.ts']
+    expect(writers).toContain('src/ui/character.ts')
+    const allowed = ['src/ui/motion.ts', 'src/ui/sky.ts', 'src/ui/theme.ts', 'src/ui/character.ts']
     expect(writers.every((p) => allowed.includes(p!)), writers.join(', ')).toBe(true)
   })
 
@@ -4207,8 +4313,8 @@ test.describe('source rules', () => {
 
   test('chat/index.html: every text field is left out of the browser’s form restore (autocomplete="off")', () => {
     // Firefox's session store keeps a textarea's text on disk unless it has autocomplete="off"; the
-    // consent screen promises the browser keeps only the session cookie and three choices (motion,
-    // theme, sky; §3.5).
+    // consent screen promises the browser keeps only the session cookie and four choices (motion,
+    // theme, sky, character; §3.5).
     const repo = resolve(test.info().project.testDir, '..', '..')
     const chat = readFileSync(join(repo, 'chat', 'index.html'), 'utf8')
     const tags = [...chat.matchAll(/<textarea\b[^>]*>/g), ...chat.matchAll(/<input\b[^>]*>/g)].map((m) => m[0])
@@ -4233,6 +4339,38 @@ test.describe('source rules', () => {
     const radios = [...chat.matchAll(/<input[^>]*name="sky"[^>]*value="([a-z]+)"/g)].map((m) => m[1])
     expect(radios).toEqual(['night', 'dusk', 'dawn'])
     expect(chat).toContain('data-sky-pick')
+  })
+
+  test('the character: one module knows the key; the landing has no toggle and never reads it; /chat/ has one toggle with a state', () => {
+    const keyHolders = offenders(sources(''), /liora:character/).map((o) => o.split(':')[0])
+    expect(keyHolders.length).toBeGreaterThan(0)
+    expect(keyHolders.every((p) => p === 'src/ui/character.ts'), keyHolders.join(', ')).toBe(true)
+    const repo = resolve(test.info().project.testDir, '..', '..')
+    expect(readFileSync(join(repo, 'src', 'main.ts'), 'utf8')).not.toMatch(/ui\/character/)
+    expect(readFileSync(join(repo, 'index.html'), 'utf8')).not.toMatch(/data-character/)
+    expect(readFileSync(join(repo, 'public', 'theme-init.js'), 'utf8')).not.toMatch(/character/)
+    const chat = readFileSync(join(repo, 'chat', 'index.html'), 'utf8')
+    const toggles = chat.match(/<button\b[^>]*\bdata-character-toggle\b[^>]*>/g) ?? []
+    expect(toggles).toHaveLength(1)
+    // A toggle with a fixed name (APG): its state is aria-pressed, «true» (shown) before the module
+    // reads the choice, and the button is hidden until the module wires it.
+    expect(toggles[0]).toMatch(/\saria-pressed="true"/)
+    expect(toggles[0]).toMatch(/\saria-label="Персонаж"/)
+    expect(toggles[0]).toMatch(/\shidden(?:\s|>)/)
+    expect(chat.match(/data-character-toggle/g)).toHaveLength(1)
+    // Hidden, the light's chunk (three.js) is never fetched: the choice is read before bootGL, and
+    // setActive(false) follows it in the same task, before the scene starts loading (gl/core/boot.ts).
+    // A static guard: a headless run never loads that chunk anyway (no GPU), so no test sees it.
+    const main = readFileSync(join(repo, 'src', 'chat', 'ui', 'main.ts'), 'utf8')
+    const read = main.indexOf('initCharacter(')
+    const boot = main.search(/\bbootGL\s*(?:<[^>]*>)?\s*\(/)
+    const hold = main.indexOf('if (!character.shown()) gl?.setActive(false)')
+    expect(read).toBeGreaterThan(0)
+    expect(boot).toBeGreaterThan(read)
+    expect(hold).toBeGreaterThan(boot)
+    expect(main.slice(boot, hold)).not.toMatch(/\bawait\b|\.then\(/)
+    // And every render keeps it so: «live» in render.ts asks the character.
+    expect(readFileSync(join(repo, 'src', 'chat', 'ui', 'render.ts'), 'utf8')).toMatch(/const live = \(character\?\.shown\(\) \?\? true\) && /)
   })
 
   test('theme: one module knows the key; public/theme-init.js only reads storage, sets two attributes and the theme-color, first in <head> of both pages', () => {
@@ -4286,21 +4424,18 @@ test.describe('source rules', () => {
     }
     // The theme-color it writes before the first frame is --color-bg of each theme, in the very
     // form theme.ts writes later (getComputedStyle: rgb(r, g, b)) — no change, no flash in the bar.
-    // Light is the same paper on both pages (a literal); dark is each page's own, read from the hex
-    // its meta ships: the chat's lamp (tokens.css), the landing's night (landing.css).
+    // One palette on both pages (ADR-013): light is the day's first stop (a literal), dark the night,
+    // read from the hex both metas ship. landing.css has no --color-bg of its own any more.
     const tokens = readFileSync(join(repo, 'src', 'styles', 'tokens.css'), 'utf8')
     const landingCss = readFileSync(join(repo, 'src', 'styles', 'landing.css'), 'utf8')
     const bgOf = (css: string): RegExpExecArray => /--color-bg: light-dark\(#([0-9a-f]{6}), #([0-9a-f]{6})\)/.exec(css)!
     const rgb = (hex: string): string => `rgb(${[0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')})`
-    expect(bgOf(landingCss)[1]).toBe(bgOf(tokens)[1])
+    expect(landingCss).not.toMatch(/--color-bg\s*:/)
     expect(code).toContain(`'${rgb(bgOf(tokens)[1]!)}' : 'rgb(' + (n >> 16)`)
     expect(code).toMatch(/var n = parseInt\(meta\.content\.slice\(1\), 16\)/)
-    for (const [page, css] of [
-      ['index.html', landingCss],
-      [join('chat', 'index.html'), tokens],
-    ] as const) {
+    for (const page of ['index.html', join('chat', 'index.html')]) {
       const html = readFileSync(join(repo, page), 'utf8')
-      expect(/<meta name="theme-color" content="#([0-9a-f]{6})" \/>/.exec(html)![1], page).toBe(bgOf(css)[2])
+      expect(/<meta name="theme-color" content="#([0-9a-f]{6})" \/>/.exec(html)![1], page).toBe(bgOf(tokens)[2])
     }
     expect(code).toMatch(/meta\.content = /)
     expect(code).toMatch(/prefers-color-scheme: light/)
@@ -4320,47 +4455,140 @@ test.describe('source rules', () => {
     expect([...chat.matchAll(/<input[^>]*name="theme"[^>]*value="([a-z]+)"/g)].map((m) => m[1])).toEqual(['system', 'light', 'dark'])
   })
 
-  // ADR-012 on the landing: light is the chat's «ранковий папір», dark the landing's own night. The
-  // landing restates (landing.css) every token of tokens.css whose dark side differs from the night
-  // of :root, as light-dark(<the same light>, <the night>), and the night once more for engines
-  // without light-dark(). Nothing is left on the lamp, nothing drifts from tokens.css.
-  test('landing: its tokens are the chat’s light and the night of :root, with a fallback for engines without light-dark()', () => {
+  // ADR-013: one palette on both pages. landing.css restates no colour token of tokens.css (it was
+  // the landing's own night beside the chat's lamp); the night of :root, the fallback without
+  // light-dark(), «В укритті» and the landing's night subtree (.night, the footer) each hold the dark
+  // side of every light-dark() token word for word — light-dark() resolves on :root, so a subtree
+  // cannot flip it. The landing's own tokens are --landing-* (light-dark, with their own fallback).
+  test('one palette: landing.css restates no token; :root, the fallback, «В укритті» and the night subtree hold the dark side of every token', () => {
     const styles = resolve(test.info().project.testDir, '..', '..', 'src', 'styles')
     const tokens = readFileSync(join(styles, 'tokens.css'), 'utf8')
     const landing = readFileSync(join(styles, 'landing.css'), 'utf8')
-    const block = (text: string, selector: string, from = 0): string => {
-      const start = text.indexOf(`${selector} {`, from)
-      expect(start, selector).toBeGreaterThanOrEqual(0)
-      return text.slice(start, text.indexOf('}', start))
-    }
-    const props = (text: string): Map<string, string> => new Map([...text.matchAll(/--([a-z0-9-]+):\s*([^;]+);/g)].map((m) => [m[1]!, m[2]!.trim()]))
     const pair = /^light-dark\((#[0-9a-f]{6}|rgb\([^)]*\)),\s*(#[0-9a-f]{6}|rgb\([^)]*\))\)$/i
-    const night = props(block(tokens, ':root'))
     const theme = props(block(tokens, ':root:not([data-theme-lock])'))
-    const own = props(block(landing, ':root:not([data-theme-lock])'))
-    const fallbackAt = landing.indexOf('@supports not (color: light-dark(#000, #fff))')
-    expect(fallbackAt).toBeGreaterThan(landing.indexOf(':root:not([data-theme-lock]) {'))
-    const fallback = props(block(landing, ':root[data-theme]:not([data-theme-lock])', fallbackAt))
-    expect(landing.slice(fallbackAt, landing.indexOf(':root[data-theme]:not([data-theme-lock])', fallbackAt))).toContain(':root:not([data-theme-lock]),')
+    const dark = new Map<string, string>()
+    for (const [name, value] of theme) {
+      const m = pair.exec(value)
+      // Every side of every theme token is #rrggbb or rgb(…): no var(), no transparent, no names.
+      expect(m, `--${name}: light-dark(<#hex|rgb()>, <#hex|rgb()>)`).not.toBeNull()
+      dark.set(name, m![2]!)
+    }
+    expect(dark.size).toBeGreaterThan(50)
+    const fallbackAt = tokens.indexOf('@supports not (color: light-dark(#000, #fff))')
+    expect(fallbackAt).toBeGreaterThan(tokens.indexOf(':root:not([data-theme-lock]) {'))
+    expect(tokens.slice(fallbackAt, tokens.indexOf(':root[data-theme]:not([data-theme-lock])', fallbackAt))).toContain(':root:not([data-theme-lock]),')
+    const copies = [
+      ['the night of :root', block(tokens, ':root')],
+      ['the fallback without light-dark()', block(tokens, ':root[data-theme]:not([data-theme-lock])', fallbackAt)],
+      ['«В укритті»', block(tokens, ':root:not([data-theme-lock]) :is(.sheet--shelter, .sheet--tool[data-shelter])')],
+      ['the night subtree', block(tokens, ':root:not([data-theme-lock]) :is(.night, .site-footer)')],
+    ] as const
+    for (const [label, body] of copies) {
+      expect(body, label).toContain('color-scheme: dark;')
+      const own = props(body)
+      for (const [name, value] of dark) expect(own.get(name), `${label}: --${name}`).toBe(value)
+    }
 
-    // Every token whose dark side is not the night is restated…
-    const differs = [...theme].filter(([name, value]) => night.has(name) && pair.exec(value)?.[2] !== night.get(name)).map(([name]) => name)
-    expect(differs.length).toBeGreaterThan(10)
-    for (const name of differs) expect(own.has(name), `--${name} restated`).toBe(true)
+    // landing.css: no colour token of tokens.css, anywhere in the file.
+    const declared = [...landing.matchAll(/--([a-z0-9-]+)\s*:/g)].map((m) => m[1]!)
+    expect(declared.filter((name) => dark.has(name))).toEqual([])
+    // Its own colours: --landing-* as light-dark(), the night once more without light-dark().
+    const own = props(block(landing, ':root:not([data-theme-lock])'))
+    expect(own.size).toBeGreaterThan(0)
+    const at = landing.indexOf('@supports not (color: light-dark(#000, #fff))')
+    expect(at).toBeGreaterThan(0)
+    const fallback = props(block(landing, ':root[data-theme]:not([data-theme-lock])', at))
     for (const [name, value] of own) {
+      expect(name, 'a token only the landing has').toMatch(/^landing-/)
       const m = pair.exec(value)
       expect(m, `--${name}: light-dark(<light>, <dark>)`).not.toBeNull()
-      // …with the chat's light and the night of :root (the landing's own tokens have no counterpart).
-      if (theme.has(name)) {
-        expect(m![1], `--${name} light`).toBe(pair.exec(theme.get(name)!)![1])
-        expect(m![2], `--${name} dark`).toBe(night.get(name))
-      } else {
-        expect(name, 'a token only the landing has').toMatch(/^landing-/)
-      }
-      // The fallback holds the night of every one of them.
       expect(fallback.get(name), `--${name} fallback`).toBe(m![2])
     }
     expect([...fallback.keys()].sort()).toEqual([...own.keys()].sort())
+  })
+
+  // ADR-013 §2: glass only with an opaque fallback. Chromium cannot emulate @supports not
+  // (backdrop-filter) and Playwright has no reduced-transparency option, so this reads the CSS: every
+  // selector that sets a backdrop-filter is named in both fallbacks with the sheet's own opaque tone
+  // (--color-sheet-solid, alpha 1 — the contrast test counts it), and the reduced one drops the blur.
+  test('glass: every backdrop-filter, capsule tint and painted sheet has an opaque fallback without backdrop-filter, with reduced transparency and in forced colours', () => {
+    const styles = resolve(test.info().project.testDir, '..', '..', 'src', 'styles')
+    const files = readdirSync(styles, { recursive: true, encoding: 'utf8' }).filter((p) => p.endsWith('.css'))
+    const css = files.map((p) => readFileSync(join(styles, p), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')).join('\n')
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ selectors: m[1]!.split(',').map((s) => s.trim()), body: m[2]! }))
+    const glassy = rules.filter((r) => /(?:^|[;\s])backdrop-filter:\s*(?!none)/.test(r.body)).flatMap((r) => r.selectors)
+    expect(glassy.length).toBeGreaterThan(1)
+    const inside = (opener: string): { selectors: string[]; body: string }[] => {
+      const out: { selectors: string[]; body: string }[] = []
+      let from = 0
+      for (;;) {
+        const at = css.indexOf(opener, from)
+        if (at < 0) return out
+        let depth = 0
+        let end = at
+        for (let i = css.indexOf('{', at); i < css.length; i++) {
+          if (css[i] === '{') depth++
+          else if (css[i] === '}' && --depth === 0) {
+            end = i
+            break
+          }
+        }
+        const body = css.slice(css.indexOf('{', at) + 1, end)
+        out.push(...[...body.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({ selectors: m[1]!.split(',').map((s) => s.trim()), body: m[2]! })))
+        from = end
+      }
+    }
+    const opaque = (r: { body: string }): boolean => /background(?:-color)?:\s*var\(--color-sheet-solid\)/.test(r.body)
+    const noSupport = inside('@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))').filter(opaque).flatMap((r) => r.selectors)
+    const reduced = inside('@media (prefers-reduced-transparency: reduce)')
+    const reducedOpaque = reduced.filter((r) => opaque(r) && /(?:^|[;\s])backdrop-filter:\s*none/.test(r.body)).flatMap((r) => r.selectors)
+    const named = (list: string[], selector: string): boolean => list.some((s) => s === selector || s === `:root ${selector}`)
+    for (const selector of glassy) {
+      expect(named(noSupport, selector), `${selector}: opaque without backdrop-filter`).toBe(true)
+      expect(named(reducedOpaque, selector), `${selector}: opaque with reduced transparency`).toBe(true)
+    }
+
+    // Translucent without a blur: the capsule's tint on a pill (the chip «AI · не людина», the hero's
+    // AI note and «Як це працює») and the chat's painted sheet (the panel over the sky). With reduced
+    // transparency each is opaque too — its bottom layer the sheet's own tone — and the sheet, which
+    // paints its own fixed sky, also gives way to the system's canvas in forced colours.
+    const last = (name: string): RegExp => new RegExp(`background(?:-color)?:\\s*[^;]*var\\(--${name}\\)\\s*(?:;|$)`)
+    const outside = rules.filter((r) => !r.selectors.some((s) => s.startsWith(':root ')))
+    const tinted = outside.filter((r) => last('color-capsule').test(r.body)).flatMap((r) => r.selectors)
+    const painted = outside.filter((r) => /var\(--color-panel\)/.test(r.body)).flatMap((r) => r.selectors)
+    expect(tinted, 'the capsule tint on pills').toEqual(expect.arrayContaining(['.ai-chip', '.hero__note', '.hero__links .text-link']))
+    expect(painted, 'the painted sheet').toEqual(expect.arrayContaining(['.chat__text', '.chat__text::before', '.session::before', '.composer::before']))
+    const reducedLast = reduced.filter((r) => last('color-sheet-solid').test(r.body)).flatMap((r) => r.selectors)
+    const forcedCanvas = inside('@media (forced-colors: active)')
+      .filter((r) => /background(?:-color)?:\s*Canvas\s*(?:;|$)/.test(r.body))
+      .flatMap((r) => r.selectors)
+    for (const selector of [...tinted, ...painted].filter((s) => !glassy.includes(s))) {
+      expect(named(reducedLast, selector), `${selector}: opaque with reduced transparency`).toBe(true)
+    }
+    for (const selector of painted) expect(named(forcedCanvas, selector), `${selector}: the canvas in forced colours`).toBe(true)
+  })
+
+  // The mark (--color-mark: #ffb185 by day) is 1.33–1.65:1 on the sheet and its tints: a fill, never an
+  // edge on its own. A border of the mark's colour is allowed only around its own fill (a pressed
+  // «У тези»); the circle of «Подихати хвилину», the marked reply's rule, a candidate's rule and the
+  // marked dots draw their edge with --color-stroke-warm (ink by day, the mark at night; the contrast
+  // test above counts it as a sole boundary).
+  test('the mark is a fill: no border of --color-mark except around its own fill', () => {
+    const styles = resolve(test.info().project.testDir, '..', '..', 'src', 'styles')
+    const files = readdirSync(styles, { recursive: true, encoding: 'utf8' }).filter((p) => p.endsWith('.css'))
+    const offending: string[] = []
+    for (const file of files) {
+      const css = readFileSync(join(styles, file), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+      for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        const body = m[2]!
+        if (/(?:^|[;\s])border(?:-[a-z]+)*:\s*[^;]*var\(--color-mark\)/.test(body) && !/background(?:-color)?:\s*var\(--color-mark\)/.test(body)) offending.push(`${file}: ${m[1]!.trim()}`)
+      }
+    }
+    expect(offending).toEqual([])
+    const chat = readFileSync(join(styles, 'chat.css'), 'utf8')
+    for (const rule of [/\.breathe__circle \{[^}]*border: 2px solid var\(--color-stroke-warm\)/, /\.said--ai::before \{[^}]*border-left: 3px solid var\(--color-stroke-warm\)/, /\.candidate__text \{[^}]*border-left: 3px solid var\(--color-stroke-warm\)/]) {
+      expect(chat, String(rule)).toMatch(rule)
+    }
   })
 
   test('page life lives in the leave guard: pagehide and pageshow are listened to in one place', () => {

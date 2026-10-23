@@ -12,6 +12,7 @@ import '../../styles/chat.css'
 
 import { bootGL } from '../../gl/core/boot'
 import type { PresenceHandle } from '../../gl/presence'
+import { initCharacter } from '../../ui/character'
 import { initMotionToggle } from '../../ui/motion'
 import { initSky } from '../../ui/sky'
 import { initSound } from '../../ui/sound'
@@ -19,11 +20,11 @@ import { initThemePicker } from '../../ui/theme-picker'
 import { initTips } from '../../ui/tips'
 import { createApi } from '../core/api'
 import { maskPausedLine } from '../core/helplines'
-import { MAX_MARKS, draftOf, editUnsaved, leaveGuard, pendingOf, sessionOf, type Action, type Model } from '../core/state'
+import { MAX_MARKS, draftOf, editUnsaved, leaveGuard, llmInFlight, pendingOf, sessionOf, type Action, type Model } from '../core/state'
 import type { ConsentKind } from '../core/types'
 import { createAnnouncer } from './announcer'
 import { conversationText, copyText, entryMarkdown, thesesText } from './clipboard'
-import { COPIED, COPY_FAILED_LABEL, copyFailed, sayMarked, sayMarksFull, sayUnmarked } from './copy'
+import { COPIED, COPY_FAILED_LABEL, copyFailed, journalLater, sayMarked, sayMarksFull, sayUnmarked } from './copy'
 import { createEffects } from './effects'
 import { initKeyboard } from './keyboard'
 import { createLeaveGuard } from './leave-guard'
@@ -44,6 +45,10 @@ initTips()
 const sound = initSound({ follow: 'manual' })
 initKeyboard()
 
+// «Персонаж» before the light: hidden, the light's chunk (three.js) is not even fetched (gl/core/boot.ts:
+// setActive(false) before the scene has started holds the loading back).
+const character = initCharacter(document.querySelector<HTMLButtonElement>('[data-character-toggle]'))
+
 const canvas = document.querySelector<HTMLCanvasElement>('[data-gl-canvas]')
 const slot = document.querySelector<HTMLElement>('[data-presence-slot]')
 const presenceRoot = document.querySelector<HTMLElement>('.presence')
@@ -58,6 +63,7 @@ const gl =
         onReady: (handle) => applyPresence(handle, presenceRoot),
       })
     : null
+if (!character.shown()) gl?.setActive(false)
 
 // Called through an arrow: a detached window.fetch throws "Illegal invocation".
 const api = createApi({ fetch: (input, init) => window.fetch(input, init) })
@@ -90,7 +96,7 @@ const effects = createEffects({
   composer: (text) => view.chat.composer.put(text),
   clearComposer: () => view.chat.composer.clear(),
 })
-view = createView(dispatch, { gl, sound, sky, theme, say: (text) => announcer.say(text) })
+view = createView(dispatch, { gl, character, sound, sky, theme, say: (text) => announcer.say(text) })
 
 // ── One delegated handler for every [data-act] on the page and in the dialogs ──
 
@@ -150,7 +156,10 @@ async function copy(button: HTMLElement, kind: 'talk' | 'theses' | 'reply' | 'en
 function act(name: string, target: HTMLElement, event: Event): void {
   const model = store.model()
   const { state } = model
-  if (target.getAttribute('aria-disabled') === 'true' && name !== 'send') return
+  if (target.getAttribute('aria-disabled') === 'true' && name !== 'send') {
+    if (name === 'journal-open') announcer.say(journalLater(llmInFlight(state)))
+    return
+  }
   // The account operation (or the save) is on its way: a second press sends nothing.
   if (target.getAttribute('aria-busy') === 'true') return
   if (view.review.act(name, target)) return

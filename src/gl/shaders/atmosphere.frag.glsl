@@ -2,6 +2,7 @@ uniform float uTime;
 uniform float uOpacity;
 uniform float uState;
 uniform float uFinal;
+uniform vec2 uProtect;
 uniform vec2 uResolution;
 // The theme's colours and how much of them (core/palette.ts ScenePalette.atmosphere).
 uniform vec3 uAtmosphereCool;
@@ -20,6 +21,6 @@ void main() {
   vec3 color = mix(uAtmosphereCool, uAtmosphereWarm, smoothstep(-0.8, 0.7, p.x + p.y * 0.55));
   float alpha = (halo * 0.27 + ring * 0.22 * wisps + heart * 0.2) * uOpacity * hero * uAtmosphereAlpha;
   vec2 screen = gl_FragCoord.xy / uResolution;
-  alpha *= 1.0 - (1.0 - smoothstep(0.16, 0.34, abs(screen.x - 0.5))) * uFinal;
+  alpha *= 1.0 - (1.0 - smoothstep(uProtect.x, uProtect.y, abs(screen.x - 0.5))) * uFinal;
   gl_FragColor = vec4(color * alpha, alpha);
 }

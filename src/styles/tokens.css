@@ -1,113 +1,128 @@
-/* Design tokens. WebGL colours mirror these in src/gl/core/palette.ts.
+/* Design tokens: «Аврора» (ADR-013). WebGL colours mirror these in src/gl/core/palette.ts.
 
-   Two layers:
-   1. :root — the night: near-black with a teal haze, colour comes only from light. It is the
-      landing's dark side: landing.css restates, as light-dark(<the light below>, <this night>), every
-      token of layer 2 whose dark side differs from it (tests/e2e/chat-core.spec.ts keeps both sides
-      equal to these blocks). A page pinned by html[data-theme-lock] would show it as it is; no page
-      is pinned now.
-   2. :root:not([data-theme-lock]) — the two themes of both pages (ADR-012): light «ранковий папір»
-      and dark «вечірня лампа» (#121a1b, no near-black night; the chat's). light-dark() picks one by
-      the used colour scheme: `light dark` follows the system, html[data-theme] (public/theme-init.js
-      before the first frame, src/ui/theme.ts after a choice) pins one. Values light-dark() cannot
-      hold (RGB triples of the sky, alphas) live in explicit blocks in stage.css.
+   One palette for both pages:
+   1. :root — the night (#040708): the dark side of every colour token below, word for word. A page
+      pinned by html[data-theme-lock] would show it as it is; no page is pinned now.
+   2. :root:not([data-theme-lock]) — the two themes (ADR-012, ADR-013): light «світанок» (a full-width
+      sky of teal → sand → apricot → peach → coral) and dark «ніч» with aurora fields. light-dark()
+      picks one by the used colour scheme: `light dark` follows the system, html[data-theme]
+      (public/theme-init.js before the first frame, src/ui/theme.ts after a choice) pins one. Values
+      light-dark() cannot hold (the sky's RGB triples, alphas, images) live in explicit blocks in
+      stage.css (the chat) and landing.css (the landing's section skies).
+   Every side of every light-dark() is #rrggbb or rgb(…): tests/e2e/chat-core.spec.ts reads them.
+   That is why there are no --raw-* constants (the aurora spec §1.3 planned --raw-ink, --raw-cream…):
+   a var() inside light-dark() could not be read pair by pair. The raw colours stay in this file all
+   the same — landing.css restates no token (chat-core checks it), stage.css holds only the skies'
+   RGB triples.
+   The dark side is restated word for word where light-dark() resolved on :root cannot reach (below):
+   the fallback without light-dark(), «В укритті» and the landing's night subtree.
 
-   Contrast (WCAG 2.2, checked in tests/e2e/chat-core.spec.ts): every text token ≥ 4.5:1 on the
-   background, the surface and the bubble of its theme, and on the sky under the text (light: no
-   layer darker than L 0.76; dark: none lighter than L 0.023); field borders, the accent and the
-   focus ring ≥ 3:1. De-emphasis uses --color-text-dim, never opacity. */
+   Contrast (WCAG 2.2, checked pair by pair in tests/e2e/chat-core.spec.ts): every text token ≥ 4.5:1
+   on every sky stop, every field at full alpha and every overlap of fields, and every glass state
+   with its opaque fallback, of its theme and preset; control borders, focus and strokes ≥ 3:1.
+   De-emphasis by colour (--color-text-dim), never opacity. */
 
 :root {
   color-scheme: dark;
   --color-bg: #040708;
-  --color-sky: #0b1a1e;
-  --color-text: #eef2ee;
-  --color-text-soft: #c2ccc8;
-  --color-text-muted: #8e9b97;
-  --color-text-dim: #84918d;
-  --color-line: rgb(238 242 238 / 0.13);
-  --color-line-strong: rgb(238 242 238 / 0.26);
-  --color-panel: rgb(4 8 9 / 0.62);
-
-  /* Light */
+  --color-surface: #192324;
+  --color-sheet-solid: #121a1b;
+  --color-sheet-ground: #12302e;
+  --color-panel: rgb(18 26 27 / 0.62);
+  --color-capsule: rgb(18 26 27 / 0.78);
+  --color-glass-edge: rgb(143 227 212 / 0.24);
+  --color-bubble-you: #8fe3d4;
+  --color-on-bubble-you: #071012;
+  --color-bubble-line: #8fe3d4;
+  --color-text: #f3efe8;
+  --color-text-soft: #b8c9c6;
+  --color-text-muted: #b8c9c6;
+  --color-text-dim: #b8c9c6;
+  --color-line: rgb(243 239 232 / 0.14);
+  --color-line-strong: rgb(243 239 232 / 0.28);
+  --color-stroke: #8fe3d4;
+  --color-stroke-warm: #ffc58f;
+  --color-ai: #8fe3d4;
+  --color-teal: #8fe3d4;
   --color-light: #ffc58f;
   --color-light-strong: #ffe1bf;
-  --color-teal: #8fe3d4;
-  --color-violet: #b9a8ff;
+  --color-accent: #f3efe8;
+  --color-accent-strong: #ffffff;
+  --color-on-accent: #071012;
+  --color-accent-line: rgb(243 239 232 / 0.55);
+  --color-accent-tint: rgb(255 150 90 / 0.16);
+  --color-accent-tint-strong: rgb(255 150 90 / 0.22);
+  --color-mark: #ffc58f;
+  --color-on-mark: #071012;
+  --color-crisis-fill: rgb(255 197 143 / 0);
+  --color-crisis-ink: #ffc58f;
+  --color-crisis-line: #ffc58f;
   --color-focus: #ffc58f;
+  --color-focus-gap: #040708;
   --color-selection: rgb(255 197 143 / 0.3);
-
-  /* Semantic roles (the chat redefines them per theme below) */
-  --color-surface: rgb(4 8 9 / 0.82); /* pills, fields, outlined buttons */
-  --color-bubble-you: #0b1416;
-  --color-ai: #8fe3d4; /* the AI's voice: its label, its line, its dot */
-  --color-accent: #ffc58f; /* the fill of the one primary action */
-  --color-accent-strong: #ffe1bf;
-  --color-on-accent: #040708; /* text and icons on the accent fill */
-  --color-accent-line: rgb(255 197 143 / 0.45);
-  --color-accent-tint: rgb(255 197 143 / 0.12);
-  --color-accent-tint-strong: rgb(255 197 143 / 0.14);
-  --color-hover: rgb(238 242 238 / 0.08);
-  --color-pressed: rgb(238 242 238 / 0.14);
-  --color-field-border: #84918d;
-  --color-scrim: rgb(4 7 8 / 0.6);
-  /* The header's band, from opaque to its soft tail. */
-  --color-band-top: rgb(4 7 8 / 0.97);
-  --color-band-mid: rgb(4 7 8 / 0.9);
-  --color-band-tail: rgb(4 7 8 / 0.45);
-  --color-fade-0: rgb(4 7 8 / 0);
+  --color-hover: rgb(243 239 232 / 0.08);
+  --color-pressed: rgb(243 239 232 / 0.14);
+  --color-field-border: #94aaa5;
+  --color-scrim: rgb(2 4 5 / 0.62);
+  --color-bg-under-scrim: #030506;
+  --color-fade-0: rgb(18 26 27 / 0);
   --color-shadow: rgb(0 0 0 / 0.42);
-  --color-field-shadow: rgb(0 0 0 / 0); /* the lift under the message field */
-  --color-vignette: rgb(3 5 5 / 0.62);
-  --color-vignette-0: rgb(3 5 5 / 0);
-
-  /* The wordmark's small light */
-  --brand-core: #fff4e2;
+  --color-field-shadow: rgb(0 0 0 / 0.22);
+  --color-vignette: rgb(2 4 5 / 0.35);
+  --color-vignette-0: rgb(2 4 5 / 0);
+  --brand-core: #0d2a2e;
   --brand-warm: #ffc58f;
-  --brand-halo: rgb(255 170 100 / 0.15);
-  --brand-ring: rgb(200 240 236 / 0.45);
-  --brand-glow: rgb(255 190 120 / 0.35);
-
-  /* The chat's still orb (.orb, the light without WebGL): warm core, shine, teal ring, rim, glow */
-  --orb-core: rgb(255 244 226 / 0.95);
-  --orb-warm: rgb(255 197 143 / 0.6);
-  --orb-halo: rgb(255 170 100 / 0.16);
-  --orb-halo-0: rgb(255 170 100 / 0);
-  --orb-shine: rgb(255 255 255 / 0.16);
-  --orb-shine-0: rgb(255 255 255 / 0);
-  --orb-ring: rgb(143 227 212 / 0.1);
-  --orb-ring-0: rgb(143 227 212 / 0);
-  --orb-body: rgb(10 22 24 / 0);
-  --orb-body-edge: rgb(10 22 24 / 0);
-  --orb-rim: rgb(200 240 236 / 0.16);
-  --orb-rim-mini: rgb(200 240 236 / 0.2);
-  --orb-violet: rgb(140 120 255 / 0.12);
-  --orb-teal: rgb(80 220 200 / 0.1);
-  --orb-glow: rgb(255 180 110 / 0.16);
-  --orb-glow-mini: rgb(255 180 110 / 0.18);
-  --orb-core-glow: rgb(255 228 196 / 0.55);
-  --orb-core-glow-0: rgb(255 197 143 / 0);
+  --brand-ring: #8fe3d4;
+  --brand-glow: rgb(143 227 212 / 0.22);
+  --orb-sun: rgb(143 227 212 / 0.18);
+  --orb-sun-mid: rgb(143 227 212 / 0.1);
+  --orb-sun-0: rgb(143 227 212 / 0);
+  --orb-body-hi: #1a3a3d;
+  --orb-core: #0d2a2e;
+  --orb-core-edge: #071214;
+  --orb-stroke: #8fe3d4;
+  --orb-stroke-warm: #ffc58f;
   --orb-shadow: rgb(0 0 0 / 0);
+  --color-shelter-bg: #121a1b;
 
-  /* Type: a techno mono for the voice of the page, a humanist sans for reading */
+  /* Type: Onest reads and, at 800 with tight tracking, displays; the mono labels */
   --font-mono: 'Martian Mono Variable', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
   --font-body: 'Onest Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: var(--font-body);
 
-  --step-label: 0.6875rem;
+  --step-label: 0.75rem;
   --step--1: clamp(0.8rem, 0.77rem + 0.15vw, 0.875rem);
   --step-0: clamp(1rem, 0.96rem + 0.2vw, 1.0625rem);
   --step-1: clamp(1.1rem, 1.04rem + 0.3vw, 1.25rem);
   --step-2: clamp(1.2rem, 1.08rem + 0.6vw, 1.6rem);
+  --display-xl: clamp(2.5rem, 6.2vw, 5.625rem);
+  --display-l: clamp(2rem, 4vw, 3.625rem);
+  --display-m: clamp(1.75rem, 3vw, 2.75rem);
+  --display-s: clamp(1.5rem, 2.3vw, 2.125rem);
+  --numeral: clamp(2.75rem, 4.6vw, 4.25rem);
+  --poster: clamp(1.25rem, 2vw, 1.8125rem);
   --display-2: clamp(1.85rem, 1.05rem + 3.3vw, 4.25rem);
   --display-1: clamp(2.4rem, 0.9rem + 6.2vw, 7.75rem);
   /* Martian Mono caps: the breve of Й reaches ~1.03em and the tails of Щ/Д and commas dip below the
-     baseline. Below ~1.1 they touch the next line, and Cyrillic display lines run together. */
+     baseline. Below ~1.1 they touch the next line, and Cyrillic display lines run together. Onest 800
+     (the landing, ADR-013) sets its own. */
   --leading-display: 1.12;
+  --tracking-display: -0.035em;
 
-  /* Shape (the chat's fields and dialogs; colour still comes only from light) */
+  /* Shape */
   --radius-field: 0.875rem;
-  --radius-dialog: 1rem;
+  --radius-dialog: 1.875rem;
   --radius-pill: 1.5rem; /* the chat's message field */
+  --radius-sheet: 1.875rem;
+  --radius-capsule: 1.5rem;
+  --radius-dome: 50% 50% 0 0 / clamp(2.5rem, 6vw, 6.5rem);
+
+  /* Glass and depth (ADR-013 §2): tinted with the ink by day, black at night. */
+  --glass-blur: 22px;
+  --glass-saturate: 1.35;
+  --shadow-capsule: 0 12px 32px var(--color-shadow);
+  --shadow-cta: 0 14px 30px var(--color-shadow);
+  --shadow-sheet: 0 18px 40px var(--color-shadow);
 
   /* Space */
   --gutter: clamp(1rem, 4vw, 3.5rem);
@@ -149,86 +164,91 @@
   --z-chrome: 20;
 }
 
-/* ---------- The themes: light-dark(<light>, <dark>) (the landing's dark: landing.css) ---------- */
+/* ---------- The themes: light-dark(<light>, <dark>) ---------- */
 
 :root:not([data-theme-lock]) {
   color-scheme: light dark;
-  --color-bg: light-dark(#f6f1ea, #121a1b);
-  --color-sky: light-dark(#f6f1ea, #121a1b);
-  --color-surface: light-dark(#fffcf7, #192324);
-  /* The person's bubble: a sea-green fill a step deeper than the paper, and a hairline that keeps
-     its shape on the haze too (text on it ≥ 4.5:1 in both themes, review-contrast.cjs). */
-  --color-bubble-you: light-dark(#dce9e4, #1f2d2d);
-  --color-bubble-line: light-dark(rgb(14 92 85 / 0.2), rgb(143 227 212 / 0.12));
-  --color-panel: light-dark(rgb(255 252 247 / 0.62), rgb(25 35 36 / 0.62));
-  --color-text: light-dark(#1c2626, #ecf1ed);
-  --color-text-soft: light-dark(#36423f, #c9d3cf);
-  --color-text-muted: light-dark(#4f5b58, #a7b2ae);
-  --color-text-dim: light-dark(#58635f, #97a39f);
-  --color-line: light-dark(rgb(28 38 38 / 0.13), rgb(236 241 237 / 0.13));
-  --color-line-strong: light-dark(rgb(28 38 38 / 0.26), rgb(236 241 237 / 0.26));
-  --color-ai: light-dark(#0e5c55, #8fe3d4);
-  --color-teal: light-dark(#0e5c55, #8fe3d4);
-  /* The warm light as text (links, numbers, flags): darker than the accent fill in the light theme. */
-  --color-light: light-dark(#9a4318, #ffc58f);
-  --color-light-strong: light-dark(#7a3606, #ffe1bf);
-  --color-accent: light-dark(#b5532a, #ffc58f);
-  --color-accent-strong: light-dark(#9a4318, #ffe1bf);
-  --color-on-accent: light-dark(#ffffff, #121a1b);
-  --color-accent-line: light-dark(#c2714f, rgb(255 197 143 / 0.55));
-  /* Dark: amber, not the accent's light peach — at 12-14 % over the teal-dark lamp that came out an
-     olive grey (rgb 46 47 41); amber lands warm (rgb 46 38 31). */
-  --color-accent-tint: light-dark(rgb(181 83 42 / 0.08), rgb(255 128 60 / 0.12));
-  --color-accent-tint-strong: light-dark(rgb(181 83 42 / 0.12), rgb(255 128 60 / 0.14));
-  --color-focus: light-dark(#b5532a, #ffc58f);
-  --color-selection: light-dark(rgb(181 83 42 / 0.22), rgb(255 197 143 / 0.3));
-  --color-hover: light-dark(rgb(28 38 38 / 0.06), rgb(236 241 237 / 0.08));
-  --color-pressed: light-dark(rgb(28 38 38 / 0.1), rgb(236 241 237 / 0.14));
-  --color-field-border: light-dark(#78827f, #6f7c78); /* ≥ 3:1 on the darkest paper sky too */
-  /* «В укритті» is dark in both themes (spec §3.13): the dark theme's background. */
-  --color-shelter-bg: #121a1b;
-  /* Light: a warm veil, not a grey-green one; the paper stays paper under a dialog. */
-  --color-scrim: light-dark(rgb(60 48 36 / 0.2), rgb(6 10 11 / 0.62));
-  /* The scrim laid over --color-bg, as one solid colour: the root's background (and so a classic
-     scrollbar's gutter) while a dialog is open. */
-  --color-bg-under-scrim: light-dark(#d1cac2, #0b1011);
-  --color-band-top: light-dark(rgb(246 241 234 / 0.97), rgb(18 26 27 / 0.97));
-  --color-band-mid: light-dark(rgb(246 241 234 / 0.9), rgb(18 26 27 / 0.9));
-  --color-band-tail: light-dark(rgb(246 241 234 / 0.45), rgb(18 26 27 / 0.45));
-  --color-fade-0: light-dark(rgb(246 241 234 / 0), rgb(18 26 27 / 0));
-  --color-shadow: light-dark(rgb(60 44 28 / 0.14), rgb(0 0 0 / 0.42));
-  --color-field-shadow: light-dark(rgb(60 44 28 / 0.07), rgb(0 0 0 / 0.22));
-  /* Weaker than the landing's 62 %: the evening lamp is not a tunnel, the paper barely darkens. */
-  --color-vignette: light-dark(rgb(120 96 70 / 0.04), rgb(8 12 13 / 0.4));
-  --color-vignette-0: light-dark(rgb(120 96 70 / 0), rgb(8 12 13 / 0));
-
-  --brand-core: light-dark(#ffd2a8, #fff4e2);
-  --brand-warm: light-dark(#d9773a, #ffc58f);
-  --brand-halo: light-dark(rgb(217 119 58 / 0.2), rgb(255 170 100 / 0.15));
-  --brand-ring: light-dark(rgb(14 92 85 / 0.38), rgb(200 240 236 / 0.45));
-  --brand-glow: light-dark(rgb(217 119 58 / 0.28), rgb(255 190 120 / 0.35));
-
-  /* Light: a soft pearl on paper — a pale body with a cool rim, a warm core, one white shine and a
-     soft shadow (not a dark hole, not white on white). Dark: the light, as before. */
-  --orb-core: light-dark(rgb(255 236 214 / 0.95), rgb(255 244 226 / 0.95));
-  --orb-warm: light-dark(rgb(240 160 101 / 0.55), rgb(255 197 143 / 0.6));
-  --orb-halo: light-dark(rgb(232 137 74 / 0.2), rgb(255 170 100 / 0.16));
-  --orb-halo-0: light-dark(rgb(232 137 74 / 0), rgb(255 170 100 / 0));
-  --orb-shine: light-dark(rgb(255 255 255 / 0.9), rgb(255 255 255 / 0.16));
-  --orb-shine-0: light-dark(rgb(255 255 255 / 0), rgb(255 255 255 / 0));
-  --orb-ring: light-dark(rgb(14 92 85 / 0.14), rgb(143 227 212 / 0.1));
-  --orb-ring-0: light-dark(rgb(14 92 85 / 0), rgb(143 227 212 / 0));
-  --orb-body: light-dark(rgb(255 252 247 / 0.92), rgb(10 22 24 / 0));
-  --orb-body-edge: light-dark(rgb(214 226 222 / 0.95), rgb(10 22 24 / 0));
-  --orb-rim: light-dark(rgb(14 92 85 / 0.22), rgb(200 240 236 / 0.16));
-  --orb-rim-mini: light-dark(rgb(14 92 85 / 0.28), rgb(200 240 236 / 0.2));
-  --orb-violet: light-dark(rgb(125 107 214 / 0.14), rgb(140 120 255 / 0.12));
-  --orb-teal: light-dark(rgb(47 143 134 / 0.16), rgb(80 220 200 / 0.1));
-  --orb-glow: light-dark(rgb(232 137 74 / 0.2), rgb(255 180 110 / 0.16));
-  --orb-glow-mini: light-dark(rgb(232 137 74 / 0.24), rgb(255 180 110 / 0.18));
-  --orb-core-glow: light-dark(rgb(240 150 90 / 0.5), rgb(255 228 196 / 0.55));
-  --orb-core-glow-0: light-dark(rgb(240 150 90 / 0), rgb(255 197 143 / 0));
-  --orb-shadow: light-dark(rgb(60 44 28 / 0.12), rgb(0 0 0 / 0));
+  /* The root only (and so a classic scrollbar's gutter) and the browser bar: sky-1 by day, the night. Not a surface. */
+  --color-bg: light-dark(#46b4aa, #040708);
+  /* Pills, fields, outlined buttons. */
+  --color-surface: light-dark(#fff6ec, #192324);
+  /* Dialogs, opaque sheets, the fallback of all glass (alpha 1), the presence pill, the marked reply's base. */
+  --color-sheet-solid: light-dark(#fff6ec, #121a1b);
+  /* Under the painted sheet's layers: its worst ground (panel over the darkest / lightest sky). */
+  --color-sheet-ground: light-dark(#cbe5dc, #12302e);
+  /* The painted glass of the chat's sheet over the still sky. */
+  --color-panel: light-dark(rgb(255 248 240 / 0.72), rgb(18 26 27 / 0.62));
+  /* Floating glass (the header capsule, the scenario caption): ≥ 4.5:1 even over solid page text. */
+  --color-capsule: light-dark(rgb(255 248 240 / 0.72), rgb(18 26 27 / 0.78));
+  /* The glass's edge: never a control's only boundary. */
+  --color-glass-edge: light-dark(rgb(255 255 255 / 0.8), rgb(143 227 212 / 0.24));
+  --color-bubble-you: light-dark(#0b2729, #8fe3d4);
+  --color-on-bubble-you: light-dark(#fff6ec, #071012);
+  --color-bubble-line: light-dark(#0b2729, #8fe3d4);
+  --color-text: light-dark(#0b2729, #f3efe8);
+  /* B has two inks: soft, muted and dim are one colour (≥ 4.5:1 on every sky stop, field and glass). */
+  --color-text-soft: light-dark(#1d3d3f, #b8c9c6);
+  --color-text-muted: light-dark(#1d3d3f, #b8c9c6);
+  --color-text-dim: light-dark(#1d3d3f, #b8c9c6);
+  /* Decorative lines only. */
+  --color-line: light-dark(rgb(11 39 41 / 0.16), rgb(243 239 232 / 0.14));
+  --color-line-strong: light-dark(rgb(11 39 41 / 0.3), rgb(243 239 232 / 0.28));
+  /* Drawn strokes and the borders of pills, cells and secondary buttons (≥ 3:1 everywhere). Not text. */
+  --color-stroke: light-dark(#0c4a4a, #8fe3d4);
+  --color-stroke-warm: light-dark(#0c4a4a, #ffc58f);
+  --color-ai: light-dark(#0b3b3c, #8fe3d4);
+  --color-teal: light-dark(#0b3b3c, #8fe3d4);
+  /* The warm light as text: ≥ 4.5:1 on the darkest stop of the day. */
+  --color-light: light-dark(#6b2208, #ffc58f);
+  --color-light-strong: light-dark(#5a1c06, #ffe1bf);
+  /* The fill of the one primary action: an ink pill by day, a cream one at night. */
+  --color-accent: light-dark(#0b2729, #f3efe8);
+  --color-accent-strong: light-dark(#1d3d3f, #ffffff);
+  --color-on-accent: light-dark(#fff6ec, #071012);
+  --color-accent-line: light-dark(#0b2729, rgb(243 239 232 / 0.55));
+  /* Warm, over an opaque --color-sheet-solid base. */
+  --color-accent-tint: light-dark(rgb(255 154 120 / 0.18), rgb(255 150 90 / 0.16));
+  --color-accent-tint-strong: light-dark(rgb(255 154 120 / 0.26), rgb(255 150 90 / 0.22));
+  /* «У тезах», the chosen mood cell, the breathing circle. */
+  --color-mark: light-dark(#ffb185, #ffc58f);
+  --color-on-mark: light-dark(#0b2729, #071012);
+  /* «Якщо важко», 112, 103: terracotta only on its opaque cream pill. */
+  --color-crisis-fill: light-dark(#fff6ec, rgb(255 197 143 / 0));
+  --color-crisis-ink: light-dark(#8f3414, #ffc58f);
+  --color-crisis-line: light-dark(#8f3414, #ffc58f);
+  --color-focus: light-dark(#0b2729, #ffc58f);
+  /* 2px between the focus ring and the control. */
+  --color-focus-gap: light-dark(#fff6ec, #040708);
+  --color-selection: light-dark(rgb(255 177 133 / 0.45), rgb(255 197 143 / 0.3));
+  --color-hover: light-dark(rgb(11 39 41 / 0.06), rgb(243 239 232 / 0.08));
+  --color-pressed: light-dark(rgb(11 39 41 / 0.1), rgb(243 239 232 / 0.14));
+  /* ≥ 3:1 on every stop, field and glass of its theme. */
+  --color-field-border: light-dark(#0c4a4a, #94aaa5);
+  --color-scrim: light-dark(rgb(11 39 41 / 0.28), rgb(2 4 5 / 0.62));
+  /* The scrim over --color-bg as one colour: the root (a classic gutter) while a dialog is open. */
+  --color-bg-under-scrim: light-dark(#358d86, #030506);
+  --color-fade-0: light-dark(rgb(255 248 240 / 0), rgb(18 26 27 / 0));
+  /* Shadows tinted with the ink. */
+  --color-shadow: light-dark(rgb(11 39 41 / 0.14), rgb(0 0 0 / 0.42));
+  --color-field-shadow: light-dark(rgb(11 39 41 / 0.1), rgb(0 0 0 / 0.22));
+  /* No vignette by day; the layer stays. */
+  --color-vignette: light-dark(rgb(11 39 41 / 0), rgb(2 4 5 / 0.35));
+  --color-vignette-0: light-dark(rgb(11 39 41 / 0), rgb(2 4 5 / 0));
+  /* The wordmark: a small sun with an ink (teal) ring. */
+  --brand-core: light-dark(#fff0d9, #0d2a2e);
+  --brand-warm: light-dark(#ffb185, #ffc58f);
+  --brand-ring: light-dark(#0c4a4a, #8fe3d4);
+  --brand-glow: light-dark(rgb(255 177 133 / 0.45), rgb(143 227 212 / 0.22));
+  /* The chat's still orb (.orb, the light without WebGL): a body drawn with opaque strokes on a sun disc by day, a teal halo at night. */
+  --orb-sun: light-dark(#fffaf1, rgb(143 227 212 / 0.18));
+  --orb-sun-mid: light-dark(#fff0d9, rgb(143 227 212 / 0.1));
+  --orb-sun-0: light-dark(rgb(255 240 217 / 0), rgb(143 227 212 / 0));
+  --orb-body-hi: light-dark(#fff6ea, #1a3a3d);
+  --orb-core: light-dark(#ffd9b6, #0d2a2e);
+  --orb-core-edge: light-dark(#f8a882, #071214);
+  --orb-stroke: light-dark(#0c4a4a, #8fe3d4);
+  --orb-stroke-warm: light-dark(#0c4a4a, #ffc58f);
+  --orb-shadow: light-dark(rgb(11 39 41 / 0.16), rgb(0 0 0 / 0));
 }
 
 :root[data-theme='light']:not([data-theme-lock]) {
@@ -255,71 +275,69 @@ html[data-theme-switching] *::after {
 }
 
 /* An engine without light-dark() (Safari < 17.5) would drop every colour above: it gets the dark
-   theme, and stage.css keeps its light sky behind the same condition. */
+   theme — the night of :root, restated — and stage.css keeps its light sky behind the same condition. */
 @supports not (color: light-dark(#000, #fff)) {
   :root:not([data-theme-lock]),
   :root[data-theme]:not([data-theme-lock]) {
     color-scheme: dark;
-    --color-bg: #121a1b;
-    --color-sky: #121a1b;
+    --color-bg: #040708;
     --color-surface: #192324;
-    --color-bubble-you: #1f2d2d;
-    --color-bubble-line: rgb(143 227 212 / 0.12);
-    --color-panel: rgb(25 35 36 / 0.62);
-    --color-text: #ecf1ed;
-    --color-text-soft: #c9d3cf;
-    --color-text-muted: #a7b2ae;
-    --color-text-dim: #97a39f;
-    --color-line: rgb(236 241 237 / 0.13);
-    --color-line-strong: rgb(236 241 237 / 0.26);
+    --color-sheet-solid: #121a1b;
+    --color-sheet-ground: #12302e;
+    --color-panel: rgb(18 26 27 / 0.62);
+    --color-capsule: rgb(18 26 27 / 0.78);
+    --color-glass-edge: rgb(143 227 212 / 0.24);
+    --color-bubble-you: #8fe3d4;
+    --color-on-bubble-you: #071012;
+    --color-bubble-line: #8fe3d4;
+    --color-text: #f3efe8;
+    --color-text-soft: #b8c9c6;
+    --color-text-muted: #b8c9c6;
+    --color-text-dim: #b8c9c6;
+    --color-line: rgb(243 239 232 / 0.14);
+    --color-line-strong: rgb(243 239 232 / 0.28);
+    --color-stroke: #8fe3d4;
+    --color-stroke-warm: #ffc58f;
     --color-ai: #8fe3d4;
     --color-teal: #8fe3d4;
     --color-light: #ffc58f;
     --color-light-strong: #ffe1bf;
-    --color-accent: #ffc58f;
-    --color-accent-strong: #ffe1bf;
-    --color-on-accent: #121a1b;
-    --color-accent-line: rgb(255 197 143 / 0.55);
-    --color-accent-tint: rgb(255 128 60 / 0.12);
-    --color-accent-tint-strong: rgb(255 128 60 / 0.14);
+    --color-accent: #f3efe8;
+    --color-accent-strong: #ffffff;
+    --color-on-accent: #071012;
+    --color-accent-line: rgb(243 239 232 / 0.55);
+    --color-accent-tint: rgb(255 150 90 / 0.16);
+    --color-accent-tint-strong: rgb(255 150 90 / 0.22);
+    --color-mark: #ffc58f;
+    --color-on-mark: #071012;
+    --color-crisis-fill: rgb(255 197 143 / 0);
+    --color-crisis-ink: #ffc58f;
+    --color-crisis-line: #ffc58f;
     --color-focus: #ffc58f;
+    --color-focus-gap: #040708;
     --color-selection: rgb(255 197 143 / 0.3);
-    --color-hover: rgb(236 241 237 / 0.08);
-    --color-pressed: rgb(236 241 237 / 0.14);
-    --color-field-border: #6f7c78;
-    --color-scrim: rgb(6 10 11 / 0.62);
-    --color-bg-under-scrim: #0b1011;
-    --color-band-top: rgb(18 26 27 / 0.97);
-    --color-band-mid: rgb(18 26 27 / 0.9);
-    --color-band-tail: rgb(18 26 27 / 0.45);
+    --color-hover: rgb(243 239 232 / 0.08);
+    --color-pressed: rgb(243 239 232 / 0.14);
+    --color-field-border: #94aaa5;
+    --color-scrim: rgb(2 4 5 / 0.62);
+    --color-bg-under-scrim: #030506;
     --color-fade-0: rgb(18 26 27 / 0);
     --color-shadow: rgb(0 0 0 / 0.42);
     --color-field-shadow: rgb(0 0 0 / 0.22);
-    --color-vignette: rgb(8 12 13 / 0.4);
-    --color-vignette-0: rgb(8 12 13 / 0);
-    --brand-core: #fff4e2;
+    --color-vignette: rgb(2 4 5 / 0.35);
+    --color-vignette-0: rgb(2 4 5 / 0);
+    --brand-core: #0d2a2e;
     --brand-warm: #ffc58f;
-    --brand-halo: rgb(255 170 100 / 0.15);
-    --brand-ring: rgb(200 240 236 / 0.45);
-    --brand-glow: rgb(255 190 120 / 0.35);
-    --orb-core: rgb(255 244 226 / 0.95);
-    --orb-warm: rgb(255 197 143 / 0.6);
-    --orb-halo: rgb(255 170 100 / 0.16);
-    --orb-halo-0: rgb(255 170 100 / 0);
-    --orb-shine: rgb(255 255 255 / 0.16);
-    --orb-shine-0: rgb(255 255 255 / 0);
-    --orb-ring: rgb(143 227 212 / 0.1);
-    --orb-ring-0: rgb(143 227 212 / 0);
-    --orb-body: rgb(10 22 24 / 0);
-    --orb-body-edge: rgb(10 22 24 / 0);
-    --orb-rim: rgb(200 240 236 / 0.16);
-    --orb-rim-mini: rgb(200 240 236 / 0.2);
-    --orb-violet: rgb(140 120 255 / 0.12);
-    --orb-teal: rgb(80 220 200 / 0.1);
-    --orb-glow: rgb(255 180 110 / 0.16);
-    --orb-glow-mini: rgb(255 180 110 / 0.18);
-    --orb-core-glow: rgb(255 228 196 / 0.55);
-    --orb-core-glow-0: rgb(255 197 143 / 0);
+    --brand-ring: #8fe3d4;
+    --brand-glow: rgb(143 227 212 / 0.22);
+    --orb-sun: rgb(143 227 212 / 0.18);
+    --orb-sun-mid: rgb(143 227 212 / 0.1);
+    --orb-sun-0: rgb(143 227 212 / 0);
+    --orb-body-hi: #1a3a3d;
+    --orb-core: #0d2a2e;
+    --orb-core-edge: #071214;
+    --orb-stroke: #8fe3d4;
+    --orb-stroke-warm: #ffc58f;
     --orb-shadow: rgb(0 0 0 / 0);
   }
 }
@@ -329,31 +347,128 @@ html[data-theme-switching] *::after {
    dark side of each token is restated here (tests/e2e/chat-core.spec.ts checks it still matches). */
 :root:not([data-theme-lock]) :is(.sheet--shelter, .sheet--tool[data-shelter]) {
   color-scheme: dark;
-  --color-bg: #121a1b;
-  --color-sky: #121a1b;
+  --color-bg: #040708;
   --color-surface: #192324;
-  --color-text: #ecf1ed;
-  --color-text-soft: #c9d3cf;
-  --color-text-muted: #a7b2ae;
-  --color-text-dim: #97a39f;
-  --color-line: rgb(236 241 237 / 0.13);
-  --color-line-strong: rgb(236 241 237 / 0.26);
+  --color-sheet-solid: #121a1b;
+  --color-sheet-ground: #12302e;
+  --color-panel: rgb(18 26 27 / 0.62);
+  --color-capsule: rgb(18 26 27 / 0.78);
+  --color-glass-edge: rgb(143 227 212 / 0.24);
+  --color-bubble-you: #8fe3d4;
+  --color-on-bubble-you: #071012;
+  --color-bubble-line: #8fe3d4;
+  --color-text: #f3efe8;
+  --color-text-soft: #b8c9c6;
+  --color-text-muted: #b8c9c6;
+  --color-text-dim: #b8c9c6;
+  --color-line: rgb(243 239 232 / 0.14);
+  --color-line-strong: rgb(243 239 232 / 0.28);
+  --color-stroke: #8fe3d4;
+  --color-stroke-warm: #ffc58f;
   --color-ai: #8fe3d4;
   --color-teal: #8fe3d4;
   --color-light: #ffc58f;
   --color-light-strong: #ffe1bf;
-  --color-accent: #ffc58f;
-  --color-accent-strong: #ffe1bf;
-  --color-on-accent: #121a1b;
-  --color-accent-line: rgb(255 197 143 / 0.55);
-  --color-accent-tint: rgb(255 128 60 / 0.12);
-  --color-accent-tint-strong: rgb(255 128 60 / 0.14);
+  --color-accent: #f3efe8;
+  --color-accent-strong: #ffffff;
+  --color-on-accent: #071012;
+  --color-accent-line: rgb(243 239 232 / 0.55);
+  --color-accent-tint: rgb(255 150 90 / 0.16);
+  --color-accent-tint-strong: rgb(255 150 90 / 0.22);
+  --color-mark: #ffc58f;
+  --color-on-mark: #071012;
+  --color-crisis-fill: rgb(255 197 143 / 0);
+  --color-crisis-ink: #ffc58f;
+  --color-crisis-line: #ffc58f;
   --color-focus: #ffc58f;
+  --color-focus-gap: #040708;
   --color-selection: rgb(255 197 143 / 0.3);
-  --color-hover: rgb(236 241 237 / 0.08);
-  --color-pressed: rgb(236 241 237 / 0.14);
-  --color-field-border: #6f7c78;
-  --color-scrim: rgb(6 10 11 / 0.62);
+  --color-hover: rgb(243 239 232 / 0.08);
+  --color-pressed: rgb(243 239 232 / 0.14);
+  --color-field-border: #94aaa5;
+  --color-scrim: rgb(2 4 5 / 0.62);
+  --color-bg-under-scrim: #030506;
   --color-fade-0: rgb(18 26 27 / 0);
   --color-shadow: rgb(0 0 0 / 0.42);
+  --color-field-shadow: rgb(0 0 0 / 0.22);
+  --color-vignette: rgb(2 4 5 / 0.35);
+  --color-vignette-0: rgb(2 4 5 / 0);
+  --brand-core: #0d2a2e;
+  --brand-warm: #ffc58f;
+  --brand-ring: #8fe3d4;
+  --brand-glow: rgb(143 227 212 / 0.22);
+  --orb-sun: rgb(143 227 212 / 0.18);
+  --orb-sun-mid: rgb(143 227 212 / 0.1);
+  --orb-sun-0: rgb(143 227 212 / 0);
+  --orb-body-hi: #1a3a3d;
+  --orb-core: #0d2a2e;
+  --orb-core-edge: #071214;
+  --orb-stroke: #8fe3d4;
+  --orb-stroke-warm: #ffc58f;
+  --orb-shadow: rgb(0 0 0 / 0);
+}
+
+/* The landing's night band (.night: privacy, the crisis card, the FAQ) and its footer stand in the
+   night in both themes (ADR-013 §1): the same restatement as «В укритті», checked by the same test. */
+:root:not([data-theme-lock]) :is(.night, .site-footer) {
+  color-scheme: dark;
+  --color-bg: #040708;
+  --color-surface: #192324;
+  --color-sheet-solid: #121a1b;
+  --color-sheet-ground: #12302e;
+  --color-panel: rgb(18 26 27 / 0.62);
+  --color-capsule: rgb(18 26 27 / 0.78);
+  --color-glass-edge: rgb(143 227 212 / 0.24);
+  --color-bubble-you: #8fe3d4;
+  --color-on-bubble-you: #071012;
+  --color-bubble-line: #8fe3d4;
+  --color-text: #f3efe8;
+  --color-text-soft: #b8c9c6;
+  --color-text-muted: #b8c9c6;
+  --color-text-dim: #b8c9c6;
+  --color-line: rgb(243 239 232 / 0.14);
+  --color-line-strong: rgb(243 239 232 / 0.28);
+  --color-stroke: #8fe3d4;
+  --color-stroke-warm: #ffc58f;
+  --color-ai: #8fe3d4;
+  --color-teal: #8fe3d4;
+  --color-light: #ffc58f;
+  --color-light-strong: #ffe1bf;
+  --color-accent: #f3efe8;
+  --color-accent-strong: #ffffff;
+  --color-on-accent: #071012;
+  --color-accent-line: rgb(243 239 232 / 0.55);
+  --color-accent-tint: rgb(255 150 90 / 0.16);
+  --color-accent-tint-strong: rgb(255 150 90 / 0.22);
+  --color-mark: #ffc58f;
+  --color-on-mark: #071012;
+  --color-crisis-fill: rgb(255 197 143 / 0);
+  --color-crisis-ink: #ffc58f;
+  --color-crisis-line: #ffc58f;
+  --color-focus: #ffc58f;
+  --color-focus-gap: #040708;
+  --color-selection: rgb(255 197 143 / 0.3);
+  --color-hover: rgb(243 239 232 / 0.08);
+  --color-pressed: rgb(243 239 232 / 0.14);
+  --color-field-border: #94aaa5;
+  --color-scrim: rgb(2 4 5 / 0.62);
+  --color-bg-under-scrim: #030506;
+  --color-fade-0: rgb(18 26 27 / 0);
+  --color-shadow: rgb(0 0 0 / 0.42);
+  --color-field-shadow: rgb(0 0 0 / 0.22);
+  --color-vignette: rgb(2 4 5 / 0.35);
+  --color-vignette-0: rgb(2 4 5 / 0);
+  --brand-core: #0d2a2e;
+  --brand-warm: #ffc58f;
+  --brand-ring: #8fe3d4;
+  --brand-glow: rgb(143 227 212 / 0.22);
+  --orb-sun: rgb(143 227 212 / 0.18);
+  --orb-sun-mid: rgb(143 227 212 / 0.1);
+  --orb-sun-0: rgb(143 227 212 / 0);
+  --orb-body-hi: #1a3a3d;
+  --orb-core: #0d2a2e;
+  --orb-core-edge: #071214;
+  --orb-stroke: #8fe3d4;
+  --orb-stroke-warm: #ffc58f;
+  --orb-shadow: rgb(0 0 0 / 0);
 }

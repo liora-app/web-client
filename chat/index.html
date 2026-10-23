@@ -3,9 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <!-- One theme-color, before the script that sets it to the theme's background (public/theme-init.js; its
-         hex is this page's dark background, the lamp, which the script reads); src/ui/theme.ts keeps it in
+         hex is this page's dark background, the night, which the script reads); src/ui/theme.ts keeps it in
          step from then on. -->
-    <meta name="theme-color" content="#121a1b" />
+    <meta name="theme-color" content="#040708" />
     <!-- First, before any stylesheet: the chosen theme and sky preset on <html> before the first frame. -->
     <script src="/theme-init.js" data-sky></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
@@ -33,18 +33,25 @@
         <span class="brand__mark" aria-hidden="true"></span>
         <span class="brand__name">Liora</span>
       </a>
+      <p class="ai-chip ai-chip--header"><span class="ai-chip__ai">AI</span><span class="visually-hidden"> · </span>не людина</p>
 
       <div class="site-header__actions">
         <!-- Opens the help dialog over the page: a link to /#safety would wipe the conversation. -->
-        <button class="help-link" type="button" data-act="help" aria-haspopup="dialog" aria-controls="help-dialog">Якщо важко<span class="visually-hidden">: контакти допомоги, 112 і 103</span></button>
+        <button class="help-link" type="button" data-act="help" aria-haspopup="dialog" aria-controls="help-dialog"><svg class="help-link__icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5.2 2.5 3.6 2.8c-.6.1-1 .6-1 1.2.2 5.3 4.1 9.2 9.4 9.4.6 0 1.1-.4 1.2-1l.3-1.6c.1-.5-.2-1-.7-1.2l-1.9-.7c-.4-.2-.9 0-1.2.3l-.7.8a8 8 0 0 1-3.5-3.5l.8-.7c.3-.3.5-.8.3-1.2l-.7-1.9c-.2-.5-.7-.8-1.2-.7Z" /></svg>Якщо важко<span class="help-link__numbers" aria-hidden="true">112 · 103</span><span class="visually-hidden">: контакти допомоги, 112 і 103</span></button>
+        <button class="journal-toggle" type="button" data-act="journal-open" data-el="journal-toggle" aria-label="Щоденник" hidden>
+          <svg class="journal-toggle__icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3.25 2.75h7.5a2 2 0 0 1 2 2v8.5h-7.5a2 2 0 0 1-2-2z" /><path d="M5.75 5.75h4.5M5.75 8.25h3" /></svg>
+          <span class="header-word" aria-hidden="true">Щоденник</span>
+        </button>
         <!-- The landing's control for what moves and what sounds (src/ui/motion.ts, src/ui/sound.ts). -->
         <div class="media" role="group" aria-label="Анімація і звук">
           <button class="media__button motion-toggle" type="button" data-motion-toggle aria-pressed="false" aria-label="Пауза анімації" hidden>
             <svg class="media__icon motion-toggle__pause" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5 3.5v9M11 3.5v9" /></svg>
             <svg class="media__icon motion-toggle__play" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5.5 3.5l7 4.5-7 4.5z" /></svg>
+            <span class="header-word" aria-hidden="true">Пауза</span>
           </button>
           <button class="media__button sound-toggle" type="button" data-sound-toggle aria-pressed="false" aria-label="Звук" hidden>
             <span class="sound-toggle__wave" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+            <span class="header-word" aria-hidden="true">Звук</span>
           </button>
         </div>
         <!-- «Вигляд» (src/ui/theme-picker.ts): a menu button, not in .media (that group is motion and
@@ -54,6 +61,7 @@
             <svg class="theme-toggle__icon theme-toggle__auto" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="5.25" /><path class="theme-toggle__half" d="M8 2.75a5.25 5.25 0 0 1 0 10.5z" /></svg>
             <svg class="theme-toggle__icon theme-toggle__sun" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="2.75" /><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.06 1.06M11.54 11.54l1.06 1.06M3.4 12.6l1.06-1.06M11.54 4.46l1.06-1.06" /></svg>
             <svg class="theme-toggle__icon theme-toggle__moon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M13.25 9.6A5.5 5.5 0 0 1 6.4 2.75a5.5 5.5 0 1 0 6.85 6.85z" /></svg>
+            <span class="header-word" aria-hidden="true">Вигляд</span>
           </button>
           <div class="theme-menu" id="theme-menu" role="menu" aria-label="Вигляд" data-theme-menu hidden>
             <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="true" tabindex="-1" data-theme-choice="system">Як у системі</button>
@@ -61,16 +69,26 @@
             <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-theme-choice="dark">Темна</button>
           </div>
         </div>
+        <!-- «Персонаж» (src/ui/character.ts): the character shown or hidden, remembered in this browser. A
+             toggle with a fixed name (aria-pressed="true": shown), hidden without JS. -->
+        <button class="character-toggle" type="button" data-character-toggle aria-pressed="true" aria-label="Персонаж" hidden>
+          <svg class="character-toggle__icon character-toggle__on" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="6" r="3.25" /><path d="M2.75 14.25c.7-2.7 2.75-4.25 5.25-4.25s4.55 1.55 5.25 4.25" /><path d="M3.5 3.75 2.75 3M12.5 3.75l.75-.75" /></svg>
+          <svg class="character-toggle__icon character-toggle__off" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="5.75" /><path d="M3.95 3.95l8.1 8.1" /></svg>
+          <span class="header-word" aria-hidden="true">Персонаж</span>
+        </button>
         <!-- Shown only with a session. Same size and place as the landing's «Меню». -->
         <button class="account-toggle" type="button" data-act="account" aria-haspopup="dialog" aria-controls="account-dialog" aria-label="Акаунт" hidden>
           <svg class="account-toggle__icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="5.5" r="2.75" /><path d="M2.75 14c.6-2.9 2.7-4.5 5.25-4.5s4.65 1.6 5.25 4.5" /></svg>
-          <span class="account-toggle__word" aria-hidden="true">Акаунт</span>
+          <span class="account-toggle__word header-word" aria-hidden="true">Акаунт</span>
         </button>
       </div>
     </header>
 
     <main id="main" class="chat" tabindex="-1" aria-busy="true">
       <div class="chat__frame">
+        <!-- «AI · не людина» on a phone, at the sheet's top-left, beside the light when it is there (the
+             header's own chip is shown from 64em instead). -->
+        <p class="ai-chip ai-chip--sheet"><span class="ai-chip__ai">AI</span><span class="visually-hidden"> · </span>не людина</p>
         <!-- The light: the AI's place on the page (and later the character's). Decorative; the state is
              spoken by the live region. -->
         <aside class="chat__scene" aria-hidden="true">
@@ -79,7 +97,6 @@
               <div class="orb"></div>
               <canvas class="presence__canvas" data-gl-canvas></canvas>
             </div>
-            <p class="presence__ai">AI · не людина</p>
             <p class="presence__state" data-presence-label>Зʼєднуємося</p>
           </div>
         </aside>
@@ -246,7 +263,7 @@
                         <li>Ваші згоди: яка саме, версія умов, коли дано й коли відкликано.</li>
                         <li>Технічні журнали сервера без тексту розмов: який запит надійшов і коли, чим завершився, скільки тривав і скільки тексту обробив AI (у токенах). Замість вашого акаунта в них псевдонім. Журнали з часом перезаписуються.</li>
                         <li>Після видалення акаунта — його номер і дата видалення, щоб видалення не скасувалося при відновленні даних із резервної копії.</li>
-                        <li>У вашому браузері — файл cookie сесії (скриптам сторінки він недоступний) і ваш вибір паузи анімації, теми та фону.</li>
+                        <li>У вашому браузері — файл cookie сесії (скриптам сторінки він недоступний) і ваш вибір паузи анімації, теми, фону та персонажа.</li>
                       </ul>
                     </div>
                   </details>
@@ -321,6 +338,7 @@
               <p class="session__label">
                 <span class="session__title" data-el="session-title"></span><span class="session__sep" aria-hidden="true"> · </span><span class="keep session__ai">AI, не людина</span><span class="session__nosave" data-el="session-nosave" hidden><span class="session__sep" aria-hidden="true"> · </span><span class="keep">Не зберігати</span></span>
               </p>
+              <p class="session__marks" data-el="session-marks-row" data-marks="0"><span class="marks" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span data-el="session-marks">У тезах 0 з 5</span></p>
               <button class="button button--secondary button--small session__end" type="button" data-act="end" aria-haspopup="dialog" data-el="session-end" hidden>
                 <span class="wide-only">Завершити розмову</span><span class="narrow-only">Завершити</span>
               </button>
@@ -353,13 +371,17 @@
             <ol class="talk" aria-label="Розмова" data-el="talk" data-no-stoplist></ol>
 
             <!-- Until the first message: a few ways to begin. A chip puts its words into the field; the
-                 person edits them and sends — nothing goes by itself. -->
-            <div class="starters" role="group" aria-label="Почати зі слів" data-el="starters" hidden>
-              <!-- The check-in (spec §3.13): optional; its word goes into the field only on «Додати до розмови». -->
-              <button class="checkin" type="button" data-act="tool" data-tool="mood" aria-haspopup="dialog" data-el="checkin">
-                <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6.5" /><path d="M7.25 11.75c.7.8 1.6 1.25 2.75 1.25s2.05-.45 2.75-1.25" /></svg>
-                Як ви зараз?
-              </button>
+                 person edits them and sends — nothing goes by itself. The group is named by its visible
+                 label (its arrow is drawn by chat.css, outside the name). -->
+            <div class="starters-row" data-el="starters-row" hidden>
+              <p class="starters__label" id="starters-label">Почати зі слів</p>
+              <div class="starters" role="group" aria-labelledby="starters-label" data-el="starters" hidden>
+                <!-- The check-in (spec §3.13): optional; its word goes into the field only on «Додати до розмови». -->
+                <button class="checkin" type="button" data-act="tool" data-tool="mood" aria-haspopup="dialog" data-el="checkin">
+                  <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6.5" /><path d="M7.25 11.75c.7.8 1.6 1.25 2.75 1.25s2.05-.45 2.75-1.25" /></svg>
+                  Як ви зараз?
+                </button>
+              </div>
             </div>
 
             <div class="nosave" data-el="nosave">
@@ -410,6 +432,7 @@
                      its items are plain buttons that Tab walks. -->
                 <button class="composer__tools" type="button" popovertarget="composer-tools" aria-label="Інструменти" data-el="composer-tools">
                   <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 4.75v10.5M4.75 10h10.5" /></svg>
+                  <span class="composer__tools-word" aria-hidden="true">Інструменти</span>
                 </button>
                 <div class="composer__menu" id="composer-tools" popover role="group" aria-labelledby="composer-tools-title">
                   <p class="composer__menu-title" id="composer-tools-title">Інструменти</p>

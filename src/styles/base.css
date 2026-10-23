@@ -9,7 +9,8 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  /* color-scheme comes from tokens.css: the theme, on both pages (the landing's dark is its night). */
+  /* color-scheme comes from tokens.css: the theme, on both pages. The root paints a colour, never the
+     sky: a classic scrollbar's gutter shows only the root's colour (chat.css). */
   background: var(--color-bg);
   scroll-padding-top: var(--header-offset);
 }
@@ -85,10 +86,14 @@ button {
   color: inherit;
 }
 
+/* A 3 px ring with a 2 px gap of its own (ADR-013): ink on cream by day, peach on the night — each
+   ≥ 3:1 to the gap, the gap ≥ 3:1 to the fill. Rings drawn inside a control (outline-offset < 0)
+   set box-shadow: none where they are declared. */
 :focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 4px;
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
   border-radius: 2px;
+  box-shadow: 0 0 0 2px var(--color-focus-gap);
 }
 
 ::selection {

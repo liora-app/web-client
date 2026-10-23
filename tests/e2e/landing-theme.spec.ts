@@ -7,8 +7,9 @@ import { NO_WEBGL2, animationsDone, throttle, watchConsole } from './helpers'
 // light theme's static art. Every test installs NO_WEBGL2 before navigation: the page keeps its
 // static backdrop (no GPU work here), which is also the state the art checks are about.
 
-const PAPER = 'rgb(246, 241, 234)' // --color-bg, light («ранковий папір», the chat's)
-const NIGHT = 'rgb(4, 7, 8)' // --color-bg, dark (the landing's own night)
+// ADR-013: one palette on both pages — the day's sky (its first stop) and the night.
+const DAY = 'rgb(70, 180, 170)' // --color-bg, light (the day's sky, its first stop #46b4aa)
+const NIGHT = 'rgb(4, 7, 8)' // --color-bg, dark (the night #040708, now the chat's as well)
 const STILL = /-still\.png/
 
 test.beforeEach(async ({ page }) => {
@@ -69,8 +70,8 @@ test.describe('«Вигляд» on the landing', () => {
     await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false')
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
     await expect(toggle(page)).toHaveAccessibleName('Вигляд: світла')
-    await expect.poll(() => rootBg(page)).toBe(PAPER)
-    await expect.poll(() => themeColor(page)).toBe(PAPER)
+    await expect.poll(() => rootBg(page)).toBe(DAY)
+    await expect.poll(() => themeColor(page)).toBe(DAY)
     expect(await stored(page)).toBe('light')
 
     // ↑ opens on the last item; Esc closes without a change and gives the focus back.
@@ -122,7 +123,7 @@ test.describe('«Вигляд» on the landing', () => {
     await page.reload()
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
     await expect(choice(page, 'light')).toHaveAttribute('aria-checked', 'true')
-    expect(await rootBg(page)).toBe(PAPER)
+    expect(await rootBg(page)).toBe(DAY)
   })
 
   test('the stored theme is on <html> at DOMContentLoaded, with the browser bar in its colour — public/theme-init.js alone', async ({ page }) => {
@@ -143,14 +144,14 @@ test.describe('«Вигляд» on the landing', () => {
     await page.goto('/')
     await page.evaluate(() => localStorage.setItem('liora:theme', 'light'))
     await page.reload()
-    expect(await page.evaluate(() => (window as unknown as { __atDcl: unknown }).__atDcl)).toEqual({ theme: 'light', bar: PAPER, bg: PAPER })
+    expect(await page.evaluate(() => (window as unknown as { __atDcl: unknown }).__atDcl)).toEqual({ theme: 'light', bar: DAY, bg: DAY })
     // Without the page's module (and so without src/ui/theme.ts) the classic early script alone
     // puts the theme and the bar's colour in place.
     await page.route('**/assets/main-*.js', (route) => route.fulfill({ contentType: 'text/javascript', body: '' }))
     await page.reload()
     await expect(html(page)).toHaveAttribute('data-theme', 'light')
-    expect(await themeColor(page)).toBe(PAPER)
-    expect(await rootBg(page)).toBe(PAPER)
+    expect(await themeColor(page)).toBe(DAY)
+    expect(await rootBg(page)).toBe(DAY)
     await expect(toggle(page)).toBeHidden() // «Вигляд» needs the module: hidden without it
     await page.evaluate(() => localStorage.removeItem('liora:theme'))
   })
@@ -195,7 +196,7 @@ test.describe('«Вигляд» on the landing', () => {
     await staticPage(page)
     await choose(page, 'Світла')
     expect(await stored(page)).toBe('light')
-    await expect.poll(() => rootBg(page)).toBe(PAPER)
+    await expect.poll(() => rootBg(page)).toBe(DAY)
 
     await choose(page, 'Як у системі')
     expect(await stored(page)).toBeNull()
@@ -206,8 +207,8 @@ test.describe('«Вигляд» on the landing', () => {
     expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([])
     // The system changes: the page follows, nothing is written.
     await page.emulateMedia({ colorScheme: 'light' })
-    await expect.poll(() => rootBg(page)).toBe(PAPER)
-    await expect.poll(() => themeColor(page)).toBe(PAPER)
+    await expect.poll(() => rootBg(page)).toBe(DAY)
+    await expect.poll(() => themeColor(page)).toBe(DAY)
     expect(await stored(page)).toBeNull()
   })
 })
@@ -224,16 +225,15 @@ test.describe('the light theme without WebGL', () => {
     await page.goto('/')
     await staticPage(page)
     await expect(html(page)).toHaveAttribute('data-gl-reason', 'no-webgl2')
-    expect(await rootBg(page)).toBe(PAPER)
+    expect(await rootBg(page)).toBe(DAY)
     // Every holder of a still, shown or not at this width: a CSS drawing, no PNG.
     const art = await page.evaluate(() =>
       (
         [
+          // ADR-013: the conversation drawing and the diary's map are gone with their holders.
           ['.hero__orb', '::before'],
           ['.final__art', '::before'],
           ['.mind__still', null],
-          ['.how__motion', null],
-          ['.diary__sky', '::before'],
         ] as const
       ).map(([selector, pseudo]) => [selector + (pseudo ?? ''), getComputedStyle(document.querySelector(selector)!, pseudo).backgroundImage]),
     )
@@ -262,7 +262,7 @@ test.describe('the light theme without WebGL', () => {
   test('axe finds no WCAG 2.2 AA violations on the light landing, with «Вигляд» open too', async ({ page }) => {
     await page.goto('/')
     await staticPage(page)
-    expect(await rootBg(page)).toBe(PAPER)
+    expect(await rootBg(page)).toBe(DAY)
     await page.waitForLoadState('networkidle')
     // Reveal-on-scroll content in its final state, fades finished (as in landing.spec.ts).
     await page.evaluate(() => {
@@ -286,12 +286,12 @@ test.describe('the light theme without WebGL', () => {
 })
 
 test.describe('the dark theme stays the landing’s night', () => {
-  test('the night’s colours, not the chat’s evening lamp', async ({ page }) => {
+  test('the night’s colours, the same as the chat’s', async ({ page }) => {
     await page.goto('/')
     await staticPage(page)
     expect(await rootBg(page)).toBe(NIGHT)
     await expect.poll(() => themeColor(page)).toBe(NIGHT)
-    await expect(page.locator('h1')).toHaveCSS('color', 'rgb(238, 242, 238)') // --color-text #eef2ee
-    await expect(page.locator('.stage')).toHaveCSS('background-color', 'rgb(5, 11, 16)') // #050b10
+    await expect(page.locator('h1')).toHaveCSS('color', 'rgb(243, 239, 232)') // --color-text #f3efe8
+    await expect(page.locator('.stage')).toHaveCSS('background-color', NIGHT) // the stage stands on --color-bg
   })
 })

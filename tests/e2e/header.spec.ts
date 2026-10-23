@@ -147,6 +147,25 @@ test.describe('header', () => {
     expect(mark.colour).toBe(mark.text)
   })
 
+  // #142 (ADR-013 §1.1, the landing's half; tests/e2e/chat.spec.ts checks /chat/): terracotta only on
+  // its own opaque cream — by day «Якщо важко» has a fill of alpha 1, on top of the page and by the
+  // crisis contacts (on the capsule's glass it would be 4.15:1).
+  test('#142 by day «Якщо важко» is terracotta on its own opaque cream, at the top and by the crisis contacts', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop', 'computed colours: one engine is enough')
+    await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
+    await page.goto('/')
+    const pill = (): Promise<{ fill: string; ink: string }> =>
+      page.locator('.site-header .help-link').evaluate((node) => {
+        const style = getComputedStyle(node)
+        return { fill: style.backgroundColor, ink: style.color }
+      })
+    expect(await pill()).toEqual({ fill: 'rgb(255, 246, 236)', ink: 'rgb(143, 52, 20)' })
+    await centre(page, '#safety')
+    // The landing marks the chapter in view as a location (src/ui/nav.ts).
+    await expect(page.locator('.site-header .help-link')).toHaveAttribute('aria-current', 'location')
+    expect(await pill()).toEqual({ fill: 'rgb(255, 246, 236)', ink: 'rgb(143, 52, 20)' })
+  })
+
   test('the header fits at 320 px with the menu and «Вигляд»', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile', 'one engine is enough for the fit')
     await page.setViewportSize({ width: 320, height: 640 })

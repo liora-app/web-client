@@ -1,9 +1,11 @@
-// Where the hero light stands. On wide layouts it sits beside the end of the title lines and never on
-// them: the title lies under the WebGL canvas, and light over its glyphs would take their contrast
-// away (WCAG 1.4.3). On one column it sits between the header and the title. The result goes to
-// .hero as --light-x / --light-y / --light-d (CSS px; x from the viewport's left, y from the top of
-// the page), so the static orb (sections.css) and the WebGL light (src/gl/scene.ts) stand in the
-// same place and switching between them does not jump.
+// Where the hero light stands: in the slot between the title's halves («Менше шуму.» · the presence ·
+// «Більше себе.», ADR-013). The slot is an empty, aria-hidden part of the title with a column (on one
+// column, a row) of its own and a gap of at least 16 px to the glyphs on either side: the title lies
+// under the WebGL canvas, and light over its glyphs would take their contrast away (WCAG 1.4.3). The
+// result goes to .hero as --light-x / --light-y / --light-d (CSS px; x from the viewport's left, y from
+// the top of the page), so the static orb (sections.css), the day's sun in the hero's sky
+// (landing.css) and the WebGL light (src/gl/scene.ts) stand in the same place and switching between
+// them does not jump.
 
 export interface HeroLight {
   /** Centre, CSS px from the left edge of the viewport. */
@@ -17,9 +19,6 @@ export interface HeroLight {
 /** Two text columns from here on: the same breakpoint as the CSS (sections.css, layout.css). */
 export const WIDE_LAYOUT = window.matchMedia('(min-width: 64em)')
 
-const GAP = 28 // CSS px between the end of the title and the glass, with room for the pointer parallax
-const HEADER = 88 // var(--header-offset)
-
 let current: HeroLight | null = null
 const listeners = new Set<() => void>()
 
@@ -32,44 +31,19 @@ export function onHeroLightChange(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
-// The glyph runs of the title lines. Each line is a block span, so the rect of the element would be
-// the whole frame width; a range over its contents gives the text itself.
-function titleBox(): { right: number; top: number } | null {
-  const lines = Array.from(document.querySelectorAll('.hero__title .display__line'))
-  if (lines.length === 0) return null
-  const range = document.createRange()
-  let right = -Infinity
-  let top = Infinity
-  for (const line of lines) {
-    range.selectNodeContents(line)
-    const rect = range.getBoundingClientRect()
-    if (rect.width === 0) continue
-    right = Math.max(right, rect.right)
-    top = Math.min(top, rect.top + window.scrollY)
-  }
-  return Number.isFinite(right) ? { right, top } : null
-}
+const REM = (): number => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
 
 function measure(): HeroLight | null {
-  const title = titleBox()
-  if (!title) return null
+  const slot = document.querySelector<HTMLElement>('[data-hero-slot]')
+  if (!slot) return null
+  const box = slot.getBoundingClientRect()
+  if (box.width === 0 || box.height === 0) return null
   const w = document.documentElement.clientWidth
-  const h = window.innerHeight
-  if (WIDE_LAYOUT.matches) {
-    // A larger hero object, fitted into the remaining lane after the actual glyphs.
-    const base = Math.min(0.3 * h, 0.22 * w)
-    const gutter = Math.min(88, Math.max(24, 0.055 * w))
-    const room = w - gutter - (title.right + GAP)
-    const r = Math.max(1, Math.min(base, room * 0.43))
-    const x = title.right + GAP + room / 2
-    return { x, y: h * 0.47, d: 2 * r }
-  }
-  // One column: centred above the title, below the header; smaller on short screens.
-  const base = Math.min(110, 0.2451 * w)
-  const bottom = title.top - 20
-  const r = Math.max(1, Math.min(base, (bottom - HEADER - 52) / 2))
-  const y = bottom - r
-  return { x: w / 2, y, d: 2 * r }
+  // The CSS sizes of the slot (landing.css): clamp(240px, 25vw, 360px) beside the halves,
+  // min(62vw, 15rem) between them on one column.
+  const cap = WIDE_LAYOUT.matches ? Math.min(360, Math.max(240, 0.25 * w)) : Math.min(0.62 * w, 15 * REM())
+  const d = Math.max(1, Math.min(box.width, box.height, cap))
+  return { x: box.left + box.width / 2, y: box.top + window.scrollY + box.height / 2, d }
 }
 
 function update(): void {
@@ -96,7 +70,7 @@ export function initHeroLight(): void {
       update()
     })
   }
-  // The title changes size when the font arrives, with zoom and with the window.
+  // The title (and with it the slot) changes size when the font arrives, with zoom and with the window.
   const title = document.querySelector('.hero__title')
   if (title && 'ResizeObserver' in window) new ResizeObserver(schedule).observe(title)
   window.addEventListener('resize', schedule, { passive: true })

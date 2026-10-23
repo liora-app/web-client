@@ -45,6 +45,36 @@ test.describe('content and structure', () => {
     expect(file.headers()['content-type']).toBe('image/jpeg')
   })
 
+  test('the hero title is one heading around an empty slot: «Менше шуму. Більше себе.»', async ({ page }) => {
+    await page.goto('/')
+    const title = page.getByRole('heading', { level: 1 })
+    await expect(title).toHaveAccessibleName('Менше шуму. Більше себе.')
+    const slot = page.locator('h1 [data-hero-slot]')
+    await expect(slot).toHaveCount(1)
+    await expect(slot).toHaveAttribute('aria-hidden', 'true')
+    await expect(slot).toHaveText('')
+  })
+
+  test('the scenarios: eight names, the key one described on its card, three more notes', async ({ page }) => {
+    await page.goto('/')
+    const names = page.locator('#scenarios .poster__name')
+    await expect(names).toHaveText([
+      'Вільна розмова',
+      'Розбір ситуації',
+      'Розбір дня',
+      'Коли неспокійно',
+      'Підготуватися до розмови',
+      'Що було добре',
+      'Тихий вечір',
+      'Повернення до теми',
+    ])
+    await expect(page.locator('#scenarios .poster__name--key')).toHaveText('Розбір ситуації')
+    await expect(page.locator('#scenarios .scenario-card h3')).toHaveText('Ключовий сценарій · Розбір ситуації')
+    await expect(page.locator('#scenarios .scenario-notes dt')).toHaveText(['Вільна розмова', 'Розбір дня', 'Повернення до теми'])
+    // The data disclosure of «Повернення до теми» stays.
+    await expect(page.locator('#scenarios .scenario-notes')).toContainText('AI отримає ваші збережені тези на цю тему')
+  })
+
   test('crisis block lists 112, 103 and the hotline directory, never the paused 7333', async ({ page }) => {
     await page.goto('/')
     const safety = page.locator('#safety')
@@ -232,45 +262,43 @@ test.describe('navigation and keyboard', () => {
       await expect(page.locator('[data-nav-link][aria-current]')).toHaveCount(1)
       await expect(page.locator('[data-hud-index]')).toHaveText(index)
       await expect(page.locator('[data-hud-name]')).toHaveText(name) // retries past the decode
-      // The crisis link is marked like the current nav item while its chapter is on screen.
-      if (id === 'safety') await expect(page.locator('.site-header .help-link')).toHaveCSS('border-top-color', 'rgb(255, 197, 143)')
+      // The crisis link is marked like the current nav item while its chapter is on screen. ADR-013:
+      // the pill keeps its peach outline at all times; the mark is an inner ring of the same colour.
+      if (id === 'safety') await expect(page.locator('.site-header .help-link')).toHaveCSS('box-shadow', 'rgb(255, 197, 143) 0px 0px 0px 1px inset')
     }
     // A chapter without a header link clears the mark; the HUD still follows.
     await centre(page, '#diary')
     await expect(page.locator('[data-nav-link][aria-current]')).toHaveCount(0)
+    await expect(page.locator('.site-header .help-link')).toHaveCSS('box-shadow', 'none')
     await expect(page.locator('[data-hud-index]')).toHaveText('03')
     await expect(page.locator('[data-hud-name]')).toHaveText('Щоденник')
   })
 
-  test('the example session follows the step in the middle of a wide screen; on one column it is read in full', async ({ page, isMobile }) => {
+  // ADR-013: the four steps stand in one row of beads on a wide screen, so no step is «the one in the
+  // middle» and the example no longer follows one (src/ui/steps.ts is gone, with data-active-step). It
+  // is read in full at any width: every line in its own ink, none faded.
+  test('the example session is read in full at any width, whichever step is in the middle', async ({ page }) => {
     await page.goto('/')
     const transcript = page.locator('[data-transcript]')
-    const firstLine = transcript.locator('.said p').first() // data-for="1 2"
-    const thesis = transcript.locator('.theses__list li').first() // data-for="3 4"
-    const DIM = 'rgb(132, 145, 141)' // --color-text-dim #84918d
-    const TEXT = 'rgb(238, 242, 238)' // --color-text #eef2ee
-    const LIGHT = 'rgb(255, 197, 143)' // --color-light #ffc58f
-
-    await centre(page, '[data-step="3"]')
-    await expect(transcript).toHaveAttribute('data-active-step', '3')
-    await expect(page.locator('[data-step][data-current]')).toHaveAttribute('data-step', '3')
-    if (isMobile) {
-      // One column: the example comes after the steps, not beside them, so no line steps back.
-      await expect(firstLine).toHaveCSS('color', TEXT)
-      await expect(thesis).toHaveCSS('color', TEXT)
-      return
+    const TEXT = 'rgb(243, 239, 232)' // --color-text #f3efe8 (the night; the suite's dark theme)
+    const ON_YOU = 'rgb(7, 16, 18)' // --color-on-bubble-you #071012: «Ви» in the chat's bubble
+    for (const step of ['1', '3', '4']) {
+      await centre(page, `[data-step="${step}"]`)
+      await expect(transcript).not.toHaveAttribute('data-active-step', /.*/)
+      await expect(page.locator('[data-step][data-current]')).toHaveCount(0)
+      const inks = await transcript.evaluate((node) =>
+        Array.from(node.querySelectorAll('.said p, .theses__list li')).map((line) => ({
+          ai: line.closest('.said--ai, .theses') !== null,
+          color: getComputedStyle(line).color,
+          opacity: getComputedStyle(line).opacity,
+        })),
+      )
+      expect(inks).toHaveLength(7)
+      for (const line of inks) {
+        expect(line.color).toBe(line.ai ? TEXT : ON_YOU)
+        expect(line.opacity).toBe('1')
+      }
     }
-    await expect(firstLine).toHaveCSS('color', DIM)
-    await expect(thesis).toHaveCSS('color', TEXT)
-    await expect(page.locator('[data-step="3"] .step__index')).toHaveCSS('color', LIGHT)
-    await expect(page.locator('[data-step="1"] .step__index')).toHaveCSS('color', DIM)
-    // Dimmed by colour, never by opacity (contrast stays measurable).
-    await expect(transcript.locator('.said').first()).toHaveCSS('opacity', '1')
-
-    await centre(page, '[data-step="1"]')
-    await expect(transcript).toHaveAttribute('data-active-step', '1')
-    await expect(firstLine).toHaveCSS('color', TEXT)
-    await expect(thesis).toHaveCSS('color', DIM)
   })
 
   test('focus inside a reveal block shows it at once', async ({ page, isMobile }) => {
@@ -353,9 +381,10 @@ test.describe('layout', () => {
     expect(await cutOffAtEdges(page)).toEqual([])
   })
 
-  test('the hero light stands beside the title, never on its letters', async ({ page }, testInfo) => {
+  test('the hero light stands between the title’s halves, never on its letters', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'desktop', 'the wide layout; one browser is enough')
     // The title lies under the WebGL canvas: light over its glyphs would take their contrast away.
+    // ADR-013: «Менше шуму.» · the slot · «Більше себе.» — the light keeps 16 px from both halves.
     for (const [width, height] of [
       [1440, 900],
       [1366, 768],
@@ -370,17 +399,38 @@ test.describe('layout', () => {
         .poll(() =>
           page.evaluate(() => {
             const range = document.createRange()
-            let right = 0
-            for (const line of Array.from(document.querySelectorAll('.hero__title .display__line'))) {
+            const glyphs = (line: Element): DOMRect => {
               range.selectNodeContents(line)
-              right = Math.max(right, range.getBoundingClientRect().right)
+              return range.getBoundingClientRect()
             }
+            const [before, after] = Array.from(document.querySelectorAll('.hero__title .display__line')).map(glyphs)
             const orb = document.querySelector('.hero__orb')!.getBoundingClientRect()
-            return Math.round(orb.left - right)
+            return Math.round(Math.min(orb.left - before!.right, after!.left - orb.right))
           }),
         )
         .toBeGreaterThanOrEqual(16)
     }
+  })
+
+  // From scene.spec.ts (ADR-013): no GPU needed — reduced motion keeps the scene off, the test owns
+  // data-gl. The holders of the stills are the hero's light, #mind's portrait and the final's form; the
+  // conversation drawing and the diary's map are gone.
+  test('the static light follows data-gl: shown while loading or off, gone when on', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto('/')
+    const orb = page.locator('.hero__orb')
+    for (const [status, opacity] of [
+      ['loading', '1'],
+      ['off', '1'],
+      ['on', '0'],
+    ] as const) {
+      await page.evaluate((value) => (document.documentElement.dataset.gl = value), status)
+      await expect(orb).toHaveCSS('opacity', opacity)
+      await expect(page.locator('.mind__still')).toHaveCSS('visibility', status === 'on' ? 'hidden' : 'visible')
+      expect(await page.locator('.final__art').evaluate((element) => getComputedStyle(element, '::before').visibility)).toBe(status === 'on' ? 'hidden' : 'visible')
+      expect(await page.locator('.final__art').evaluate((element) => getComputedStyle(element, '::before').backgroundImage)).toContain('/field-still.png')
+    }
+    await expect(page.locator('.how__motion, .how__visual, .diary__sky, .diary__art')).toHaveCount(0)
   })
 
   test('the light opens the chat, out of the tab order and the accessibility tree', async ({ page }, testInfo) => {
@@ -500,6 +550,27 @@ test.describe('layers', () => {
       expect(at.target, selector).toBeGreaterThanOrEqual(0)
       expect(at.target, selector).toBeLessThan(at.vignette) // text over the vignette…
       expect(at.vignette, selector).toBeLessThan(at.canvas) // …which is over the light
+    }
+
+    // ADR-013: each section paints its sky under the light — a section that made a stacking context
+    // would take its text down with its sky, under the canvas.
+    for (const section of ['.hero', '.mind', '#how', '#scenarios', '#diary', '.night', '#final']) {
+      const sky = await page.locator(section).first().evaluate((node) => {
+        node.scrollIntoView({ block: 'center', behavior: 'instant' })
+        const box = node.getBoundingClientRect()
+        const y = Math.min(Math.max(box.top + 40, 100), window.innerHeight - 40)
+        const stack = document.elementsFromPoint(4, y)
+        const style = getComputedStyle(node)
+        return {
+          own: stack.indexOf(node),
+          canvas: stack.findIndex((element) => element.matches('.scene')),
+          image: style.backgroundImage,
+          context: [style.zIndex, style.transform, style.opacity, style.filter, style.isolation, style.willChange, style.mixBlendMode, style.contain],
+        }
+      })
+      expect(sky.own, section).toBeGreaterThan(sky.canvas)
+      expect(sky.image, section).toMatch(/gradient\(/)
+      expect(sky.context, section).toEqual(['auto', 'none', '1', 'none', 'auto', 'auto', 'normal', 'none'])
     }
   })
 
