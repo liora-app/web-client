@@ -1,0 +1,150 @@
+[
+  {
+    "path": ".gitignore",
+    "sha256": "9671eb5784a683eb6bc6d972982b05dedb11caf4e641cee0db480a2c98c89f23"
+  },
+  {
+    "path": "index.html",
+    "sha256": "eeab15f03ea7e536d64396a0322d727793dc44e218be6ddcd4cfebfceab73141"
+  },
+  {
+    "path": "package-lock.json",
+    "sha256": "0029c787a7f5ad58a89cab10797315d6352a4768a479643161e387e614b709c8"
+  },
+  {
+    "path": "package.json",
+    "sha256": "caca187bd00b7981aec0408dba5d1b257c84c28f46f006409e66f1d3cda32aa7"
+  },
+  {
+    "path": "public/fonts/jost/jost-cyrillic.woff2",
+    "sha256": "732ac61fdb7b964d3edfe40fe4a96aba1d1e34c349aebf0353118f8bda4aabdb"
+  },
+  {
+    "path": "public/fonts/jost/jost-latin-ext.woff2",
+    "sha256": "312ef2b80cefd8d6fd0e8553536862e7103f80be117a5aeba333dac68e4c0a6a"
+  },
+  {
+    "path": "public/fonts/jost/jost-latin.woff2",
+    "sha256": "7726a5cd6f3c0e876c028ea2a643d45f7aad4b0f164b70966c669f4a4668f4b9"
+  },
+  {
+    "path": "public/fonts/jost/OFL.txt",
+    "sha256": "1af3438a4d5f0ed2bdbc5751a5a67ebf6d537334161184b7fbb68503ef0ea0c5"
+  },
+  {
+    "path": "public/fonts/solitus/OFL.txt",
+    "sha256": "a02126f43a441ece0f7a70d57e426b38c7fafc25ad9ec76d0fedecded06f4b5d"
+  },
+  {
+    "path": "public/fonts/solitus/Solitus.ttf",
+    "sha256": "19b1b985b433ac01ca26bb9166cfd14d3c0fc8338e18a5ede3c3d10eccf22c99"
+  },
+  {
+    "path": "public/fonts/solitus/solitus.woff2",
+    "sha256": "e356859fe9a293b56c0a0dee3d459771bdd2ec78960edee983bc24b8606b64fe"
+  },
+  {
+    "path": "public/icon.svg",
+    "sha256": "e3a054c7a197a2d49442e7f0554a1776ad2bccdd5a7ec570d002d210aa3370e6"
+  },
+  {
+    "path": "public/models/companion.glb",
+    "sha256": "ef64a62eb5088242d58cddffdc2686a8d5c716c6c95d2b999c7bc46a1fff6a31"
+  },
+  {
+    "path": "README.md",
+    "sha256": "ddadd6eff9653ec23733d7c19104f65f186a7b649a44239a7126d83a868c96d5"
+  },
+  {
+    "path": "scripts/verify-cinematic.mjs",
+    "sha256": "41f4a1e9de2ccf68a968bde13ed15f2febb6d186ff2786112f330c2245a5a7bf"
+  },
+  {
+    "path": "scripts/verify-production.mjs",
+    "sha256": "364360691ce75a446c9f4b875d957a3f030cd928924448dd3b8cafdc24b0d502"
+  },
+  {
+    "path": "scripts/verify.mjs",
+    "sha256": "2adc6fb8d40b3372d858606fb2c90388a4ccf20e6380d2f1ee8ceeeafb12062d"
+  },
+  {
+    "path": "SPECIFICATION-CINEMATIC.md",
+    "sha256": "2a58d0114407cf76eb012d6ea75b4f888fa5809fbadcb62ccaf7c44e6292f0f9"
+  },
+  {
+    "path": "SPECIFICATION-UI-FIX.md",
+    "sha256": "d053be1c1256dd6d3d213c751f6935a17b27e221b8fd61b461dea0e79f37d52d"
+  },
+  {
+    "path": "SPECIFICATION.md",
+    "sha256": "ce67f01baa205c4fc35ab6cb03c949c5598895e3310d7e57169d3a18a7229515"
+  },
+  {
+    "path": "src/fonts.css",
+    "sha256": "fc7079309d5bac313389cf304eb444bac6a54c92f10b3f82eb5eae2aafb4ec1f"
+  },
+  {
+    "path": "src/gl/artifacts.ts",
+    "sha256": "777be70e4273fcba7c9fef8a9a0787bbf024d6e2e79362bcc851f02b87c5e40f"
+  },
+  {
+    "path": "src/gl/companion.ts",
+    "sha256": "5fd5e135046cf275a5b19ce60040cb60a73a2818310f48d43e60ff7e283bc72a"
+  },
+  {
+    "path": "src/gl/craft.ts",
+    "sha256": "4ffc7766e5d439c80149113cf182de02ddb7bb54af68fe1c996ea5a9f1b94466"
+  },
+  {
+    "path": "src/gl/environment.ts",
+    "sha256": "5600c645913edc527d2ab2d6c7f2f9dfb20379b4f543486c542976473930d9dc"
+  },
+  {
+    "path": "src/gl/island.ts",
+    "sha256": "748da5a025a8d1e42ff0a39c070f12d20810d71d0043fe7b392e89857ea9521f"
+  },
+  {
+    "path": "src/gl/lotus.ts",
+    "sha256": "3faab930e8a92796b019667d81cc1a1a49ef35a488105382243f1e38a227364b"
+  },
+  {
+    "path": "src/gl/noise.ts",
+    "sha256": "9ed201b0c1ea3b2b950b71f8af6d5ca92722c4a131a55f17f9f3330a11b36753"
+  },
+  {
+    "path": "src/gl/optics.ts",
+    "sha256": "8c942f8e59f15d0a26eac123a00a8f03115fa94eaea6f7413e6129ce2d674ab6"
+  },
+  {
+    "path": "src/gl/scene.ts",
+    "sha256": "72276737b3eb7c14880ecf0c457c705873badf6421ef2e4595cb0e2800ce62de"
+  },
+  {
+    "path": "src/main.ts",
+    "sha256": "bafaa99307000069afae1985f8bb93e913b2eba382cb544b63291fd0db5d3eb3"
+  },
+  {
+    "path": "src/style.css",
+    "sha256": "d95b1de45c3770827320c28fd6f56e5d19c1e150fe7133d52a87b5159b248839"
+  },
+  {
+    "path": "src/ui/chat.ts",
+    "sha256": "79e028be6e221b43eb95965536f2a628c967a625b0e27544a55c645e58a434a4"
+  },
+  {
+    "path": "src/ui/sound.ts",
+    "sha256": "3dccedf720a7b3fc36262c4227be2b56cb2c518114895479043bde3249d175c9"
+  },
+  {
+    "path": "src/ui/voice.ts",
+    "sha256": "5f8072b77ef22493ed1116d46fc87646943dccfd422c2696582d881298f9ca58"
+  },
+  {
+    "path": "tsconfig.json",
+    "sha256": "69aedf2c2a34ea29445670361e438a550194e94245f741ffac96d73733f728bd"
+  },
+  {
+    "path": "vite.config.ts",
+    "sha256": "6bd6cdc36ea926fa350169dbdafa24b7b6425e7d6ca6f9c72ffbd2032ffdc17e"
+  }
+]
