@@ -160,8 +160,8 @@ const SEAL_ATTACK=.12,SEAL_DECAY=.22,SEAL_PEAK=3.4
 export function createCocoon(kit:Kit):Cocoon {
   // A little smaller than the cradle was carved for: from the hero camera the crown now sits under the lotus.
   const group=new THREE.Group();group.name='Kintsugi privacy cocoon';group.position.set(-1.05,0,1.55);group.scale.setScalar(.82)
-  // Carved cradle: foot, inlaid waist, scalloped rim with one lobe under each shard, a shallow bowl for the egg. Its
-  // wobble is a hand-carver's (.06), not a lathe's: at .035 the stone read as a turned, machined cylinder.
+  // Carved cradle: foot, inlaid waist, scalloped rim with one lobe under each shard, a shallow bowl for the egg.
+  // Its wobble is a hand-carver's (.06), not a lathe's: at .035 the stone read as a turned, machined cylinder.
   const wobble=(angle:number,y:number):number=>1+fractal(Math.sin(angle)*1.4+7,y*2.6,Math.cos(angle)*1.4)*.06
   const cradle=[[0,-.06],[.37,-.06],[.4,-.025],[.414,.025],[.418,.068],[.404,.093],[.374,.104],[.336,.11],[.312,.124],[.302,.148],[.298,.163],[.287,.166],[.287,.184],[.298,.187],[.302,.205],[.306,.226],[.297,.246],[.276,.258],[.25,.261],[.233,.255],[.19,.239],[.12,.229],[0,.225]]
   const pedestal=new THREE.Mesh(kit.lathe(cradle,64,(angle,y,r)=>r*wobble(angle,y)+(y>.2&&r>.2?.006*Math.cos(angle*6):0)),kit.stone);pedestal.castShadow=pedestal.receiveShadow=true;pedestal.name='Carved cocoon cradle';group.add(pedestal)
