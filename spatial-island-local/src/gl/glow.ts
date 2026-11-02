@@ -35,13 +35,14 @@ export function coreBreath(time:number):number {
 }
 
 /**
- * Motion time that stops (rather than snapping back to 0) under prefers-reduced-motion and never leaps more than .1 s
- * after a stall, plus a 0…1 'live' amplitude easing in or out over ~.5 s, so toggling the setting never teleports anything.
+ * Motion time that stops (rather than snapping back to 0) under prefers-reduced-motion and never leaps more than .25 s
+ * after a stall (the scene's own delta clamp, so a slow but steady renderer still runs at wall-clock speed), plus a 0…1
+ * 'live' amplitude easing in or out over ~.5 s, so toggling the setting never teleports anything.
  */
 export interface MotionClock {time:number;live:number;tick:(delta:number,reduced:boolean)=>void}
 export function createMotionClock():MotionClock {
   const clock:MotionClock={time:0,live:-1,tick(delta,reduced){
-    const step=Math.min(Math.max(delta,0),.1);if(clock.live<0)clock.live=reduced?0:1
+    const step=Math.min(Math.max(delta,0),.25);if(clock.live<0)clock.live=reduced?0:1
     clock.time+=reduced?0:step;clock.live+=((reduced?0:1)-clock.live)*(1-Math.exp(-step/.18))
   }}
   return clock
