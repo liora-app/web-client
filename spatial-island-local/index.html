@@ -36,7 +36,7 @@
     <section class="stage is-active" data-stage="0" id="home" aria-labelledby="hero-title">
       <div class="stage-content hero">
         <p class="eyebrow"><span class="live-dot"></span> Ваш особистий простір</p>
-        <h1 id="hero-title">Почуйте<br /><em>себе.</em></h1>
+        <h1 id="hero-title" tabindex="-1">Почуйте<br /><em>себе.</em></h1>
         <p class="hero__description">Коли ззовні забагато шуму.<br />Місце для ваших думок,<br class="desktop-break" /> почуттів і пауз.</p>
         <a class="primary" href="#conversation" data-go="4"><span>Почати розмову</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14" /></svg></a>
         <p class="fine-print">AI-помічник для саморефлексії</p>
@@ -46,7 +46,7 @@
     <section class="stage" data-stage="1" id="journal" aria-labelledby="journal-title" inert>
       <div class="stage-content journal-panel glass">
         <p class="eyebrow">02 / Ваш напрямок</p>
-        <h2 id="journal-title">З чого <em>почнемо?</em></h2>
+        <h2 id="journal-title" tabindex="-1">З чого <em>почнемо?</em></h2>
         <div class="journal-grid"><div class="journal-choice"><div class="directions" role="tablist" aria-label="Напрямок розмови">
           <button class="direction is-selected" role="tab" aria-selected="true" aria-controls="direction-detail" id="direction-0" data-direction="0"><span>01 / Розмова</span><strong>Можна просто поговорити.</strong><small>Про день, думки й усе між ними.</small><b aria-hidden="true">↗</b></button>
           <button class="direction" role="tab" aria-selected="false" aria-controls="direction-detail" id="direction-1" tabindex="-1" data-direction="1"><span>02 / Спокій</span><strong>Зробіть місце для видиху.</strong><small>Коли хочеться трохи менше шуму.</small><b aria-hidden="true">↗</b></button>
@@ -64,7 +64,7 @@
       <div class="stage-content privacy-panel glass">
         <p class="eyebrow">03 / Приватність і безпека</p>
         <p class="quiet-label">З повагою до вашого особистого</p>
-        <h2 id="privacy-title">Ви вирішуєте,<br /><em>чим ділитися.</em></h2>
+        <h2 id="privacy-title" tabindex="-1">Ви вирішуєте,<br /><em>чим ділитися.</em></h2>
         <p class="body-copy">Зберігайте лише обрані тези, змінюйте їх або видаляйте. Розмову можна завершити будь-якої миті.</p>
         <div class="privacy-points"><span>Тільки ваш вибір</span><span>Без акаунта</span><span>У пам’яті цієї вкладки</span></div>
         <p class="disclaimer">Ця локальна демоверсія відповідає демонстраційно, а записи зникають після оновлення. Liora — AI, не людина, це не терапія й не медична допомога.</p>
@@ -73,7 +73,7 @@
     <section class="stage" data-stage="3" id="questions" aria-labelledby="faq-title" inert>
       <div class="stage-content faq-panel glass">
         <p class="eyebrow">04 / Якщо хочеться знати більше</p>
-        <h2 id="faq-title">Кілька <em>відповідей.</em></h2>
+        <h2 id="faq-title" tabindex="-1">Кілька <em>відповідей.</em></h2>
         <div class="accordion">
           <div class="faq-item"><h3><button aria-expanded="false" aria-controls="answer-0" id="question-0" data-lantern="0"><span>А якщо я не знаю, що написати?</span><b aria-hidden="true">+</b></button></h3><div id="answer-0" role="region" aria-labelledby="question-0" hidden><p>Це цілком природно. Ви можете обрати готовий сценарій або просто написати одне слово про свій стан — Liora м’яко допоможе розплутати думки без поспіху.</p></div></div>
           <div class="faq-item"><h3><button aria-expanded="false" aria-controls="answer-1" id="question-1" data-lantern="1"><span>Хто зі мною розмовлятиме?</span><b aria-hidden="true">+</b></button></h3><div id="answer-1" role="region" aria-labelledby="question-1" hidden><p>З вами спілкується алгоритмічний AI-компаньйон, налаштований на емпатичне слухання та спокійні запитання для саморефлексії. Тут немає оцінок чи критики.</p></div></div>
@@ -84,7 +84,7 @@
     </section>
     <section class="stage" data-stage="4" id="conversation" aria-labelledby="chat-title" inert>
       <div class="stage-content conversation-panel">
-        <div class="conversation-heading"><span class="live-dot"></span><h2 id="chat-title">Я поруч. <em>Слухаю вас.</em></h2><span class="demo-label">Локальна демоверсія</span></div>
+        <div class="conversation-heading"><span class="live-dot"></span><h2 id="chat-title" tabindex="-1">Я поруч. <em>Слухаю вас.</em></h2><span class="demo-label">Локальна демоверсія</span></div>
         <div class="scenario-chips" aria-label="Почніть із готової фрази"><button data-scenario="0">+ Вільна розмова</button><button data-scenario="1">Розбір ситуації</button><button data-scenario="2">Відновити спокій</button></div>
         <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions" tabindex="0" aria-label="Повідомлення розмови"><p class="chat-welcome">Можна почати з одного слова. Поспішати нікуди.</p></div>
         <div class="chat-options"><label class="toggle"><input type="checkbox" id="private-mode" checked /><span aria-hidden="true"></span>Не зберігати цю розмову</label><button class="notes-toggle" aria-expanded="false" aria-controls="notes-panel">Важливе <span data-note-count>0</span></button></div>
