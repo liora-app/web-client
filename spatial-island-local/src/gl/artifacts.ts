@@ -114,10 +114,11 @@ export function createArtifacts():Artifacts {
   const paperTime={value:0},papers:THREE.Group[]=[]
   for(let i=0;i<3;i++){
     const texture=paperSheetTexture(i)
-    // Unbleached washi at night by an oil lamp: an off-white albedo under white, the sky barely reflects in it. The
-    // warmth is the lamp's alone: a small constant glow, the rest falling off fast with distance, so the sheet is warm
-    // at the bottom and cools to moonlight at the top instead of being ochre all over.
-    const paper=environment(new THREE.MeshStandardMaterial({color:'#e4dfd2',map:texture,side:THREE.DoubleSide,roughness:.92,alphaTest:.5,alphaToCoverage:true,bumpMap:texture,bumpScale:.0035,emissive:'#ffc890',emissiveMap:texture,emissiveIntensity:.06}),.4)
+    // Unbleached washi at night by an oil lamp: a grey-beige albedo that sits well under white (material × sheet tone
+    // ≈ .47 linear, no brighter than the old ochre paper), the sky barely reflects in it. The warmth is the lamp's
+    // alone: a small constant glow, the rest falling off fast with distance, so the sheet is warm at the bottom and
+    // cools to moonlight at the top instead of being ochre all over.
+    const paper=environment(new THREE.MeshStandardMaterial({color:'#cfcabe',map:texture,side:THREE.DoubleSide,roughness:.92,alphaTest:.5,alphaToCoverage:true,bumpMap:texture,bumpScale:.0035,emissive:'#ffc890',emissiveMap:texture,emissiveIntensity:.06}),.4)
     paper.onBeforeCompile=shader=>{
       shader.uniforms.uPaperTime=paperTime;shader.uniforms.uPaperPhase={value:i*2.1};shader.uniforms.uLamp=lampWorld
       shader.vertexShader='uniform float uPaperTime,uPaperPhase;varying vec3 vPaperWorld;\n'+shader.vertexShader
