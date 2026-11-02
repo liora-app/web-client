@@ -5,7 +5,7 @@
   },
   {
     "path": "index.html",
-    "sha256": "d1593b239afbae3c0dba4c8bf0e218f49e79d19ee6fa23d67e807128c6a1485b"
+    "sha256": "cdf6b594e82edaf81e43367eb48f8be2ff8f274a8cc32d423d61f6ec056bc91a"
   },
   {
     "path": "package-lock.json",
@@ -81,11 +81,11 @@
   },
   {
     "path": "scripts/verify-production.mjs",
-    "sha256": "c66be0cbbeb0275c1ecb7fe0e7f69ea1b0955d610cf1686f0ba5cd06b42e36cb"
+    "sha256": "1d130adac816af3e05305a8f3df444d349555757203ccffc874c6274fe2d7a1d"
   },
   {
     "path": "scripts/verify.mjs",
-    "sha256": "c2a4355b4c355f6030ec343fecdcd3ca20c6e322ae937ec8481ff1c2e23745fe"
+    "sha256": "2a577fb6f6cb626a2393503f2f33ab1b1d04fbea5ed47b3a72b668b1f23d2467"
   },
   {
     "path": "SPECIFICATION-CINEMATIC.md",
@@ -97,7 +97,7 @@
   },
   {
     "path": "SPECIFICATION.md",
-    "sha256": "a93538d4c278a5defc1e37b4e95f36d0005776d44212d5f972fcca10a7b3cd8f"
+    "sha256": "588e068ef277a74c03a2aa71212e40627f887257e3a2d9e81a6f0923e86a3841"
   },
   {
     "path": "src/fonts.css",
@@ -173,23 +173,19 @@
   },
   {
     "path": "src/main.ts",
-    "sha256": "73b5afe00af802dc6d6ddb2eaa7609b2ec53ca7901c6631f13e5e90210756768"
+    "sha256": "38aaee31f7bee3f23e10a55e5825da094611ac8f441fd68605398626034ceff7"
   },
   {
     "path": "src/style.css",
-    "sha256": "e2ac2ab0e07c1950d9d283d591d9d827db698eaa4cd015281d1e6cdd28f87add"
+    "sha256": "474f18cfaf3449634a61e6d6a033242739e8dd97c4e12fe8573bd1923a9cee52"
   },
   {
     "path": "src/ui/chat.ts",
-    "sha256": "51a60e5310d47e50af0caac4aedfbdb766f688f11074abf7568806105ca221c8"
+    "sha256": "5183e02a2e5b4438a44263d8663f48e9fc0b6c76d37b390996ab0d0423972502"
   },
   {
     "path": "src/ui/sound.ts",
     "sha256": "11dcb956d1d24fe1a66a057adf75cc7d8ddc3d90309aa1e25f1a87f4a029eb7a"
-  },
-  {
-    "path": "src/ui/voice.ts",
-    "sha256": "5f8072b77ef22493ed1116d46fc87646943dccfd422c2696582d881298f9ca58"
   },
   {
     "path": "tsconfig.json",
@@ -197,6 +193,6 @@
   },
   {
     "path": "vite.config.ts",
-    "sha256": "f1b650139a14a9e58d34f26654c262017de7c19d57646c446fd8e4dbe2ea4ef1"
+    "sha256": "f2ec0f7a8bc45cc95f3a08b63dded221bf29f8e36cdc9e4d88408bc595842ecc"
   }
 ]

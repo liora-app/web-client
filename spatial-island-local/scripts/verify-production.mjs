@@ -53,11 +53,11 @@ try {
   pass('Real navigation, FAQ, help and hero CTA work with normal scroll animation')
   await page.locator('#chat-input').fill('Сьогодні хочеться трохи спокою')
   await page.locator('.send').click()
-  await page.waitForFunction(() => document.querySelector('.message--assistant') && !document.querySelector('#chat-messages').hasAttribute('aria-busy'), null, { timeout: 12000 })
+  await page.locator('.message--notice').waitFor({ timeout: 12000 })
   const fit = await page.locator('.conversation-panel').evaluate(panel => ({ top: panel.getBoundingClientRect().top, bottom: panel.getBoundingClientRect().bottom, height: innerHeight, overflow: panel.scrollHeight - panel.clientHeight }))
   assert.ok(fit.top > 80 && fit.bottom <= fit.height - 55 && fit.overflow <= 1)
   await capture('production-conversation')
-  pass('Production conversation responds and remains inside the viewport')
+  pass('Production conversation shows the demo notice and remains inside the viewport')
 
   const motion = await context.newPage()
   motion.on('pageerror', error => report.errors.push(error.message))

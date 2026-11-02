@@ -12,12 +12,13 @@ gsap.ticker.lagSmoothing(0)
 history.scrollRestoration='manual';window.scrollTo(0,0)
 const root=document.documentElement,host=document.querySelector<HTMLElement>('#webgl-container')!,entry=document.querySelector<HTMLElement>('.entry')!,notice=document.querySelector<HTMLElement>('.webgl-notice')!,toast=document.querySelector<HTMLElement>('.toast')!,dialog=document.querySelector<HTMLDialogElement>('.help-dialog')!
 const reducedQuery=matchMedia('(prefers-reduced-motion: reduce)')
-let reduced=reducedQuery.matches,scene:SanctuaryScene|undefined,disposed=false,stage=0,selectedDirection=0,selectedLantern=-1,toastTimer=0,currentVelocity=0,sceneGeneration=0,sceneTalking=false,sceneVolume=0
+let reduced=reducedQuery.matches,scene:SanctuaryScene|undefined,disposed=false,stage=0,selectedDirection=0,selectedLantern=-1,toastTimer=0,currentVelocity=0,sceneGeneration=0
 const state={p:0},cleanup:(()=>void)[]=[]
 // Smoothed wheel only when motion is welcome, from the very first frame (motion() keeps it in sync).
 const lenis=new Lenis({lerp:.08,smoothWheel:!reduced,autoRaf:false,prevent:node=>Boolean(node.closest('#chat-messages,.notes-panel,dialog,textarea')||node.classList.contains('stage-content')&&node.scrollHeight>node.clientHeight+2)})
 const notify=(text:string):void=>{clearTimeout(toastTimer);toast.textContent=text;toast.hidden=false;toastTimer=window.setTimeout(()=>{toast.hidden=true},6500)}
-const chat=setupChat(value=>{sceneTalking=value;scene?.setTalking(value)},value=>{sceneVolume=value;scene?.setVoice(value)},notify)
+// openHelp is declared further down; the notice button calls it only after boot.
+const chat=setupChat(notify,()=>openHelp())
 const soundDispose=setupSound(document.querySelector<HTMLButtonElement>('[data-sound]')!,notify)
 const sections=[...document.querySelectorAll<HTMLElement>('.stage')]
 // One name per stop, everywhere it is named: navigation, the progress steps (their label and tooltip) and the footer.
@@ -310,7 +311,7 @@ const startScene=async():Promise<void>=>{
     if(disposed||generation!==sceneGeneration){created.dispose();return}
     scene=created
     if(lostDuringBoot)return
-    scene.setProgress(shownProgress,cutStop<0?currentVelocity:0);scene.setReduced(reduced);scene.selectLantern(selectedLantern);scene.turnPage(selectedDirection,true);scene.setTalking(sceneTalking);scene.setVoice(sceneVolume)
+    scene.setProgress(shownProgress,cutStop<0?currentVelocity:0);scene.setReduced(reduced);scene.selectLantern(selectedLantern);scene.turnPage(selectedDirection,true)
     scene.setTransit(arrival.transit?arrival.target:-1);scene.setPaused(dialog.open);framePanels()
     // Commit the canvas' hidden start style first, so data-webgl=ready fades it in (CSS).
     const canvas=host.querySelector('canvas');if(canvas)void getComputedStyle(canvas).opacity
