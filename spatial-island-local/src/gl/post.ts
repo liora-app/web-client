@@ -14,10 +14,62 @@ export function configureRenderer(renderer:THREE.WebGLRenderer):void {
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap
 }
 
+export type Tier='high'|'medium'|'low'
+/**
+ * What a quality tier may change. Every knob here lives outside the shader program keys (render-target sizes and
+ * sample counts, the shadow map size, update rates, visibility of two decorative layers), so moving between tiers never
+ * recompiles a shader. Light count, transmission .35 and the bloom settings stay fixed on every tier.
+ */
+export interface QualityPreset {
+  tier:Tier
+  /** MSAA samples of the HDR scene buffer (the film grain masks the missing AA on the lower tiers). */
+  samples:number
+  /** Bloom chain resolution relative to the drawing buffer (the pass itself already starts at half of it). */
+  bloomScale:number
+  /** renderer.transmissionResolutionScale: the lotus' see-through pass (MSAA ×4, HalfFloat, mipmapped). */
+  transmission:number
+  shadowSize:number
+  /** Moon shadow refreshes per second while nothing moves fast (motion-14a: by time, not by frame count). */
+  shadowHz:number
+  /** Foreground bokeh and the willow's hair-thin filaments: sub-pixel additive detail that only aliases without MSAA. */
+  finery:boolean
+}
+export const qualityPresets:Record<Tier,QualityPreset>={
+  high:{tier:'high',samples:2,bloomScale:1,transmission:.25,shadowSize:2048,shadowHz:30,finery:true},
+  medium:{tier:'medium',samples:0,bloomScale:.5,transmission:.2,shadowSize:1024,shadowHz:30,finery:true},
+  low:{tier:'low',samples:0,bloomScale:.5,transmission:.15,shadowSize:1024,shadowHz:15,finery:false},
+}
+/**
+ * Rungs of the adaptive ladder, best first: a tier plus a device-pixel-ratio ceiling (phones get a lower one).
+ * The start rung comes from the GPU name; measured frame pacing then only moves down (or probes one rung back up).
+ */
+export const qualityLadder:{tier:Tier;dpr:number;mobileDpr:number}[]=[
+  {tier:'high',dpr:1.75,mobileDpr:1.5},{tier:'high',dpr:1.5,mobileDpr:1.35},{tier:'medium',dpr:1.25,mobileDpr:1.25},{tier:'medium',dpr:1.1,mobileDpr:1.1},{tier:'low',dpr:1,mobileDpr:1},
+]
+/** Start rung from the unmasked GPU name (a guess the frame pacing corrects): integrated and older mobile GPUs start lower. */
+export function detectTier(renderer:THREE.WebGLRenderer):{tier:Tier;gpu:string} {
+  const gl=renderer.getContext(),info=gl.getExtension('WEBGL_debug_renderer_info')
+  const gpu=String((info?gl.getParameter(info.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER))??'')
+  const coarse=matchMedia('(pointer: coarse)').matches
+  if(!coarse&&/geforce (rtx|gtx)|nvidia rtx|quadro|radeon rx|radeon pro|arc\(tm\)|intel.*arc /i.test(gpu))return {tier:'high',gpu}
+  if(/swiftshader|llvmpipe|softpipe|software|basic render|microsoft basic|mali-[t4]|mali-g[35]\d|adreno \(tm\) [2-5]\d\d|adreno [2-5]\d\d|powervr|sgx|intel.*(hd graphics|gma)|vivante|videocore/i.test(gpu))return {tier:'low',gpu}
+  if(/intel|apple gpu|apple m[1-4](?! (pro|max|ultra))|mali|adreno|radeon\(tm\) graphics|radeon graphics|radeon vega|vega \d+ graphics|geforce mx|xclipse|immortalis|maleoon/i.test(gpu)||coarse)return {tier:'medium',gpu}
+  return {tier:'high',gpu}
+}
+
 export interface Post {
   setSize:(width:number,height:number,dpr:number)=>void
   render:(delta:number,elapsed:number,reduced:boolean)=>void
   inspect:()=>{bloom:number[];grain:number;exposure:number}
+  /** The HDR buffer the scene pass draws into; programs must be precompiled against it (tone mapping off, linear). */
+  target:()=>THREE.WebGLRenderTarget
+  /** Change MSAA samples / bloom resolution in place (render targets only, no shader is rebuilt). */
+  setQuality:(preset:QualityPreset)=>void
+  /** Compile the bloom and film programs in parallel ahead of the first frame (resolves when they are linked). */
+  warmup:()=>Promise<unknown>
+
+  /** Pixel sizes of the scene buffer and the first bloom level, for the dev perf readout. */
+  sizes:()=>{scene:number[];bloom:number[];samples:number}
   dispose:()=>void
 }
 
@@ -50,8 +102,9 @@ void main(){
 }`
 const quadVertex='precision highp float;uniform mat4 modelViewMatrix,projectionMatrix;attribute vec3 position;attribute vec2 uv;varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}'
 
-export function createPost(renderer:THREE.WebGLRenderer,scene:THREE.Scene,camera:THREE.Camera):Post {
-  const targetBuffer=new THREE.WebGLRenderTarget(innerWidth,innerHeight,{type:THREE.HalfFloatType,samples:2})
+export function createPost(renderer:THREE.WebGLRenderer,scene:THREE.Scene,camera:THREE.Camera,preset:QualityPreset):Post {
+  let samples=preset.samples,bloomScale=preset.bloomScale,width=innerWidth,height=innerHeight,ratio=1
+  const targetBuffer=new THREE.WebGLRenderTarget(innerWidth,innerHeight,{type:THREE.HalfFloatType,samples})
   const composer=new EffectComposer(renderer,targetBuffer),renderPass=new RenderPass(scene,camera)
   // Linear-HDR threshold with a soft knee: only real emitters (lotus core, lanterns, moon, fireflies) bloom;
   // lit paper, petals and skin stay below it. A small radius keeps the glow on the source instead of hazing the frame.
@@ -62,8 +115,26 @@ export function createPost(renderer:THREE.WebGLRenderer,scene:THREE.Scene,camera
     uShadowTint:{value:new THREE.Vector3(.94,1.01,1.04)},uLightTint:{value:new THREE.Vector3(1.05,1.,.9)},
   }}))
   composer.addPass(renderPass);composer.addPass(bloom);composer.addPass(film)
+  // The composer sizes every pass to the full drawing buffer; the bloom chain is then re-sized to its own scale.
+  const fitBloom=():void=>{if(bloomScale<1)bloom.setSize(Math.max(2,Math.round(width*ratio*bloomScale)),Math.max(2,Math.round(height*ratio*bloomScale)))}
   return {
-    setSize(width,height,dpr){composer.setPixelRatio(dpr);composer.setSize(width,height);film.uniforms.uAspect.value=width/height},
+    setSize(w,h,dpr){width=w;height=h;ratio=dpr;composer.setPixelRatio(dpr);composer.setSize(w,h);fitBloom();film.uniforms.uAspect.value=w/h},
+    target(){return composer.renderTarget1},
+    setQuality(next){
+      if(next.samples!==samples){samples=next.samples;composer.renderTarget1.samples=samples;composer.reset()}
+      if(next.bloomScale!==bloomScale){bloomScale=next.bloomScale;composer.setSize(width,height);fitBloom()}
+    },
+    warmup(){
+      // Same render-target state as the real passes: bloom draws off-screen (linear, no tone mapping), film to the screen.
+      const quad=new THREE.PlaneGeometry(2,2),offscreen=new THREE.Scene(),screen=new THREE.Scene(),previous=renderer.getRenderTarget()
+      for(const mat of [bloom.materialHighPassFilter,...bloom.separableBlurMaterials,bloom.compositeMaterial,bloom.blendMaterial])offscreen.add(new THREE.Mesh(quad,mat))
+      screen.add(new THREE.Mesh(quad,film.material))
+      renderer.setRenderTarget(bloom.renderTargetBright);const bloomReady=renderer.compileAsync(offscreen,camera)
+      renderer.setRenderTarget(null);const filmReady=renderer.compileAsync(screen,camera)
+      renderer.setRenderTarget(previous)
+      return Promise.all([bloomReady,filmReady]).finally(()=>quad.dispose())
+    },
+    sizes(){const bright=bloom.renderTargetBright;return {scene:[composer.renderTarget1.width,composer.renderTarget1.height],bloom:[bright.width,bright.height],samples}},
     render(delta,elapsed,reduced){film.uniforms.uTime.value=reduced?0:elapsed;film.uniforms.toneMappingExposure.value=renderer.toneMappingExposure;composer.render(delta)},
     inspect(){return {bloom:[bloom.strength,bloom.radius,bloom.threshold],grain:film.uniforms.uGrain.value,exposure:renderer.toneMappingExposure}},
     dispose(){bloom.dispose();film.dispose();renderPass.dispose();composer.dispose()},
