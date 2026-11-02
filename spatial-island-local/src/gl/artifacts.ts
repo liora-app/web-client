@@ -99,23 +99,24 @@ export function createArtifacts():Artifacts {
   flameGeometry.setAttribute('color',new THREE.Float32BufferAttribute(flameColors,3))
   const flame=mesh(flameGeometry,new THREE.MeshBasicMaterial({vertexColors:true}),altar,0,.357,0);flame.castShadow=flame.receiveShadow=false;flame.name='Oil lamp flame'
 
-  // Folios: hand-made paper with a torn edge, brush calligraphy in the paper itself, lit through by the lamp.
+  // Folios: hand-made paper with a deckled edge, brush calligraphy in the paper itself, lit through by the lamp.
   const paperTime={value:0},lampWorld={value:new THREE.Vector3()},papers:THREE.Group[]=[]
   for(let i=0;i<3;i++){
     const texture=paperSheetTexture(i)
-    // Paper at night by an oil lamp: the albedo sits well under white and the sky barely reflects in it; the lamp's
-    // warmth falls off fast with height, so the sheet is warm at the bottom and cools to moonlight at the top.
-    const paper=environment(new THREE.MeshStandardMaterial({color:'#d8ccb4',map:texture,side:THREE.DoubleSide,roughness:.92,alphaTest:.5,alphaToCoverage:true,bumpMap:texture,bumpScale:.0035,emissive:'#ffc890',emissiveMap:texture,emissiveIntensity:.11}),.4)
+    // Unbleached washi at night by an oil lamp: an off-white albedo under white, the sky barely reflects in it. The
+    // warmth is the lamp's alone: a small constant glow, the rest falling off fast with distance, so the sheet is warm
+    // at the bottom and cools to moonlight at the top instead of being ochre all over.
+    const paper=environment(new THREE.MeshStandardMaterial({color:'#e4dfd2',map:texture,side:THREE.DoubleSide,roughness:.92,alphaTest:.5,alphaToCoverage:true,bumpMap:texture,bumpScale:.0035,emissive:'#ffc890',emissiveMap:texture,emissiveIntensity:.06}),.4)
     paper.onBeforeCompile=shader=>{
       shader.uniforms.uPaperTime=paperTime;shader.uniforms.uPaperPhase={value:i*2.1};shader.uniforms.uLamp=lampWorld
       shader.vertexShader='uniform float uPaperTime,uPaperPhase;varying vec3 vPaperWorld;\n'+shader.vertexShader
         .replace('#include <begin_vertex>','#include <begin_vertex>\ntransformed.z+=(sin(position.y*6.+uPaperTime*.85+uPaperPhase)*.6+sin(position.x*5.-uPaperTime*.6+uPaperPhase)*.4)*.007*(.4+.6*smoothstep(-.28,.28,position.y));')
         .replace('#include <project_vertex>','#include <project_vertex>\nvPaperWorld=(modelMatrix*vec4(transformed,1.)).xyz;')
       shader.fragmentShader='uniform vec3 uLamp;varying vec3 vPaperWorld;\n'+shader.fragmentShader
-        .replace('#include <map_fragment>','#include <map_fragment>\nif(!gl_FrontFacing)diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.8,.74,.6),.5);')
-        .replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance*=.12+2.2*exp(-distance(vPaperWorld,uLamp)*3.4);')
+        .replace('#include <map_fragment>','#include <map_fragment>\nif(!gl_FrontFacing)diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.8,.76,.67),.5);')
+        .replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance*=.06+3.*exp(-distance(vPaperWorld,uLamp)*3.4);')
     }
-    paper.customProgramCacheKey=()=>'folio-paper-v2'
+    paper.customProgramCacheKey=()=>'folio-paper-v3'
     const sheet=new THREE.Group();sheet.name=`Floating calligraphy folio ${i+1}`;altar.add(sheet);papers.push(sheet)
     const leaf=mesh(sheetGeometry(i),paper,sheet);leaf.castShadow=true
   }

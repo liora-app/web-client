@@ -58,16 +58,17 @@ function brushNotes(c:CanvasRenderingContext2D,rand:Rand,x0:number,x1:number,bas
   c.restore()
 }
 
-/** An ensō: one breath of a loaded brush. It touches down heavy at the lower left (a small pool of ink), runs round
- * clockwise thinning as the brush empties, and its last third breaks into dry bristle streaks (kasure) that stop
- * short of the start: a hand-made mark with an uneven radius, not a ring with a gap. */
+/** An ensō: one breath of a lightly loaded brush. It touches down at the lower left (a small pool of ink), runs round
+ * clockwise thinning as the brush empties, and from its first third on breaks into dry bristle streaks (kasure) that
+ * stop short of the start: a hand-made mark with an uneven radius, not a ring with a gap. Thin and grey-black on
+ * purpose: a full, dense ring was the darkest mark in the frame and read as a hole between the sheets. */
 function enso(c:CanvasRenderingContext2D,rand:Rand,cx:number,cy:number,radius:number,width:number):void {
   const bristles=22,start=1.9,sweep=5.9,wobble=rand()*Math.PI*2
   c.save();c.filter='blur(.4px)'
   c.fillStyle='rgba(28,23,18,.6)';c.beginPath();c.ellipse(cx+Math.cos(start+.04)*radius,cy+Math.sin(start+.04)*radius,width*.44,width*.3,start+Math.PI/2,0,Math.PI*2);c.fill()
   for(let b=0;b<bristles;b++){
-    const across=b/(bristles-1)-.5,dry=.5+rand()*.4-Math.abs(across)*.45
-    c.fillStyle=`rgba(28,23,18,${.55+rand()*.38})`
+    const across=b/(bristles-1)-.5,dry=.3+rand()*.4-Math.abs(across)*.45
+    c.fillStyle=`rgba(28,23,18,${.35+rand()*.3})`
     let points:Stroke=[]
     for(let i=0;i<=160;i++){
       const t=i/160,press=Math.min(1,t*14)*(1-.72*Math.pow(t,.8))
@@ -104,27 +105,33 @@ function seal(c:CanvasRenderingContext2D,rand:Rand,x:number,y:number,size:number
   c.save();c.translate(x,y);c.rotate(-.05+rand()*.04)
   c.fillStyle='rgba(158,59,51,.86)';c.beginPath()
   const corners=[[0,0],[size,0],[size,size],[0,size]];corners.forEach(([px,py],i)=>{const jx=px+(rand()-.5)*2,jy=py+(rand()-.5)*2;if(i)c.lineTo(jx,jy);else c.moveTo(jx,jy)});c.closePath();c.fill()
-  c.strokeStyle='rgba(236,226,204,.92)';c.lineWidth=size*.1;c.lineCap='square'
+  c.strokeStyle='rgba(236,230,216,.92)';c.lineWidth=size*.1;c.lineCap='square'
   c.beginPath();c.moveTo(size*.22,size*.25);c.lineTo(size*.78,size*.25);c.moveTo(size*.5,size*.25);c.lineTo(size*.5,size*.78);c.moveTo(size*.24,size*.55);c.lineTo(size*.38,size*.78);c.moveTo(size*.76,size*.55);c.lineTo(size*.64,size*.78);c.stroke()
-  for(let i=0;i<26;i++){c.fillStyle=`rgba(236,226,204,${.25+rand()*.5})`;c.fillRect(rand()*size,rand()*size,.6+rand()*1.4,.6+rand()*1.2)}
+  for(let i=0;i<26;i++){c.fillStyle=`rgba(236,230,216,${.25+rand()*.5})`;c.fillRect(rand()*size,rand()*size,.6+rand()*1.4,.6+rand()*1.2)}
   c.restore()
 }
 
-/** Paper body: base tone, soft mottling, chain lines, fibres and a few plant inclusions. */
+/** One column of brush notes written top to bottom (tategaki): the same brush, in a frame turned a quarter. */
+function column(c:CanvasRenderingContext2D,rand:Rand,x:number,top:number,bottom:number,size:number):void {
+  c.save();c.translate(x,top);c.rotate(Math.PI/2);brushNotes(c,rand,0,bottom-top,0,size);c.restore()
+}
+
+/** Paper body: base tone, soft mottling, chain lines, fibres and a few bark inclusions. Unbleached kozo, not
+ * parchment: the shading is a grey-beige, so the sheet itself carries no ochre and the warmth is left to the lamp. */
 function paperGround(c:CanvasRenderingContext2D,rand:Rand,width:number,height:number,tone:string):void {
   c.fillStyle=tone;c.fillRect(0,0,width,height)
   for(let i=0;i<26;i++){
     const x=rand()*width,y=rand()*height,r=30+rand()*110,light=rand()<.5,g=c.createRadialGradient(x,y,0,x,y,r)
-    const rgb=light?'255,249,236':'196,178,146';g.addColorStop(0,`rgba(${rgb},${.05+rand()*.08})`);g.addColorStop(1,`rgba(${rgb},0)`);c.fillStyle=g;c.fillRect(x-r,y-r,r*2,r*2)
+    const rgb=light?'255,251,242':'186,178,160';g.addColorStop(0,`rgba(${rgb},${.05+rand()*.08})`);g.addColorStop(1,`rgba(${rgb},0)`);c.fillStyle=g;c.fillRect(x-r,y-r,r*2,r*2)
   }
-  for(let x=10+rand()*10;x<width;x+=26+rand()*4){c.fillStyle='rgba(170,152,120,.05)';c.fillRect(x,0,1.3,height)}
+  for(let x=10+rand()*10;x<width;x+=26+rand()*4){c.fillStyle='rgba(166,158,140,.05)';c.fillRect(x,0,1.3,height)}
   for(let y=0;y<height;y+=2.5)if(rand()<.55){c.fillStyle='rgba(255,250,238,.04)';c.fillRect(0,y,width,1)}
   c.lineCap='round'
   // Fibres go into a few shared paths (tone × alpha × width buckets): 1500 curves, a dozen stroke calls.
   const fibres=new Map<string,Path2D>()
   for(let i=0;i<1500;i++){
     const x=rand()*width,y=rand()*height,l=3+rand()*15,a=rand()*Math.PI*2,bend=(rand()-.5)*5,light=rand()<.58
-    const alpha=light?.1+Math.floor(rand()*4)*.07:.05+Math.floor(rand()*3)*.05,key=`${light?'255,252,242':'150,128,96'}|${alpha.toFixed(2)}|${(.35+Math.floor(rand()*3)*.3).toFixed(2)}`
+    const alpha=light?.1+Math.floor(rand()*4)*.07:.05+Math.floor(rand()*3)*.05,key=`${light?'255,252,244':'146,136,118'}|${alpha.toFixed(2)}|${(.35+Math.floor(rand()*3)*.3).toFixed(2)}`
     let path=fibres.get(key);if(!path){path=new Path2D();fibres.set(key,path)}
     path.moveTo(x,y);path.quadraticCurveTo(x+Math.cos(a)*l*.5-Math.sin(a)*bend,y+Math.sin(a)*l*.5+Math.cos(a)*bend,x+Math.cos(a)*l,y+Math.sin(a)*l)
   }
@@ -133,16 +140,20 @@ function paperGround(c:CanvasRenderingContext2D,rand:Rand,width:number,height:nu
 }
 
 /** Writes the canvas into an sRGB DataTexture with a deckled alpha edge. Colour stays intact under alpha 0 (no
- * premultiply round-trip), so mipmaps do not pull a dark fringe in. Rows are flipped: v=1 is the top of the sheet. */
-function deckled(c:CanvasRenderingContext2D,rand:Rand,width:number,height:number,seed:number):THREE.DataTexture {
+ * premultiply round-trip), so mipmaps do not pull a dark fringe in. Rows are flipped: v=1 is the top of the sheet.
+ * The deckle is a soft fibrous fringe, not a scissor zigzag: a gentle wander, fibre-scale ripples of smooth noise (no
+ * per-texel jitter) and a shallow alpha ramp, which alphaToCoverage resolves into a feathered edge. */
+function deckled(c:CanvasRenderingContext2D,width:number,height:number,seed:number):THREE.DataTexture {
   const source=c.getImageData(0,0,width,height).data,out=new Uint8Array(width*height*4)
-  const edge=(length:number,k:number):Float32Array=>{const values=new Float32Array(length);for(let i=0;i<length;i++)values[i]=7.5+noise3(i*.043,seed+k*1.37,.41)*7+noise3(i*.19,seed+k*2.11,1.7)*2.4+(rand()-.5)*1.8;return values}
+  const edge=(length:number,k:number):Float32Array=>{const values=new Float32Array(length);for(let i=0;i<length;i++)values[i]=7.5+noise3(i*.043,seed+k*1.37,.41)*3.5+noise3(i*.19,seed+k*2.11,1.7)*2.4+noise3(i*.7,seed+k*3.07,2.9)*.8;return values}
   const top=edge(width,1),bottom=edge(width,2),left=edge(height,3),right=edge(height,4)
   for(let y=0;y<height;y++)for(let x=0;x<width;x++){
-    const distance=Math.min(y-top[x],height-1-y-bottom[x],x-left[y],width-1-x-right[y]),alpha=THREE.MathUtils.clamp(distance*.75+.5,0,1)
-    const rim=1-THREE.MathUtils.clamp(1-distance/6,0,1)*.12
+    const distance=Math.min(y-top[x],height-1-y-bottom[x],x-left[y],width-1-x-right[y]),alpha=THREE.MathUtils.clamp(distance*.35+.5,0,1)
+    // The deckle is thicker paper: a little darker and browner within six texels of the edge. The body keeps its own
+    // tone (a sheet-wide yellow shift here used to turn the washi into parchment).
+    const fringe=THREE.MathUtils.clamp(1-distance/6,0,1),rim=1-fringe*.12
     const i=(y*width+x)*4,o=((height-1-y)*width+x)*4
-    out[o]=source[i]*rim;out[o+1]=source[i+1]*rim*.985;out[o+2]=source[i+2]*rim*.95;out[o+3]=alpha*255
+    out[o]=source[i]*rim;out[o+1]=source[i+1]*rim*(1-fringe*.015);out[o+2]=source[i+2]*rim*(1-fringe*.05);out[o+3]=alpha*255
   }
   const texture=new THREE.DataTexture(out,width,height,THREE.RGBAFormat)
   texture.colorSpace=THREE.SRGBColorSpace;texture.magFilter=THREE.LinearFilter;texture.minFilter=THREE.LinearMipmapLinearFilter
@@ -155,20 +166,28 @@ const sheets=new Map<number,THREE.DataTexture>()
 export function paperSheetTexture(index:number):THREE.DataTexture {
   const cached=sheets.get(index);if(cached)return cached
   const width=400,height=512,rand=seeded(4000+index*977),[,c]=context(width,height)
-  paperGround(c,rand,width,height,['#f0e2c6','#f2e6cd','#eedfc2'][index])
+  // Unbleached washi, not parchment: three near-whites a hair apart, so the folios differ without turning ochre.
+  paperGround(c,rand,width,height,['#ece6d8','#efe9dc','#e9e2d2'][index])
+  // All three in one hand, in tategaki (columns top to bottom, right to left), so nothing reads as ruled placeholder
+  // lines; the seal is pressed once, on the letter, not stamped on every folio.
   if(index===0){
-    for(let line=0;line<10;line++)brushNotes(c,rand,line%4===0?64:44,350-rand()*70*(line%3===2?1:0),80+line*36,10)
-    seal(c,rand,318,446,30)
+    // A letter: seven columns at an uneven step (normalised so the last lands at x=80 whatever the dice). The fourth
+    // ends its paragraph short and a wider gap follows, the fifth starts a character lower, the seventh ends the text
+    // short; then a small signature column with the seal under it.
+    const steps=Array.from({length:7},(_,k)=>.8+rand()*.4+(k===3?.7:0)),unit=(340-80)/steps.reduce((a,b)=>a+b)
+    let x=340
+    for(let k=0;k<7;k++){const top=64+rand()*8+(k===4?16:0),bottom=k===3||k===6?top+(.45+rand()*.2)*(420-top):404+rand()*28;column(c,rand,x,top,bottom,10);x-=steps[k]*unit}
+    column(c,rand,x,250+rand()*16,352,8);seal(c,rand,x-13,368,26)
   } else if(index===1){
-    enso(c,rand,200,196,104,30)
-    for(let line=0;line<3;line++)brushNotes(c,rand,64,300+rand()*40,356+line*34,9.5)
-    seal(c,rand,304,446,26)
+    // An ensō with its inscription: two columns to its right, the second shorter.
+    enso(c,rand,172,214,98,16)
+    column(c,rand,344,70,330+rand()*40,9.5);column(c,rand,314,96,220+rand()*50,9.5)
   } else {
+    // A willow sprig, and three short columns in the open paper to its upper left (clear of its leaves).
     sprig(c,rand,96,420,286,92)
-    for(let line=0;line<4;line++)brushNotes(c,rand,186,356,168+line*34,9)
-    seal(c,rand,52,448,26)
+    column(c,rand,150,66,250+rand()*30,9);column(c,rand,121,80,206+rand()*36,9);column(c,rand,92,66,140+rand()*40,9)
   }
-  const texture=deckled(c,rand,width,height,index*5+1);sheets.set(index,texture);return texture
+  const texture=deckled(c,width,height,index*5+1);sheets.set(index,texture);return texture
 }
 
 /** Lantern crest (mon), ~10 cm across on the body, in the current fill: a brushed ring round three leaves, a crescent
