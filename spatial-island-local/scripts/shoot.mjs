@@ -42,8 +42,16 @@ try {
   if (noAvatar) await page.route('**/*.glb', r => r.abort())
   page.on('pageerror', e => report.errors.push(e.message))
   page.on('console', m => { if (m.type() === 'error') report.errors.push(m.text()) })
-  const t0 = Date.now()
-  await page.goto(url)
+  let t0 = Date.now()
+  // Vite may full-reload the page while it boots right after an edit: retry the boot twice.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      t0 = Date.now()
+      await page.goto(url)
+      await page.waitForFunction(() => document.documentElement.dataset.webgl === 'ready', null, { timeout: 60000 })
+      break
+    } catch (e) { if (attempt >= 3) throw e; console.log(`boot attempt ${attempt} failed (${String(e.message).split(/\r?\n/)[0]}), retrying`) }
+  }
   report.renderer = await page.evaluate(() => {
     const gl = document.createElement('canvas').getContext('webgl2'); if (!gl) return 'none'
     const ext = gl.getExtension('WEBGL_debug_renderer_info'); return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)

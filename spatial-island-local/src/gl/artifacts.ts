@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { batchStatic,grainTexture,material,mesh,tube } from './craft'
 import { fractal,random } from './noise'
 import { lightRay } from './optics'
+import { applySurface } from './surface'
 
 export interface Lantern {
   root:THREE.Group;body:THREE.Mesh;cord:THREE.Mesh;anchor:THREE.Vector3
@@ -35,7 +36,7 @@ function paperGeometry():THREE.PlaneGeometry {
 export function createArtifacts():Artifacts {
   const stations=new THREE.Group();stations.name='Luminous sanctuary artifacts'
   const canopy=new THREE.Group();canopy.name='Weeping light willow'
-  const stone=material('#26372c',.95,grainTexture('clay'),.035)
+  const stone=applySurface(material('#26372c',.95),{scale:2.4,bump:.012,tint:'#d8c9a8',moss:{color:'#4a6a45',amount:.55,low:.55,high:.95}})
   const gold=new THREE.MeshBasicMaterial({color:new THREE.Color('#FFB84D').multiplyScalar(.8),toneMapped:false})
   const dullGold=material('#a8955e',.5);dullGold.metalness=.55
   const paperState={orbit:0},privacyState={closure:0},paperCenter=new THREE.Vector3(-1.55,.8,.75)
@@ -142,4 +143,3 @@ export function createArtifacts():Artifacts {
     altarRay.material.uniforms.uTime.value=time
   }}
 }
-

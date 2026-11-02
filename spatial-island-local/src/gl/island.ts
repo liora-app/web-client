@@ -3,6 +3,7 @@ import { batchStatic,contact,grainTexture,mesh,shadowTexture } from './craft'
 import { createArtifacts } from './artifacts'
 import { fractal,noise3,random } from './noise'
 import { lightRay } from './optics'
+import { applySurface } from './surface'
 
 export function surfaceHeight(x:number,z:number):number {
   const distance=Math.hypot(x+.25,(z+.55)*1.12)
@@ -45,7 +46,7 @@ function boulder(seed:number):THREE.BufferGeometry {
 export function createIsland() {
   const group=new THREE.Group();group.name='Terraced organic sanctuary'
   const artifacts=createArtifacts();group.add(artifacts.stations,artifacts.canopy);for(const lantern of artifacts.lanterns)group.add(lantern.light)
-  const clay=grainTexture('clay'),groundMat=new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.98,vertexColors:true,bumpMap:clay,bumpScale:.045})
+  const clay=grainTexture('clay'),groundMat=applySurface(new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.98,vertexColors:true,bumpMap:clay,bumpScale:.045}),{scale:1.1,bump:.03,moss:{color:'#3f6040',amount:.7,low:.45,high:.9}})
   const lower=mesh(terrace(3.32,.23,-.50,19),groundMat,group);lower.name='Lower wet rock terrace'
   const middle=mesh(terrace(3.76,.27,-.29,31),groundMat,group);middle.name='Middle moss terrace'
   const upper=mesh(terrace(4.05,.18,-.105,7),groundMat,group);upper.name='Upper sculpted terrace'
@@ -105,4 +106,3 @@ export function createIsland() {
   batchStatic(group,[artifacts.stations,artifacts.canopy,grass,ferns,...artifacts.lanterns.map(l=>l.light),...rays])
   return {group,...artifacts,grass,terraces:3,update(time:number,reduced:boolean){windTime.value=reduced?0:time;artifacts.update(time,reduced);for(const ray of rays)ray.material.uniforms.uTime.value=time}}
 }
-
