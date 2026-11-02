@@ -7,10 +7,10 @@ import { moonDirection,night } from './environment'
  *   a dark ground bounce, and a moon hot spot that gives glazed ceramic, gold and wet stone a real specular glint.
  * - The moon: a cool directional key/rim from behind-right with the only shadow map; the frustum is fitted to the island.
  * - A soft cool fill from the camera side without shadows (the moonlit sky behind the viewer), so faces and paper read.
- * - The lotus: a warm point light in the core that lights the petals from within, the grass around and the
+ * - The lotus light lives in glow.ts: one warm breathing point light above the bowl that lights the grass around and the
  *   companion's face. (It replaces the old warm rim spot; ambient + hemisphere are replaced by the environment.)
  * - The lanterns: one warm point light shared by all three (scene.ts moves it to the lantern whose answer is open).
- * Point lights in total: lotus, lantern and the glow's breathing light (glow.ts). The count never changes at runtime.
+ * Point lights in total: two — the lotus (glow.ts) and the lantern. The count never changes at runtime.
  */
 export interface Lighting {
   moon:THREE.DirectionalLight
@@ -63,7 +63,6 @@ export function createLighting(scene:THREE.Scene,renderer:THREE.WebGLRenderer,is
   for(let i=0;i<8;i++)bounds.expandByPoint(corner.set(i&1?4.25:-4.25,i&2?3.45:-.75,i&4?3.6:-3.6).applyMatrix4(view))
   Object.assign(moon.shadow.camera,{left:bounds.min.x,right:bounds.max.x,bottom:bounds.min.y,top:bounds.max.y,near:Math.max(.1,-bounds.max.z-.5),far:-bounds.min.z+.5});moon.shadow.camera.updateProjectionMatrix();scene.add(moon)
   const skyFill=new THREE.DirectionalLight('#aab9cf',.8);skyFill.position.set(-3.2,3.4,6.2);scene.add(skyFill)
-  const lotus=new THREE.PointLight('#ffa64d',1.5,5.5,2);lotus.position.set(-.25,.57,-.55);scene.add(lotus)
   // Lives in the island frame like the lanterns it serves, so it bobs with them. scene.ts steers position and intensity.
   const lantern=new THREE.PointLight('#ffbf69',0,3.2,2);lantern.name='Shared lantern light';island.add(lantern)
   let interval=1/shadow.hz,lastShadow=-Infinity
