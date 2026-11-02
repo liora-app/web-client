@@ -36,7 +36,9 @@ export interface QualityPreset {
 }
 export const qualityPresets:Record<Tier,QualityPreset>={
   high:{tier:'high',samples:2,bloomScale:1,transmission:.25,shadowSize:2048,shadowHz:30,finery:true},
-  medium:{tier:'medium',samples:0,bloomScale:.5,transmission:.2,shadowSize:1024,shadowHz:30,finery:true},
+  // Medium keeps the full bloom chain: the bloom radius is fixed, so a half-resolution chain doubles the glow's spread on
+  // screen (seen on Low near the lotus), against "glow on the source, not haze over the frame". Low accepts that trade.
+  medium:{tier:'medium',samples:0,bloomScale:1,transmission:.2,shadowSize:1024,shadowHz:30,finery:true},
   low:{tier:'low',samples:0,bloomScale:.5,transmission:.15,shadowSize:1024,shadowHz:15,finery:false},
 }
 /**
