@@ -31,7 +31,8 @@ export interface SanctuaryScene {
   dispose:()=>void
 }
 export interface QualityReport {
-  gpu:string;tier:Tier;rung:number;forced:boolean;adaptive:boolean;fpsCap:number;idle:boolean;dpr:number
+  /** vsync: the display's rAF period read during the boot compile (ms; 0 = unknown), the pacing budget's floor. */
+  gpu:string;tier:Tier;rung:number;forced:boolean;adaptive:boolean;fpsCap:number;vsync:number;idle:boolean;dpr:number
   scene:number[];samples:number;bloom:number[];transmission:{scale:number;size:number[]};shadow:{size:number;hz:number}
   finery:boolean;programs:number;lights:{point:number;directional:number};boot:[string,number][]
 }
@@ -124,6 +125,22 @@ function within<T>(promise:Promise<T>,ms:number):Promise<T|undefined> {
 function measure(name:string,start:number|string,end=performance.now()):void {
   try{if(typeof start==='string')performance.measure(`sanctuary:${name}`,start);else performance.measure(`sanctuary:${name}`,{start,end})}catch{/* timing only */}
 }
+/**
+ * rAF period while nothing renders (code-2): the low quantile of the gaps, kept only when enough of them agree, so a gap
+ * stretched by a long task is never taken for the period. A capped display (iOS Low Power Mode or Chrome Energy Saver at
+ * 30 Hz, a 50/48 Hz panel) then reads as such instead of as a slow GPU. Stops itself after 120 gaps; the returned
+ * function stops it and gives the period in ms, 0 when unknown.
+ */
+function probeVsync():()=>number {
+  const gaps:number[]=[];let last=0,id=0
+  const tick=(stamp:number):void=>{if(last)gaps.push(stamp-last);last=stamp;if(gaps.length<120)id=requestAnimationFrame(tick)}
+  id=requestAnimationFrame(tick)
+  return ()=>{
+    cancelAnimationFrame(id);if(gaps.length<4)return 0
+    gaps.sort((a,b)=>a-b);const period=gaps[Math.floor(gaps.length*.25)],agree=gaps.filter(gap=>Math.abs(gap-period)<period*.15).length
+    return period>4&&period<45&&agree>=Math.max(3,gaps.length*.5)?period:0
+  }
+}
 
 export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=>void,onLost:()=>void):Promise<SanctuaryScene> {
   let renderer:THREE.WebGLRenderer
@@ -205,8 +222,11 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
   let nextDue=0,lastActivity=performance.now(),idle=false
   const wake=():void=>{lastActivity=performance.now();if(idle){idle=false;nextDue=0}}
   // Adaptive quality: windows of 120 rendered frames (or 2 s), measured only while active, warm and capped. A slow window
-  // (mean under ~54 fps, or 5% of frames missing two vsyncs) steps one rung down: DPR first, then the tier. Five clean
-  // windows probe one rung back up, never above the start; a probe that fails locks further probing.
+  // (mean over 112% of the budget, or 5% of frames missing two budgets) steps one rung down: DPR first, then the tier.
+  // Five clean windows probe one rung back up, never above the start; a probe that fails locks further probing. The
+  // budget is the frame cap, or the display's own period where that is longer (vsync, measured during the boot compile):
+  // a 30 Hz Low Power Mode or a 50 Hz panel is no reason to drop quality, while a GPU too slow under that cap still is.
+  let vsync=0
   const pacing={frames:[] as number[],span:0,good:0,probe:false,noProbe:false,warmUntil:Infinity}
   const holdPacing=(ms:number):void=>{pacing.frames.length=0;pacing.span=0;pacing.good=0;pacing.warmUntil=performance.now()+ms}
   const resize=():void=>{const w=innerWidth,h=innerHeight,ceiling=qualityLadder[rung],dpr=Math.min(devicePixelRatio,isPhone()?ceiling.mobileDpr:ceiling.dpr);renderer.setPixelRatio(dpr);renderer.setSize(w,h);post.setSize(w,h,dpr);camera.aspect=w/h;camera.updateProjectionMatrix();glow.setPixelRatio(dpr);reframe(true);freshLayout=true}
@@ -217,11 +237,14 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
   }
   const pace=(interval:number):void=>{
     pacing.frames.push(interval);pacing.span+=interval;if(pacing.frames.length<120&&(pacing.span<2000||pacing.frames.length<30))return
-    const frames=pacing.frames,sorted=[...frames].sort((a,b)=>a-b),mean=pacing.span/frames.length,p95=sorted[Math.floor(sorted.length*.95)],budget=1000/fpsCap
+    const frames=pacing.frames,sorted=[...frames].sort((a,b)=>a-b),mean=pacing.span/frames.length,p95=sorted[Math.floor(sorted.length*.95)],budget=Math.max(1000/fpsCap,vsync)
     pacing.span=0
     frames.length=0
+    // A clean window's p95 may reach the next whole vsync multiple of the budget: at 75 Hz a 60 fps cap draws on four of five
+    // vsyncs (gaps of 13.3, 13.3, 13.3 and 26.7 ms), which is no stutter. At 60, 90 and 144 Hz the bound stays ~1.35 budgets.
+    const clean=Math.max(budget*1.35,(vsync?Math.ceil(budget/vsync-.01)*vsync:0)+2)
     if(mean>budget*1.12||p95>budget*1.9){pacing.good=0;if(pacing.probe)pacing.noProbe=true;pacing.probe=false;if(rung<qualityLadder.length-1){rung++;applyQuality()}}
-    else if(mean<budget*1.03&&p95<budget*1.35){pacing.probe=false;if(++pacing.good>=5&&rung>startRung&&!pacing.noProbe){rung--;pacing.probe=true;applyQuality()}}
+    else if(mean<budget*1.03&&p95<clean){pacing.probe=false;if(++pacing.good>=5&&rung>startRung&&!pacing.noProbe){rung--;pacing.probe=true;applyQuality()}}
     else pacing.good=0
   }
   resize();window.addEventListener('resize',onResize)
@@ -334,7 +357,9 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
   }
   collect(scene)
   for(const texture of textures)if(!texture.isRenderTargetTexture)renderer.initTexture(texture)
-  await compiled;measure('compile','sanctuary:compile-start')
+  // Nothing renders and the main thread idles until the programs are linked: the window to read the display's period.
+  const stopVsync=probeVsync()
+  await compiled;measure('compile','sanctuary:compile-start');vsync=stopVsync()
   // The first frame still builds the small shadow-depth programs (compile() does not cover them).
   const firstFrame=performance.now();render(firstFrame);measure('first-frame',firstFrame)
   measure('boot','sanctuary:start')
@@ -342,7 +367,7 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
   const report=():QualityReport=>{
     let point=0,directional=0;scene.traverseVisible(object=>{if(object instanceof THREE.PointLight)point++;else if(object instanceof THREE.DirectionalLight)directional++})
     const sizes=post.sizes(),buffer=renderer.getDrawingBufferSize(new THREE.Vector2()),scale=renderer.transmissionResolutionScale
-    return {gpu:detected.gpu,tier:preset.tier,rung,forced,adaptive,fpsCap,idle,dpr:renderer.getPixelRatio(),scene:sizes.scene,samples:sizes.samples,bloom:sizes.bloom,transmission:{scale,size:[Math.floor(buffer.x*scale),Math.floor(buffer.y*scale)]},shadow:{size:lighting.moon.shadow.mapSize.x,hz:preset.shadowHz},
+    return {gpu:detected.gpu,tier:preset.tier,rung,forced,adaptive,fpsCap,vsync:Math.round(vsync*100)/100,idle,dpr:renderer.getPixelRatio(),scene:sizes.scene,samples:sizes.samples,bloom:sizes.bloom,transmission:{scale,size:[Math.floor(buffer.x*scale),Math.floor(buffer.y*scale)]},shadow:{size:lighting.moon.shadow.mapSize.x,hz:preset.shadowHz},
       finery:preset.finery,programs:renderer.info.programs?.length??0,lights:{point,directional},boot:performance.getEntriesByType('measure').filter(m=>m.name.startsWith('sanctuary:')).map(m=>[m.name.slice(10),Math.round(m.duration)] as [string,number])}
   }
   if(import.meta.env.DEV)Object.defineProperty(window,'__sanctuaryPerf',{configurable:true,value:report})
