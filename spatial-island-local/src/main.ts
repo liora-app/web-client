@@ -99,35 +99,57 @@ const tween=gsap.to(state,{p:1,ease:'none',duration:1,paused:true,onUpdate:()=>u
 const trigger=ScrollTrigger.create({trigger:'#scroll-wrapper',start:0,end:()=>Math.max(1,document.querySelector<HTMLElement>('#scroll-wrapper')!.offsetHeight-innerHeight),invalidateOnRefresh:true,animation:tween,scrub:reduced?.35:1.2,snap:reduced?undefined:{snapTo:[0,.25,.5,.75,1],duration:{min:.4,max:.85},delay:.05,ease:'power2.inOut',inertia:false}})
 let layoutFrame=0
 // svh can settle a frame after the browser's resize event. Observe the actual scroll surface.
-const layoutObserver=new ResizeObserver(()=>{cancelAnimationFrame(layoutFrame);layoutFrame=requestAnimationFrame(()=>{reserveFaq();lenis.resize();trigger.refresh()})})
+const layoutObserver=new ResizeObserver(()=>{cancelAnimationFrame(layoutFrame);layoutFrame=requestAnimationFrame(()=>{reserveFaq();framePanels();lenis.resize();trigger.refresh()})})
 layoutObserver.observe(document.querySelector('#scroll-wrapper')!)
 const lenisScroll=():void=>{currentVelocity=lenis.velocity;ScrollTrigger.update()};lenis.on('scroll',lenisScroll)
-const tick=(time:number):void=>{lenis.raf(time*1000);currentVelocity=lenis.velocity;scene?.setProgress(state.p,currentVelocity)}
+const tick=(time:number):void=>{lenis.raf(time*1000);currentVelocity=lenis.velocity;scene?.setTransit(arrival.transit?arrival.target:-1);scene?.setProgress(state.p,currentVelocity)}
 gsap.ticker.add(tick)
 const mobileNav=document.querySelector<HTMLElement>('#mobile-nav')!,menu=document.querySelector<HTMLButtonElement>('.menu-toggle')!
 const setMenu=(open:boolean):void=>{mobileNav.hidden=!open;menu.setAttribute('aria-expanded',String(open));menu.setAttribute('aria-label',open?'Закрити навігацію':'Відкрити навігацію')}
+// A flight across several stops (motion-2) is eased along the camera's arc length, not along the scroll: the camera
+// path gives each leg the same share of the scroll although the legs differ ~7x in length, so an eased scroll made the
+// camera brake and surge at every stop it crossed. The scene reports the arc length at the stops (arcKnots); between two
+// stops arc length and progress are proportional, so the mapping is piecewise linear both ways.
+let flight:gsap.core.Tween|undefined
+const linearKnots=[0,.25,.5,.75,1]
+const toArc=(p:number,knots:number[]):number=>{const leg=Math.min(3,Math.max(0,Math.floor(p*4))),f=p*4-leg;return knots[leg]+(knots[leg+1]-knots[leg])*f}
+const fromArc=(s:number,knots:number[]):number=>{let leg=0;while(leg<3&&s>knots[leg+1])leg++;const span=knots[leg+1]-knots[leg];return Math.max(0,Math.min(1,(leg+(span>0?(s-knots[leg])/span:0))/4))}
+// While the flight runs, the scrub only smooths over ~.12 s: its usual 1.2 s lag acts on progress, not on arc length, and
+// would put the brake-and-surge back at the short legs. The usual lag returns once the scrub has caught up.
+let scrubReset:gsap.core.Tween|undefined
+const steadyScrub=():void=>{scrubReset?.kill();scrubReset=undefined;trigger.getTween()?.duration(reduced?.35:1.2)}
+const stopFlight=():void=>{if(!flight)return;flight.kill();flight=undefined;steadyScrub()}
 const go=(index:number):void=>{
   const target=Math.max(0,Math.min(4,index));setMenu(false)
   if(target===4)chat.prefill(selectedDirection===0?0:selectedDirection===1?2:0)
-  const max=document.documentElement.scrollHeight-innerHeight,duration=reduced?.4:target===4?2.2:1.4
+  const max=document.documentElement.scrollHeight-innerHeight,from=max>0?Math.max(0,Math.min(1,lenis.scroll/max)):state.p
   // More than one leg away means the camera crosses other stops on the way.
-  const origin=visibleStage;clearArrival();arrival={target,origin,transit:Math.abs(target-state.p*4)>1.02}
+  const origin=visibleStage;clearArrival();stopFlight();arrival={target,origin,transit:Math.abs(target-state.p*4)>1.02}
+  const knots=scene?.arcKnots??linearKnots,arc=Math.abs(toArc(target/4,knots)-toArc(from,knots))
+  const glide=arrival.transit&&!reduced,duration=reduced?.4:glide?Math.min(2.2,Math.max(1.4,1+1.2*arc)):target===4?2.2:1.4
   // Safety net: a stalled or interrupted scroll never leaves panels hidden for long.
   arrivalTimer=window.setTimeout(()=>{if(arrival.target!==target)return;clearArrival();updatePresentation(state.p)},(duration+3.5)*1000)
-  lenis.scrollTo(max*target/4,{duration,easing:t=>1-Math.pow(1-t,3),force:true})
+  if(glide){
+    const carrier={s:toArc(from,knots)}
+    scrubReset?.kill();trigger.getTween()?.duration(.12)
+    flight=gsap.to(carrier,{s:toArc(target/4,knots),duration,ease:'power2.inOut',onUpdate:()=>lenis.scrollTo(max*fromArc(carrier.s,knots),{immediate:true,force:true}),onComplete:()=>{flight=undefined;scrubReset=gsap.delayedCall(.4,steadyScrub)}})
+  }else lenis.scrollTo(max*target/4,{duration,easing:t=>1-Math.pow(1-t,3),force:true})
   updatePresentation(state.p)
 }
 // The visitor takes over (wheel or touch): stop holding panels and moving focus.
-const interrupt=():void=>{if(arrival.target<0)return;clearArrival();updatePresentation(state.p)}
+const interrupt=():void=>{stopFlight();if(arrival.target<0)return;clearArrival();updatePresentation(state.p)}
 window.addEventListener('wheel',interrupt,{passive:true});window.addEventListener('touchstart',interrupt,{passive:true})
 const navigate=(event:MouseEvent):void=>{const button=(event.target as Element).closest<HTMLElement>('[data-go]');if(!button)return;event.preventDefault();go(Number(button.dataset.go))};document.addEventListener('click',navigate)
 const next=():void=>go(stage===4?0:stage+1);document.querySelector('[data-next]')!.addEventListener('click',next)
 const toggleMenu=():void=>setMenu(Boolean(mobileNav.hidden));menu.addEventListener('click',toggleMenu)
-const pointer=(event:PointerEvent):void=>scene?.setPointer(event.clientX/innerWidth*2-1,1-event.clientY/innerHeight*2);window.addEventListener('pointermove',pointer,{passive:true})
+// Taps do not steer the parallax or the character's gaze (motion-14d): a touch would leave both parked at the last tap.
+const pointer=(event:PointerEvent):void=>{if(event.pointerType!=='touch')scene?.setPointer(event.clientX/innerWidth*2-1,1-event.clientY/innerHeight*2)};window.addEventListener('pointermove',pointer,{passive:true})
 const directionButtons=[...document.querySelectorAll<HTMLButtonElement>('[data-direction]')],directionStatus=['Можемо почати з того, як минув ваш день.','Сповільнімося й помітимо, що відчувається зараз.','Поговорімо про те, якої підтримки вам бракує.']
 const selectDirection=(index:number):void=>{
+  // The folio of the chosen tab comes to the front (motion-6); choosing the tab that is already open turns nothing.
+  const changed=index!==selectedDirection
   selectedDirection=index;directionButtons.forEach((button,i)=>{button.setAttribute('aria-selected',String(i===index));button.tabIndex=i===index?0:-1;button.classList.toggle('is-selected',i===index)})
-  document.querySelector('.direction-status')!.textContent=directionStatus[index];document.querySelector('#direction-detail')!.setAttribute('aria-labelledby',`direction-${index}`);scene?.turnPage()
+  document.querySelector('.direction-status')!.textContent=directionStatus[index];document.querySelector('#direction-detail')!.setAttribute('aria-labelledby',`direction-${index}`);if(changed)scene?.turnPage(index)
 }
 directionButtons.forEach((button,index)=>{
   const click=():void=>selectDirection(index),key=(event:KeyboardEvent):void=>{if(!['ArrowRight','ArrowLeft','ArrowDown','ArrowUp','Home','End'].includes(event.key))return;event.preventDefault();event.stopPropagation();const next=event.key==='Home'?0:event.key==='End'?2:(index+(['ArrowRight','ArrowDown'].includes(event.key)?1:2))%3;selectDirection(next);directionButtons[next].focus()}
@@ -162,11 +184,26 @@ const reserveFaq=():void=>{
   faqPanel.style.minHeight=`${Math.ceil(all-heights.reduce((sum,h)=>sum+h,0)+Math.max(...heights))}px`
 }
 reserveFaq()
+// Phones frame each station above its bottom sheet: the scene needs where every stop's sheet starts. Measured without the
+// panel's own drift (translate), which only plays while it fades in or out.
+function framePanels():void {
+  if(!scene)return
+  scene.setPanelTops(sections.map(section=>{
+    const panel=section.querySelector<HTMLElement>('.stage-content');if(!panel)return Number.NaN
+    const shift=getComputedStyle(panel).translate.split(' '),drift=shift.length>1?Number.parseFloat(shift[1])||0:0
+    return panel.getBoundingClientRect().top-drift
+  }))
+}
+// A sheet that grows (an opening answer on a short phone, an opened step) moves its top: the scene re-frames, gliding.
+let panelFrame=0
+const panelObserver=new ResizeObserver(()=>{cancelAnimationFrame(panelFrame);panelFrame=requestAnimationFrame(framePanels)})
+sections.forEach(section=>{const panel=section.querySelector('.stage-content');if(panel)panelObserver.observe(panel)})
 faqButtons.forEach((button,index)=>{const click=():void=>selectLantern(index);button.addEventListener('click',click);cleanup.push(()=>button.removeEventListener('click',click))})
 let returnFocus:HTMLElement|null=null
-const openHelp=():void=>{returnFocus=document.activeElement as HTMLElement;dialog.showModal();lenis.stop();dialog.querySelector<HTMLButtonElement>('.dialog-close')!.focus()}
+// The crisis card hides the scene (style.css) and stops its frame loop (motion-13); it resumes without a time jump.
+const openHelp=():void=>{returnFocus=document.activeElement as HTMLElement;stopFlight();dialog.showModal();lenis.stop();scene?.setPaused(true);dialog.querySelector<HTMLButtonElement>('.dialog-close')!.focus()}
 const closeHelp=():void=>dialog.close()
-const onClose=():void=>{lenis.start();returnFocus?.focus({preventScroll:true})}
+const onClose=():void=>{scene?.setPaused(false);lenis.start();returnFocus?.focus({preventScroll:true})}
 const backdrop=(event:MouseEvent):void=>{if(event.target===dialog){const rect=dialog.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)dialog.close()}}
 document.querySelector('[data-help]')!.addEventListener('click',openHelp);dialog.querySelector('.dialog-close')!.addEventListener('click',closeHelp);dialog.addEventListener('close',onClose);dialog.addEventListener('click',backdrop)
 const keyboard=(event:KeyboardEvent):void=>{
@@ -186,7 +223,8 @@ const startScene=async():Promise<void>=>{
     if(disposed||generation!==sceneGeneration)return
     const created=await createSanctuary(host,selectLantern,()=>{root.dataset.webgl='fallback';notice.hidden=false;host.classList.add('fallback-scene');notify('3D-простір призупинено. Можна продовжити розмову або перезапустити 3D.')})
     if(disposed||generation!==sceneGeneration){created.dispose();return}
-    scene=created;scene.setProgress(state.p,currentVelocity);scene.setReduced(reduced);scene.selectLantern(selectedLantern);scene.setTalking(sceneTalking);scene.setVoice(sceneVolume)
+    scene=created;scene.setProgress(state.p,currentVelocity);scene.setReduced(reduced);scene.selectLantern(selectedLantern);scene.turnPage(selectedDirection,true);scene.setTalking(sceneTalking);scene.setVoice(sceneVolume)
+    scene.setTransit(arrival.transit?arrival.target:-1);scene.setPaused(dialog.open);framePanels()
     // Commit the canvas' hidden start style first, so data-webgl=ready fades it in (CSS).
     const canvas=host.querySelector('canvas');if(canvas)void getComputedStyle(canvas).opacity
     root.dataset.webgl='ready'
@@ -207,12 +245,12 @@ function revealEntry():void{
 }
 const retry=():void=>{void startScene()};document.querySelector('[data-retry]')!.addEventListener('click',retry)
 void startScene()
-void document.fonts.ready.then(()=>{if(disposed)return;playIntro();reserveFaq();ScrollTrigger.refresh()})
+void document.fonts.ready.then(()=>{if(disposed)return;playIntro();reserveFaq();framePanels();ScrollTrigger.refresh()})
 if(import.meta.env.DEV){
   Object.defineProperty(window,'sanctuary',{configurable:true,value:{go,progress:()=>state.p,inspect:()=>scene?.inspect(),motion:()=>scene?.motion(),scrollInfo:()=>({start:trigger.start,end:trigger.end,y:scrollY,top:document.querySelector('#scroll-wrapper')!.getBoundingClientRect().top+scrollY,margin:getComputedStyle(document.body).margin}),selectDirection,selectLantern,lenis,setProgress:(value:number)=>{clearArrival();lenis.scrollTo((document.documentElement.scrollHeight-innerHeight)*value,{immediate:true,force:true});state.p=value;scene?.setProgress(value,0);updatePresentation(value)}}})
 }
 const dispose=():void=>{
-  if(disposed)return;disposed=true;sceneGeneration++;clearTimeout(toastTimer);clearArrival();clearTimeout(introTimer);answerTimers.forEach(timer=>clearTimeout(timer));window.removeEventListener('wheel',interrupt);window.removeEventListener('touchstart',interrupt);if(grainUrl){URL.revokeObjectURL(grainUrl);root.style.removeProperty('--grain')};cancelAnimationFrame(layoutFrame);layoutObserver.disconnect();scene?.dispose();chat.dispose();soundDispose();gsap.ticker.remove(tick);trigger.kill();tween.kill();lenis.off('scroll',lenisScroll);lenis.destroy();cleanup.forEach(remove=>remove());document.removeEventListener('click',navigate);document.querySelector('[data-next]')!.removeEventListener('click',next);menu.removeEventListener('click',toggleMenu);window.removeEventListener('pointermove',pointer);window.removeEventListener('keydown',keyboard);reducedQuery.removeEventListener('change',motion);document.querySelector('[data-help]')!.removeEventListener('click',openHelp);dialog.querySelector('.dialog-close')!.removeEventListener('click',closeHelp);dialog.removeEventListener('close',onClose);dialog.removeEventListener('click',backdrop);document.querySelector('[data-retry]')!.removeEventListener('click',retry)
+  if(disposed)return;disposed=true;sceneGeneration++;clearTimeout(toastTimer);clearArrival();stopFlight();scrubReset?.kill();clearTimeout(introTimer);answerTimers.forEach(timer=>clearTimeout(timer));window.removeEventListener('wheel',interrupt);window.removeEventListener('touchstart',interrupt);if(grainUrl){URL.revokeObjectURL(grainUrl);root.style.removeProperty('--grain')};cancelAnimationFrame(layoutFrame);layoutObserver.disconnect();cancelAnimationFrame(panelFrame);panelObserver.disconnect();scene?.dispose();chat.dispose();soundDispose();gsap.ticker.remove(tick);trigger.kill();tween.kill();lenis.off('scroll',lenisScroll);lenis.destroy();cleanup.forEach(remove=>remove());document.removeEventListener('click',navigate);document.querySelector('[data-next]')!.removeEventListener('click',next);menu.removeEventListener('click',toggleMenu);window.removeEventListener('pointermove',pointer);window.removeEventListener('keydown',keyboard);reducedQuery.removeEventListener('change',motion);document.querySelector('[data-help]')!.removeEventListener('click',openHelp);dialog.querySelector('.dialog-close')!.removeEventListener('click',closeHelp);dialog.removeEventListener('close',onClose);dialog.removeEventListener('click',backdrop);document.querySelector('[data-retry]')!.removeEventListener('click',retry)
 }
 window.addEventListener('pagehide',event=>{if(!event.persisted)dispose()})
 if(import.meta.hot)import.meta.hot.dispose(dispose)

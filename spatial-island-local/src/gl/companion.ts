@@ -13,6 +13,8 @@ export interface Companion {
   eyesMesh:THREE.Group
   readonly ready:boolean
   readonly source:'loading'|'glb'|'fallback'
+  /** How much of the character is drawn right now, 0…1 (entrance × presence spring); cheap, unlike inspect(). */
+  readonly presence:number
   update:(time:number,breath:number,pointer:THREE.Vector2,talking:boolean,reduced:boolean)=>void
   /**
    * Wave once, starting at `time` (the clock passed to update; a later time schedules it). A call while a wave is
@@ -180,7 +182,7 @@ export function createCompanion():Companion {
 
   const api:Companion={
     group,headGroup,torsoGroup,rightArmGroup,leftArmGroup,eyesMesh,
-    get ready(){return source!=='loading'},get source(){return source},
+    get ready(){return source!=='loading'},get source(){return source},get presence(){return Math.max(0,shown)},
     greet(time){
       if(!Number.isFinite(time))return
       // Restarting mid-wave would reset the swing phase and snap the forearm; a second call is simply ignored.
