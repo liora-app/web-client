@@ -3,31 +3,42 @@ import { fractal,random } from './noise'
 import { worldVertex } from './optics'
 import { surfaceNoise } from './surface'
 
+const skyDirection=(azimuth:number,elevation:number):THREE.Vector3=>new THREE.Vector3(Math.cos(elevation)*Math.cos(azimuth),Math.sin(elevation),Math.cos(elevation)*Math.sin(azimuth))
 /** Where the moon disc sits in the sky (the light rig takes its azimuth for the moonlight). Low over the water, behind the willow. */
 const moonAzimuth=-.79,moonElevation=.13
-export const moonDirection=new THREE.Vector3(Math.cos(moonElevation)*Math.cos(moonAzimuth),Math.sin(moonElevation),Math.cos(moonElevation)*Math.sin(moonAzimuth))
+export const moonDirection=skyDirection(moonAzimuth,moonElevation)
+/**
+ * Normal of the Milky Way's great circle (art r2-9): it rises from the horizon left of the moon (azimuth −1.6) and arches
+ * away over the island (azimuth −2.5 at 40°), so every stop, all of which look towards the moon, sees it cross the left of
+ * the frame while it keeps 38° clear of the moon, where moonlight would wash it out anyway.
+ */
+const milkyWay=new THREE.Vector3().crossVectors(skyDirection(-1.6,0),skyDirection(-2.5,.7)).normalize()
 /** Night palette (sRGB). Fog in scene.ts uses `horizon`, so the island, the water and the far ridges dissolve into one sky. */
 export const night={zenith:'#020509',mid:'#06121a',horizon:'#0d2124',moonGlow:'#3d5560',deep:'#010605',ridge:'#030a0b',mist:'#1a3033'}
 
 /** Exponential-squared distance haze shared by every unfogged shader (water, ridges, mist). */
 const haze='float hazeFactor(vec3 p){float d=length(p.xz-cameraPosition.xz)*uHaze;return 1.-exp(-d*d);}'
+// Squares are multiplied out: GLSL leaves pow() of a negative base undefined, and below the airglow band h-.09 < 0.
 const skyPars=`uniform vec3 uZenith,uMid,uHorizon,uMoonGlow,uMoonDir;
   vec3 skyGradient(vec3 dir){float h=dir.y;vec3 c=mix(uHorizon,uMid,smoothstep(-.02,.2,h));c=mix(c,uZenith,smoothstep(.16,.72,h));
     float md=max(dot(dir,uMoonDir),0.),ang=sqrt(max(0.,2.-2.*md));vec2 flat_=normalize(dir.xz+1e-5),moonFlat=normalize(uMoonDir.xz);
     c+=uMoonGlow*(exp(-ang*3.2)*.55+exp(-ang*14.)*.5);c+=uMoonGlow*.35*exp(-max(h,0.)*7.)*pow(max(dot(flat_,moonFlat),0.),3.);
-    c+=vec3(.004,.012,.008)*exp(-pow((h-.09)*10.,2.));return c;}`
+    float airglow=(h-.09)*10.;c+=vec3(.004,.012,.008)*exp(-airglow*airglow);return c;}`
 
 export function createEnvironment(cameraCurve:THREE.CatmullRomCurve3) {
   const group=new THREE.Group();group.name='Sky, distant ridges, water and mist'
   const time={value:0},lightPosition={value:new THREE.Vector3(-.25,.4,-.55)},noise={value:surfaceNoise()},hazeAmount={value:.028}
   const skyUniforms={uZenith:{value:new THREE.Color(night.zenith)},uMid:{value:new THREE.Color(night.mid)},uHorizon:{value:new THREE.Color(night.horizon)},uMoonGlow:{value:new THREE.Color(night.moonGlow)},uMoonDir:{value:moonDirection}}
 
-  // Sky: deep gradient, faint airglow, a moon with a two-tier halo, sparse twinkling stars and thin moonlit cloud.
-  // Projected onto the far plane (xyww) and drawn after everything opaque: early-z then skips every pixel the island,
-  // the ridges or the water already cover, here and in the lotus' transmission pass (render-16).
-  const skyMat=new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:{uTime:time,uNoise:noise,...skyUniforms},vertexShader:'varying vec3 vWorld;void main(){vec4 world=modelMatrix*vec4(position,1.);vWorld=world.xyz;gl_Position=(projectionMatrix*viewMatrix*world).xyww;}',
-    fragmentShader:`uniform float uTime;uniform sampler2D uNoise;${skyPars}varying vec3 vWorld;
+  // Sky: deep gradient, faint airglow, a moon with a two-tier halo, twinkling stars gathered into a Milky Way and thin
+  // moonlit cloud. Projected onto the far plane (xyww) and drawn after everything opaque: early-z then skips every pixel
+  // the island, the ridges or the water already cover, here and in the lotus' transmission pass (render-16).
+  const skyMat=new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,uniforms:{uTime:time,uNoise:noise,uMilkyWay:{value:milkyWay},...skyUniforms},vertexShader:'varying vec3 vWorld;void main(){vec4 world=modelMatrix*vec4(position,1.);vWorld=world.xyz;gl_Position=(projectionMatrix*viewMatrix*world).xyww;}',
+    fragmentShader:`uniform float uTime;uniform sampler2D uNoise;uniform vec3 uMilkyWay;${skyPars}varying vec3 vWorld;
       float hash13(vec3 p){p=fract(p*.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
+      float valueNoise(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+        return mix(mix(mix(hash13(i),hash13(i+vec3(1.,0.,0.)),f.x),mix(hash13(i+vec3(0.,1.,0.)),hash13(i+vec3(1.,1.,0.)),f.x),f.y),
+          mix(mix(hash13(i+vec3(0.,0.,1.)),hash13(i+vec3(1.,0.,1.)),f.x),mix(hash13(i+vec3(0.,1.,1.)),hash13(i+vec3(1.,1.,1.)),f.x),f.y),f.z);}
       void main(){vec3 dir=normalize(vWorld-cameraPosition);vec3 color=skyGradient(dir);float h=dir.y;
         float md=dot(dir,uMoonDir),ang=sqrt(max(0.,2.-2.*md)),fw=fwidth(ang);
         vec2 disc=vec2(dot(dir,normalize(cross(uMoonDir,vec3(0.,1.,0.)))),dir.y-uMoonDir.y)/.0135;
@@ -36,12 +47,18 @@ export function createEnvironment(cameraCurve:THREE.CatmullRomCurve3) {
         vec2 cloudUv=dir.xz/(h+.14)*.32+vec2(uTime*.0016,uTime*.0007);
         float cloudNoise=texture2D(uNoise,cloudUv*.5).g*.62+texture2D(uNoise,cloudUv*1.9+.4).r*.38;
         float cloud=smoothstep(.5,.78,cloudNoise)*smoothstep(.0,.07,h)*(1.-smoothstep(.22,.42,h))*.85;
+        // Milky Way (art r2-9): a soft lane along a great circle, torn into star clouds and dark rifts by noise at dir×2.2,
+        // fills up to ~13% of the cells; off the lane the density only drifts ±1% round the old even 4.5%, so the frames
+        // keep their stars. Moonlight washes them out over a wide halo, not just beside the disc.
+        float across=dot(dir,uMilkyWay)/.2,clouds=valueNoise(dir*2.2),milky=exp(-across*across)*smoothstep(.2,.75,clouds),moonFade=smoothstep(.15,.9,ang);
         vec3 p=dir*260.,cell=floor(p);float pick=hash13(cell);
         vec3 jitter=.2+.6*vec3(hash13(cell+11.3),hash13(cell+23.7),hash13(cell+37.1));float d=length(fract(p)-jitter);
-        float size=mix(.09,.2,pow(hash13(cell+5.1),6.));float star=smoothstep(size+length(fwidth(p))*.6,size*.25,d)*step(.955,pick);
+        float size=mix(.09,.2,pow(hash13(cell+5.1),6.));float star=smoothstep(size+length(fwidth(p))*.6,size*.25,d)*step(.955+.02*(.5-clouds)-.075*milky,pick);
         float twinkle=.72+.28*sin(uTime*(.7+2.3*hash13(cell+3.3))+pick*40.);
-        star*=twinkle*mix(.35,1.6,pow(hash13(cell+7.7),4.))*smoothstep(.05,.32,h)*smoothstep(.06,.4,ang)*(1.-cloud);
+        star*=twinkle*mix(.35,1.6,pow(hash13(cell+7.7),4.))*smoothstep(.05,.32,h)*moonFade*(1.-cloud);
         color+=star*mix(vec3(.75,.85,1.),vec3(1.,.9,.75),hash13(cell+9.9));
+        // The unresolved stars of the lane: a cool glow of ~10–25% over the sky behind it, a texture rather than a stripe.
+        color+=vec3(.0005,.0009,.0015)*milky*smoothstep(.04,.3,h)*moonFade*(1.-cloud);
         vec3 cloudLit=mix(uHorizon*1.25,uMoonGlow*2.4,exp(-ang*2.6));color=mix(color,cloudLit,cloud*(1.-moon*.7)*.75);
         gl_FragColor=vec4(color,1.);}`})
   const sky=new THREE.Mesh(new THREE.SphereGeometry(80,32,16),skyMat);sky.name='Night sky with moon, stars and thin cloud';sky.renderOrder=1000;sky.frustumCulled=false;group.add(sky)
