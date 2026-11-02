@@ -9,6 +9,7 @@ export interface Glow {
   /** Sparks fly from this point (paper tab change). */
   burst:(origin:THREE.Vector3,elapsed:number)=>void
   setPixelRatio:(dpr:number)=>void
+  /** `breath` is the scene's metronome and is ignored: the core breathes on its own drifting clock (coreBreath). */
   update:(state:{elapsed:number;delta:number;breath:number;volume:number;reduced:boolean;velocity:number;cameraDirection:THREE.Vector3})=>void
 }
 
@@ -21,13 +22,46 @@ float glowNoise(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);
 /** Point sprites sized in world units: projectionMatrix[1][1] × half the drawing-buffer height ÷ depth. */
 const worldPointSize='float pointPixels(float size,float depth){return size*projectionMatrix[1][1]*uPointScale/max(depth,.05);}'
 
-export function createGlow(parent:THREE.Object3D):Glow {
-  const light=new THREE.PointLight('#FFB84D',.13,7,2);light.position.set(-.25,.53,-.55);parent.add(light)
+/**
+ * The core's breath, 0…1: a calm inhale over 40 % of the cycle and a longer exhale. The clock is a smooth time warp by
+ * two slow incommensurate sines, so one cycle drifts between ~9.45 s and ~10.6 s and never settles into a metronome.
+ * Stateless and continuous in time: the lotus follows the same rhythm a beat later without sharing state.
+ * The full 0…1 swing is kept on every breath (no shallow cycles, no rest at the bottom): any ~3 s window must still move
+ * the core by > .025 in scale (verify-production 'keeps breathing'); worst case here ≈ .0295, the old 10 s curve .033.
+ */
+export function coreBreath(time:number):number {
+  const phase=time/10+.022*Math.sin(time*.1698+.3)+.02*Math.sin(time*.1033+1.7),u=phase-Math.floor(phase)
+  return u<.4?.5-.5*Math.cos(u/.4*Math.PI):.5+.5*Math.cos((u-.4)/.6*Math.PI)
+}
 
-  // Core: a small emitting volume of warm haze, not a lit ball. Premultiplied alpha lets it both glow and veil what lies
-  // behind it, so the sum stays under the bloom threshold (.25 luma) everywhere except the hot nucleus; otherwise bloom
-  // inflates the whole disc into a white blot. The chord through a sphere grows with N·V: nucleus in the middle, amber
-  // body around it, a shell that thins to nothing at the silhouette with a faint membrane rim. Slow warped noise turns inside.
+/**
+ * Motion time that stops (rather than snapping back to 0) under prefers-reduced-motion and never leaps more than .1 s
+ * after a stall, plus a 0…1 'live' amplitude easing in or out over ~.5 s, so toggling the setting never teleports anything.
+ */
+export interface MotionClock {time:number;live:number;tick:(delta:number,reduced:boolean)=>void}
+export function createMotionClock():MotionClock {
+  const clock:MotionClock={time:0,live:-1,tick(delta,reduced){
+    const step=Math.min(Math.max(delta,0),.1);if(clock.live<0)clock.live=reduced?0:1
+    clock.time+=reduced?0:step;clock.live+=((reduced?0:1)-clock.live)*(1-Math.exp(-step/.18))
+  }}
+  return clock
+}
+
+/** In the island frame: the core sits inside the bowl; the one lotus light hangs above the petal tips. */
+const CORE_POSITION=new THREE.Vector3(-.25,.53,-.55),LIGHT_POSITION=new THREE.Vector3(-.25,1,-.55),LIGHT_INTENSITY=1.3
+
+export function createGlow(parent:THREE.Object3D):Glow {
+  // The only lotus light. It rides in the island frame (the island bobs; a world-space light would swing the hot spot
+  // across the petals out of step with the breath) and hangs ~.2 above the inner petal tips: the petals get a warm key of
+  // a few units instead of ~60-100 from a light inside the bowl, and the glow inside the bowl comes from the petals' own
+  // emission (lotus.ts). Same colour and reach as the light it replaces.
+  const light=new THREE.PointLight('#ffa64d',LIGHT_INTENSITY,5.5,2);light.name='Lotus light';light.position.copy(LIGHT_POSITION);parent.add(light)
+
+  // Core: a small emitting volume of warm haze in the cup of the petals, not a lit ball. Premultiplied alpha lets it glow
+  // and lightly veil the petals behind it; it stays under the bloom threshold except a soft, broad nucleus, so the bowl
+  // reads as lit from within instead of holding a white or orange blot. The chord through a sphere grows with N·V: nucleus
+  // in the middle, amber body around it, a shell that thins to nothing at the silhouette (no hard membrane rim, which
+  // drew a disc in the cup). Slow warped noise turns inside.
   const coreUniforms={uTime:{value:0},uBreath:{value:0},uVoice:{value:0}}
   const core=new THREE.Mesh(new THREE.SphereGeometry(.215,32,24),new THREE.ShaderMaterial({transparent:true,premultipliedAlpha:true,depthWrite:false,uniforms:coreUniforms,
     vertexShader:'varying vec3 vNormal,vView,vLocal;void main(){vLocal=position*4.65;vec4 mv=modelViewMatrix*vec4(position,1.);vNormal=normalMatrix*normal;vView=-mv.xyz;gl_Position=projectionMatrix*mv;}',
@@ -38,10 +72,10 @@ export function createGlow(parent:THREE.Object3D):Glow {
         float warp=glowNoise(p*1.7+vec3(0.,uTime*.03,0.));
         float swirl=glowNoise(p+warp*1.6)*.7+glowNoise(p*2.9-warp)*.3;
         vec3 color=vec3(.3,.1,.02)*pow(mu,1.1)*(.5+.8*swirl)+vec3(.42,.2,.05)*pow(mu,3.)*(.35+.65*swirl)
-          +vec3(1.45,1.02,.56)*pow(mu,140.)*(.66+.2*uBreath+.4*uVoice)+vec3(.2,.09,.03)*pow(1.-mu,3.)*smoothstep(0.,.25,mu);
-        gl_FragColor=vec4(color,.6*smoothstep(0.,.75,mu));
+          +vec3(1.3,.88,.48)*pow(mu,56.)*(.34+.14*uBreath+.4*uVoice)+vec3(.2,.09,.03)*pow(1.-mu,3.)*smoothstep(0.,.25,mu)*.25;
+        gl_FragColor=vec4(color,.34*smoothstep(0.,.85,mu));
       }`}))
-  core.name='Breathing amber light';core.position.copy(light.position);parent.add(core)
+  core.name='Breathing amber light';core.position.copy(CORE_POSITION);parent.add(core)
 
   // One soft camera-facing halo (humid night air around the light), computed analytically: no sprite texture, no lens look.
   const haloUniforms={uSize:{value:.8},uStrength:{value:.09},uColor:{value:new THREE.Color('#ffb25e')}}
@@ -118,16 +152,21 @@ export function createGlow(parent:THREE.Object3D):Glow {
   const sparks=new THREE.Points(sparkGeo,sparkMat);sparks.frustumCulled=false;sparks.visible=false;sparks.name='Origami tab sparks';parent.add(sparks)
 
   let burstAt=-100,particleActivity=0
+  const clock=createMotionClock()
   return {
     core,light,particleCount:particlesCount,
     burst(origin,elapsed){sparkUniforms.uOrigin.value.copy(origin);burstAt=elapsed},
-    update({elapsed,delta,breath,volume,reduced,velocity,cameraDirection}){
-      const scale=1+breath*.16;core.scale.setScalar(scale)
-      coreUniforms.uTime.value=reduced?0:elapsed;coreUniforms.uBreath.value=breath;coreUniforms.uVoice.value=volume
+    // The scene's metronome `breath` is not used: the core keeps its own drifting rhythm (coreBreath), held at .5 and
+    // motionless under reduced motion.
+    update({elapsed,delta,volume,reduced,velocity,cameraDirection}){
+      clock.tick(delta,reduced)
+      const breath=.5+(coreBreath(clock.time)-.5)*clock.live
+      core.scale.setScalar(1+breath*.16)
+      coreUniforms.uTime.value=clock.time;coreUniforms.uBreath.value=breath;coreUniforms.uVoice.value=volume
       haloUniforms.uSize.value=1.05+breath*.08;haloUniforms.uStrength.value=.04+breath*.012+volume*.02
-      light.intensity=.10+breath*.035+volume*.025
+      light.intensity=LIGHT_INTENSITY*(.9+.2*breath)+volume*.25
       const factor=reduced?0:Math.min(Math.abs(velocity)*.12,1);particleActivity=THREE.MathUtils.lerp(particleActivity,factor,1-Math.exp(-delta/.25))
-      particleUniforms.uTime.value=reduced?0:elapsed;particleUniforms.uActivity.value=particleActivity;particleUniforms.uReduced.value=reduced?1:0;particleUniforms.uCamDir.value.copy(cameraDirection)
+      particleUniforms.uTime.value=clock.time;particleUniforms.uActivity.value=particleActivity;particleUniforms.uReduced.value=reduced?1:0;particleUniforms.uCamDir.value.copy(cameraDirection)
       const age=elapsed-burstAt;sparks.visible=!reduced&&age<1.15;sparkUniforms.uAge.value=age
     },
     setPixelRatio(dpr){particleUniforms.uPointScale.value=dpr*innerHeight*.5},

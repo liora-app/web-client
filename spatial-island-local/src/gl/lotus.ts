@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { breathe,mesh } from './craft'
+import { mesh } from './craft'
+import { coreBreath,createMotionClock } from './glow'
 import { random } from './noise'
 import { applySurface } from './surface'
 
@@ -8,30 +9,48 @@ import { applySurface } from './surface'
 const CORE=new THREE.Vector3(0,(.53-.15)/.78,0)
 
 /**
- * One petal: a thin lens-section shell, cupped, widest a little past the middle, with a soft point.
+ * One petal: a thin lens-section shell. Narrow claw at the base, widest a little past the middle, then tapering to a
+ * pointed tip; boat-cupped across, and (petals) curling in towards the flower's heart along its length so the rings
+ * read as a bowl, or (sepals, `reflex`) bending out. Local +z is the outer face.
  * uv.x runs once around the section (sin(2πu) is the across-petal coordinate, cos(2πu)>0 the outer face), uv.y base → tip.
+ *
+ * Shading normals are the porcelain sheet's own (the mid-surface normal, flipped on the inner face), and each rim is two
+ * coincident vertex columns, one per face. Smooth normals averaged across the knife-thin rim pointed sideways and,
+ * interpolated over the last 1/8 of the section, drew a dark crescent along every petal edge.
  */
-function petalShell(length:number,width:number,seed:number,rows:number,columns:number,depth=1):THREE.BufferGeometry {
-  const positions:number[]=[],uvs:number[]=[],indices:number[]=[]
+function petalShell(length:number,width:number,seed:number,rows:number,columns:number,shape:{depth?:number;curl?:number;point?:number;reflex?:boolean}={}):THREE.BufferGeometry {
+  const {depth=1,curl=0,point:tip=.38,reflex=false}=shape
+  const positions:number[]=[],normals:number[]=[],uvs:number[]=[],indices:number[]=[]
   const cupping=(.88+random(seed)*.12)*depth,flutter=random(seed+1)*6.28,ripple=.003+random(seed+2)*.005
-  for(let i=0;i<=rows;i++)for(let j=0;j<=columns;j++){
-    const t=i/rows,a=j/columns*Math.PI*2,v=Math.sin(a),swell=Math.sin(Math.PI*Math.pow(t,1.15))
-    const breadth=width*Math.pow(swell,.55+.4*t),thickness=.024*Math.pow(Math.sin(Math.PI*t),.5)*(1-.3*t)
-    const cup=(.15*Math.pow(swell,.8)*(1-v*v)+.17*t*t-.1*Math.pow(t,6))*cupping+ripple*Math.sin(t*11+flutter+v*2)*v*v*t
-    positions.push(breadth*v,length*t,cup+thickness*Math.cos(a));uvs.push(j/columns,t)
+  const breadthAt=(t:number):number=>{const swell=Math.sin(Math.PI*Math.pow(t,1.15));return width*Math.pow(swell,.5+.7*t)*(1-tip*THREE.MathUtils.smoothstep(t,.74,1))}
+  const mid=(t:number,v:number,out:THREE.Vector3):THREE.Vector3=>{
+    const swell=Math.sin(Math.PI*Math.pow(t,1.15)),across=(reflex?.15:.2)*Math.pow(swell,.8)*(1-v*v)
+    const along=reflex?.17*t*t-.1*Math.pow(t,6):-curl*t*t
+    return out.set(breadthAt(t)*v,length*t,(across+along)*cupping+ripple*Math.sin(t*11+flutter+v*2)*v*v*t)
   }
-  for(let i=0;i<rows;i++)for(let j=0;j<columns;j++){const a=i*(columns+1)+j,b=a+1,c=a+columns+1;indices.push(a,b,c,b,c+1,c)}
-  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals()
-  const normals=geometry.getAttribute('normal'),normal=new THREE.Vector3(),other=new THREE.Vector3()
-  for(let row=1;row<rows;row++){const a=row*(columns+1),b=a+columns;normal.fromBufferAttribute(normals,a).add(other.fromBufferAttribute(normals,b)).normalize();normals.setXYZ(a,normal.x,normal.y,normal.z);normals.setXYZ(b,normal.x,normal.y,normal.z)}
-  for(const row of [0,rows])for(let j=0;j<=columns;j++)normals.setXYZ(row*(columns+1)+j,0,row===0?-1:1,0)
+  // Section angles: the outer face, a duplicated rim, the inner face, the other duplicated rim, back to the outer seam.
+  const quarter=columns/4,angles:{a:number;inner:boolean}[]=[]
+  for(let j=0;j<=columns;j++){const a=j/columns*Math.PI*2;angles.push({a,inner:j>quarter&&j<=3*quarter});if(j===quarter||j===3*quarter)angles.push({a,inner:j===quarter})}
+  const point=new THREE.Vector3(),du=new THREE.Vector3(),dv=new THREE.Vector3(),normal=new THREE.Vector3(),e=1e-3
+  for(let i=0;i<=rows;i++)for(const {a,inner} of angles){
+    const t=i/rows,v=Math.sin(a),thickness=.022*Math.pow(Math.sin(Math.PI*t),.5)*(1-.3*t)
+    mid(t,v,point);positions.push(point.x,point.y,point.z+thickness*Math.cos(a));uvs.push(a/(Math.PI*2),t)
+    const tn=THREE.MathUtils.clamp(t,.02,.97),vn=THREE.MathUtils.clamp(v,-1+e,1-e)
+    mid(tn+e,vn,du).sub(mid(tn-e,vn,point));mid(tn,vn+e,dv).sub(mid(tn,vn-e,point))
+    normal.crossVectors(dv,du).normalize();if(normal.z<0)normal.negate();if(inner)normal.negate();normals.push(normal.x,normal.y,normal.z)
+  }
+  const stride=angles.length
+  // The zero-width quads between the duplicated rim columns are skipped: same triangle count as a single seam.
+  for(let i=0;i<rows;i++)for(let j=0;j<stride-1;j++){if(angles[j].a===angles[j+1].a)continue;const a=i*stride+j,b=a+1,c=a+stride;indices.push(a,b,c,b,c+1,c)}
+  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3))
+  geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geometry.setIndex(indices)
   return geometry
 }
 
 const petalVertexPars=`
 attribute vec3 aPivot;attribute vec4 aPetal;
 uniform float uTime,uSway,uOpen;uniform vec3 uCore;
-varying vec2 vPetalUv;varying float vPetalRand;varying vec3 vCoreView;
+varying vec2 vPetalUv;varying float vPetalRand,vPetalLayer;varying vec3 vCoreView;
 vec3 petalRotate(vec3 v,vec3 k,float a){float c=cos(a),s=sin(a);return v*c+cross(k,v)*s+k*dot(k,v)*(1.-c);}
 `
 // Each petal swings about its own root (the old per-petal pivot), so 36 petals stay one draw call.
@@ -42,11 +61,11 @@ objectNormal=petalRotate(objectNormal,petalAxis,petalAngle);
 `
 const petalBegin=`
 transformed=aPivot+petalRotate(transformed-aPivot,petalAxis,petalAngle);
-vPetalUv=uv;vPetalRand=aPetal.w;vCoreView=(modelViewMatrix*vec4(uCore,1.)).xyz;
+vPetalUv=uv;vPetalRand=aPetal.w;vPetalLayer=aPetal.y;vCoreView=(modelViewMatrix*vec4(uCore,1.)).xyz;
 `
 const petalFragmentPars=`
 uniform float uGlow,uRelief;uniform vec3 uGlowColor,uBase,uIvory,uBlush,uRose;
-varying vec2 vPetalUv;varying float vPetalRand;varying vec3 vCoreView;
+varying vec2 vPetalUv;varying float vPetalRand,vPetalLayer;varying vec3 vCoreView;
 float petalVein,petalEdge,petalThin;vec3 petalTint;
 vec3 petalPerturb(vec3 p,vec3 n,float h,float faceDir){
   vec3 sx=dFdx(p),sy=dFdy(p),r1=cross(sy,n),r2=cross(n,sx);float det=dot(sx,r1)*faceDir;
@@ -61,14 +80,15 @@ float petalQ=petalAcross*(6.5+vPetalRand*1.5)+sin(petalT*4.+petalAcross*2.5)*.18
 float petalFine=(1.-smoothstep(.02,.07+petalQw,abs(fract(petalQ+.5)-.5)))*(1.-smoothstep(.12,.32,petalQw));
 petalFine*=smoothstep(.02,.14,petalT)*(1.-smoothstep(.78,.97,petalT))*(1.-petalEdge*.7);
 float petalMid=(1.-smoothstep(0.,.045+fwidth(petalAcross)*1.5,abs(petalAcross)))*smoothstep(0.,.1,petalT)*(1.-smoothstep(.55,.9,petalT));
-petalVein=max(petalFine*.7,petalMid*.8);
-float petalBlush=smoothstep(.4,.95,petalT*.9+petalEdge*.25+(vPetalRand-.5)*.2)*mix(.7,1.,step(0.,petalSide));
+petalVein=max(petalFine*.55,petalMid*.7);
+float petalOuter=1.-smoothstep(1.2,2.6,vPetalLayer);
+float petalBlush=smoothstep(.4,.95,petalT*.9+petalEdge*.25+(vPetalRand-.5)*.2)*mix(.7,1.,step(0.,petalSide))*petalOuter;
 vec3 petalPigment=mix(uBase,uIvory,smoothstep(.02,.3,petalT));
 petalPigment=mix(petalPigment,uBlush,petalBlush*.85);
 petalPigment=mix(petalPigment,uRose,smoothstep(.74,1.02,petalT+petalEdge*.12)*petalBlush*.8);
 petalPigment*=1.-petalVein*mix(.012,.045,petalBlush);
 petalTint=petalPigment;
-petalThin=max(1.-abs(petalSide)*.65,smoothstep(.72,1.,petalT));
+petalThin=max(1.-abs(petalSide)*.45,smoothstep(.72,1.,petalT));
 diffuseColor.rgb*=petalPigment;
 `
 const petalRoughness=`
@@ -81,11 +101,11 @@ normal=petalPerturb(-vViewPosition,normal,petalVein,faceDirection);
 // dimmer along the veins. Emitted, so the reflected-light calibration in optics.ts does not flatten it.
 const petalEmissive=`
 vec3 petalToCore=vCoreView+vViewPosition;float petalDist=max(length(petalToCore),1e-4);petalToCore/=petalDist;
-float petalNear=exp(-petalDist*petalDist*6.5);
+float petalNear=exp(-petalDist*petalDist*3.);
 float petalBack=clamp(dot(petalToCore,normalize(-vViewPosition)),0.,1.);
 float petalLit=clamp(dot(normal,petalToCore),0.,1.);
 float petalSss=petalNear*(.16+.84*petalBack*petalBack)*petalThin*(1.-petalVein*.4);
-totalEmissiveRadiance+=uGlowColor*uGlow*(mix(vec3(1.),petalTint,.6)*petalSss+petalTint*petalNear*petalLit*.3);
+totalEmissiveRadiance+=uGlowColor*uGlow*(mix(vec3(1.),petalTint,.6)*petalSss+petalTint*petalNear*petalLit*.3+petalEdge*petalBack*.25);
 `
 
 /** Calyx cup, five sepals and the seed head, one low-poly batch tucked under the petals (within the old base footprint). */
@@ -104,7 +124,7 @@ function lotusBase():THREE.BufferGeometry {
   parts.push(paint(head,olive,pod,.0,.19))
   const helper=new THREE.Object3D()
   for(let i=0;i<5;i++){
-    const sepal=petalShell(.3,.12,900+i*7,10,8,.3),angle=i/5*Math.PI*2+.31
+    const sepal=petalShell(.3,.12,900+i*7,10,8,{depth:.3,reflex:true}),angle=i/5*Math.PI*2+.31
     helper.position.set(Math.sin(angle)*.11,-.13,Math.cos(angle)*.11);helper.rotation.set(1.36+random(940+i)*.12,angle,0,'YXZ');helper.scale.setScalar(.9+random(950+i)*.1);helper.updateMatrix()
     sepal.applyMatrix4(helper.matrix);parts.push(paint(sepal,new THREE.Color('#38452a'),new THREE.Color('#6b5a3a'),-.14,-.11))
   }
@@ -116,8 +136,8 @@ export function createLotus():{group:THREE.Group;petalCount:number;material:THRE
   const group=new THREE.Group();group.name='Porcelain Lotus — 36 petals';group.position.set(-.25,.15,-.55);group.scale.setScalar(.78)
   const material=new THREE.MeshPhysicalMaterial({color:'#ffffff',transmission:.35,thickness:.2,roughness:.46,metalness:0,ior:1.42,specularIntensity:.42,
     sheen:.55,sheenRoughness:.55,sheenColor:new THREE.Color('#ffd6c8'),clearcoat:.2,clearcoatRoughness:.32,attenuationColor:new THREE.Color('#f5c4ae'),attenuationDistance:.45})
-  const uniforms={uTime:{value:0},uSway:{value:1},uOpen:{value:0},uCore:{value:CORE},uGlow:{value:.2},uRelief:{value:.0012},
-    uGlowColor:{value:new THREE.Color('#ffc58a')},uBase:{value:new THREE.Color('#e6e0bb')},uIvory:{value:new THREE.Color('#fbf4ea')},uBlush:{value:new THREE.Color('#eeb3bb')},uRose:{value:new THREE.Color('#c27183')}}
+  const uniforms={uTime:{value:0},uSway:{value:1},uOpen:{value:0},uCore:{value:CORE},uGlow:{value:.5},uRelief:{value:.0006},
+    uGlowColor:{value:new THREE.Color('#ffc58a')},uBase:{value:new THREE.Color('#e6e0bb')},uIvory:{value:new THREE.Color('#fbf4ea')},uBlush:{value:new THREE.Color('#eeb3bb')},uRose:{value:new THREE.Color('#b4566e')}}
   material.onBeforeCompile=shader=>{
     Object.assign(shader.uniforms,uniforms)
     shader.vertexShader=petalVertexPars+shader.vertexShader.replace('#include <beginnormal_vertex>','#include <beginnormal_vertex>'+petalNormal).replace('#include <begin_vertex>','#include <begin_vertex>'+petalBegin)
@@ -127,18 +147,22 @@ export function createLotus():{group:THREE.Group;petalCount:number;material:THRE
       .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>'+petalNormalMap)
       .replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>'+petalEmissive)
   }
-  material.customProgramCacheKey=()=>'liora-porcelain-petal-v2'
-  const rings=[{length:.81,width:.29,radius:.17,y:-.08,tilt:1.27,count:11},{length:.87,width:.285,radius:.12,y:.035,tilt:1.04,count:10},{length:.83,width:.26,radius:.075,y:.15,tilt:.79,count:8},{length:.68,width:.23,radius:.035,y:.245,tilt:.53,count:7}]
+  material.customProgramCacheKey=()=>'liora-porcelain-petal-v3'
+  // A bowl, not a stack of saucers: each ring leaves the receptacle a little more upright than the one outside it and
+  // curls in towards the heart (curl), so the outer petals cup the inner ones instead of fanning out flat.
+  const rings=[{length:.8,width:.27,radius:.17,y:-.08,tilt:1.22,curl:.14,point:.4,count:11},{length:.85,width:.265,radius:.12,y:.035,tilt:.94,curl:.13,point:.32,count:10},{length:.8,width:.26,radius:.075,y:.15,tilt:.8,curl:.14,point:.18,count:8},{length:.68,width:.24,radius:.035,y:.245,tilt:.6,curl:.15,point:.08,count:7}]
   const shells:THREE.BufferGeometry[]=[],helper=new THREE.Object3D()
   let index=0
   rings.forEach((ring,layer)=>{
     for(let i=0;i<ring.count;i++,index++){
-      // Hand-made spread: a little angle, twist and size jitter per petal; tilt only closes and scale only shrinks, so the
-      // flower never reaches past the original footprint (scene.inspect() frames every vertex against the chat panel).
+      // Hand-made spread: a little angle, twist and size jitter per petal; the jitter only closes the tilt and only shrinks
+      // the scale. The front petals of the inner rings open a little towards the viewers so the lit cup shows. The bowl stays
+      // inside the old footprint: scene.inspect() frames every vertex against the header and the chat panel (checked at
+      // 320×568, 390×844 and 1000×600).
       const seed=index*31+7,angle=i/ring.count*Math.PI*2+layer*.37+(random(seed)-.5)*.1
-      const tilt=ring.tilt+Math.max(0,Math.cos(angle))*(layer===3?.42:layer===2?.28:.035)-random(seed+1)*.06
-      const geometry=petalShell(ring.length,ring.width,seed,28,16),count=geometry.getAttribute('position').count
-      helper.position.set(Math.sin(angle)*ring.radius,ring.y,Math.cos(angle)*ring.radius);helper.rotation.set(tilt,angle,(random(seed+2)-.5)*.12,'YXZ');helper.scale.setScalar(.93+random(seed+3)*.07);helper.updateMatrix()
+      const tilt=ring.tilt+Math.max(0,Math.cos(angle))*(layer===3?.26:layer===2?.16:.03)-random(seed+1)*.1
+      const geometry=petalShell(ring.length,ring.width,seed,28,16,{curl:ring.curl,point:ring.point}),count=geometry.getAttribute('position').count
+      helper.position.set(Math.sin(angle)*ring.radius,ring.y,Math.cos(angle)*ring.radius);helper.rotation.set(tilt,angle,(random(seed+2)-.5)*.2,'YXZ');helper.scale.setScalar(.93+random(seed+3)*.07);helper.updateMatrix()
       geometry.applyMatrix4(helper.matrix)
       const pivot=new Float32Array(count*3),petal=new Float32Array(count*4)
       for(let k=0;k<count;k++){pivot.set([helper.position.x,helper.position.y,helper.position.z],k*3);petal.set([angle,layer,i*.29,random(seed+4)],k*4)}
@@ -149,8 +173,12 @@ export function createLotus():{group:THREE.Group;petalCount:number;material:THRE
   const petals=mesh(merged,material,group);petals.name='Porcelain petals (36, one batch)'
   const baseMaterial=applySurface(new THREE.MeshStandardMaterial({color:'#ffffff',vertexColors:true,roughness:.82,metalness:0}),{scale:7,bump:.005,fine:.5,variation:.2,tint:'#8a7448',cavity:.3,roughnessVariation:.1})
   const base=mesh(lotusBase(),baseMaterial,group);base.name='Lotus calyx, sepals and seed head';base.castShadow=false
+  // The petals share the core's drifting rhythm (glow.ts): the glow through the porcelain is light, so it follows the core
+  // at once; the petals themselves ease open a beat (.35 s) behind it. Under reduced motion both settle and hold still.
+  const clock=createMotionClock();let lastTime=0
   return {group,material,petalCount:index,update(time,reduced){
-    uniforms.uTime.value=reduced?0:time;uniforms.uSway.value=reduced?0:1
-    const breath=reduced?.5:breathe(time);uniforms.uOpen.value=reduced?0:breath;uniforms.uGlow.value=.16+.04*breath
+    clock.tick(time-lastTime,reduced);lastTime=time
+    const glow=.5+(coreBreath(clock.time)-.5)*clock.live
+    uniforms.uTime.value=clock.time;uniforms.uSway.value=clock.live;uniforms.uOpen.value=coreBreath(clock.time-.35)*clock.live;uniforms.uGlow.value=.44+.12*glow
   }}
 }
