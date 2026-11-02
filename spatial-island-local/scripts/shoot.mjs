@@ -2,6 +2,8 @@
 // One browser, one page, stops rendered one after another (never in parallel).
 // Usage: node scripts/shoot.mjs --tag before [--url http://127.0.0.1:8083/] [--out .checks/shots]
 //        [--size 1440x900] [--dpr 1.25] [--stops 0,.25,.5,.75,1] [--settle 2600]
+//        [--eval "window.sanctuary.selectLantern(1)"]  (runs once after boot, before the stops)
+//        [--clip 600,250,500,400]  (also saves <tag>-<i>-clip.png of that CSS-pixel rect at each stop)
 // --perf turns vsync and the frame-rate limit off, so fps/p95 reflect GPU time, not the display cap.
 // Without it the page runs at the display rate (gentler on a shared GPU); use that for look checks.
 // A machine-wide lock (os.tmpdir()/liora-gpu-shoot.lock) serialises renders from parallel agents.
@@ -18,6 +20,8 @@ const [width, height] = arg('size', '1440x900').split('x').map(Number)
 const dpr = Number(arg('dpr', '1.25')), settle = Number(arg('settle', '2600'))
 const stops = arg('stops', '0,.25,.5,.75,1').split(',').map(Number)
 const noAvatar = process.argv.includes('--no-avatar'), perf = process.argv.includes('--perf')
+const evalCode = arg('eval', ''), clipArg = arg('clip', '')
+const clip = clipArg ? (([x, y, w, h]) => ({ x, y, width: w, height: h }))(clipArg.split(',').map(Number)) : null
 await mkdir(out, { recursive: true })
 
 const lock = join(tmpdir(), 'liora-gpu-shoot.lock')
@@ -69,12 +73,14 @@ try {
     return { totalKB: Math.round(sum(() => true) / 1024), modelKB: Math.round(sum(e => /\.glb/.test(e.name)) / 1024), count: entries.length }
   })
   await page.locator('.entry').waitFor({ state: 'detached', timeout: 15000 }).catch(() => {})
+  if (evalCode) await page.evaluate(code => (0, eval)(code), evalCode)
   for (const [i, p] of stops.entries()) {
     await page.evaluate(v => window.sanctuary.setProgress(v), p)
     await page.waitForTimeout(settle)
     const c = await page.evaluate(() => { const s = window.sanctuary.inspect(); return { ...s.cinematic, calls: s.calls, geometries: s.resources.geometries, textures: s.resources.textures } })
     const file = `${out}/${tag}-${i}.png`
     await page.screenshot({ path: file, timeout: 30000 })
+    if (clip) await page.screenshot({ path: `${out}/${tag}-${i}-clip.png`, clip, timeout: 30000 })
     report.stops.push({ progress: p, file, fps: +c.fps.toFixed(1), p95: +c.frameP95.toFixed(2), calls: c.calls, triangles: c.triangles, geometries: c.geometries, textures: c.textures })
     console.log(`stop ${p}: ${c.fps.toFixed(1)} fps, p95 ${c.frameP95.toFixed(1)} ms, ${c.calls} calls, ${c.triangles} tris -> ${file}`)
   }
