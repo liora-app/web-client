@@ -38,9 +38,10 @@ export const qualityPresets:Record<Tier,QualityPreset>={
   high:{tier:'high',samples:2,bloomScale:1,transmission:.25,shadowSize:2048,shadowHz:30,finery:true},
   // Medium keeps the full bloom chain: the bloom radius is fixed, so a half-resolution chain doubles the glow's spread on
   // screen (seen on Low near the lotus), against "glow on the source, not haze over the frame". Low accepts that trade.
-  // Medium is the phone tier and draws at DPR ≤ 1.25 on 3x screens: without MSAA the petal and knit silhouettes stair-step
-  // under the upscale (art-8). Two samples, as on High; tile-based mobile GPUs resolve them on chip, and pacing still
-  // steps down to Low (no MSAA) where the resolve costs too much.
+  // Medium is where phones start (and integrated desktop GPUs: Intel, base Apple M, Radeon APUs, GeForce MX). On a phone
+  // it draws at DPR ≤ 1.25 on a 3x screen, and without MSAA the petal and knit silhouettes stair-step under the upscale
+  // (art-8). Two samples, as on High; tile-based mobile GPUs resolve them on chip, and pacing still steps down to Low
+  // (no MSAA) wherever the resolve costs too much.
   medium:{tier:'medium',samples:2,bloomScale:1,transmission:.2,shadowSize:1024,shadowHz:30,finery:true},
   low:{tier:'low',samples:0,bloomScale:.5,transmission:.15,shadowSize:1024,shadowHz:15,finery:false},
 }
