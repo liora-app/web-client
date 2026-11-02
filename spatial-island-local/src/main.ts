@@ -229,7 +229,7 @@ const startScene=async():Promise<void>=>{
     const canvas=host.querySelector('canvas');if(canvas)void getComputedStyle(canvas).opacity
     root.dataset.webgl='ready'
     root.dataset.avatar='loading'
-    void scene.loadCompanion('/models/companion.glb').then(ok=>{if(disposed||generation!==sceneGeneration)return;root.dataset.avatar=ok?'ready':'fallback';if(!ok)notify('Не вдалося завантажити вашу модель. Тимчасово доступний резервний компаньйон.')})
+    void scene.loadCompanion(`${import.meta.env.BASE_URL}models/companion.glb`).then(ok=>{if(disposed||generation!==sceneGeneration)return;root.dataset.avatar=ok?'ready':'fallback';if(!ok)notify('Не вдалося завантажити вашу модель. Тимчасово доступний резервний компаньйон.')})
   }catch(error){root.dataset.webgl='fallback';host.classList.add('fallback-scene');notice.hidden=false;console.warn('Liora 3D fallback:',error instanceof Error?error.message:'WebGL unavailable')}
   finally{loading=false;if(!disposed)revealEntry()}
 }
