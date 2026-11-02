@@ -61,13 +61,12 @@ try{
   }
   pass('All process copy remains available through native accessible disclosure steps')
   // ux-7: every lantern the FAQ answers light stays in view, clear of the FAQ panel (desktop framing from panel rects).
-  // 1000x600 needs the FAQ panel's rect (main.ts framePanels passing PanelRects): with the tuned constants lantern 0 sits
-  // under the panel's right edge there. Until main.ts passes rects that size is skipped and recorded, not passed.
+  // 1000x600 depends on the FAQ panel's rect (main.ts framePanels): with the old constants lantern 0 sat under its edge.
   const lanternSizes=[]
   for(const [width,height] of [[1000,600],[1440,900]]){
     await page.setViewportSize({width,height});await page.waitForFunction(()=>document.querySelector('#scroll-wrapper').offsetHeight===innerHeight*5);await wait(300);await at(.75)
     const faq=await page.locator('.faq-panel').boundingBox(),state=await page.evaluate(()=>window.sanctuary.inspect()),screens=state.lanternScreens
-    if(width===1000&&!state.panelRects[3]){report.skipped.push(`Lanterns clear of the FAQ panel on ${width}x${height}: the scene holds no rect for the FAQ panel (main.ts passes tops only)`);console.log('SKIP',report.skipped.at(-1));continue}
+    assert.ok(state.panelRects[3],`The scene holds no rect for the FAQ panel on ${width}x${height}`)
     lanternSizes.push(`${width}x${height}`)
     screens.forEach(([x,y],i)=>assert.ok(Math.max(faq.x-x,x-faq.x-faq.width,faq.y-y,y-faq.y-faq.height)>=12,`Lantern ${i} at ${Math.round(x)},${Math.round(y)} within 12 px of the FAQ panel ${JSON.stringify(faq)} on ${width}x${height}`))
   }

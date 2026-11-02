@@ -4,7 +4,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import Lenis from 'lenis'
 import { setupChat } from './ui/chat'
 import { setupSound } from './ui/sound'
-import type { SanctuaryScene } from './gl/scene'
+import type { PanelRect, SanctuaryScene } from './gl/scene'
 
 gsap.registerPlugin(ScrollTrigger)
 // Lenis and scrub share real time, including slower frames during GPU compilation.
@@ -228,20 +228,18 @@ faqButtons.forEach(button=>{button.addEventListener('keydown',lanternKey);cleanu
 // The scene frames each station in the room the words leave: it needs where every stop's sheet starts (phones) and,
 // per stop, the rest box of its sheet; for the hero that is the box around its words, not the full-height column.
 // Measured without the drift (translate) that only plays while a panel or a hero line fades in or out.
-interface PanelRect {top:number;bottom:number;left:number;right:number}
-const noRect:PanelRect={top:Number.NaN,bottom:Number.NaN,left:Number.NaN,right:Number.NaN}
+// The scene reads each entry's top for phones (stops 1-4) and the whole rect for desktop framing (stops 0-3).
 function framePanels():void {
   if(!scene)return
-  const tops:number[]=[],rects:PanelRect[]=[]
+  const rects:(PanelRect|null)[]=[]
   sections.forEach((section,i)=>{
-    const panel=section.querySelector<HTMLElement>('.stage-content');if(!panel){tops.push(Number.NaN);rects.push(noRect);return}
+    const panel=section.querySelector<HTMLElement>('.stage-content');if(!panel){rects.push(null);return}
     const shift=getComputedStyle(panel).translate.split(' '),drift=shift.length>1?Number.parseFloat(shift[1])||0:0,box=panel.getBoundingClientRect(),top=box.top-drift
-    tops.push(top)
     // Hero lines are flex items aligned to the start, so each one's layout box (offset*, free of translate) hugs its words.
     const words=i===0?[...panel.children].filter((child):child is HTMLElement=>child instanceof HTMLElement&&child.offsetHeight>0):[]
     rects.push(words.length?{top:top+Math.min(...words.map(w=>w.offsetTop)),bottom:top+Math.max(...words.map(w=>w.offsetTop+w.offsetHeight)),left:box.left+Math.min(...words.map(w=>w.offsetLeft)),right:box.left+Math.max(...words.map(w=>w.offsetLeft+w.offsetWidth))}:{top,bottom:box.bottom-drift,left:box.left,right:box.right})
   })
-  ;(scene as SanctuaryScene&{setPanelTops:(tops:number[],rects?:PanelRect[])=>void}).setPanelTops(tops,rects)
+  scene.setPanelTops(rects)
 }
 // A sheet that grows (an opening answer on a short phone, an opened step) moves its top: the scene re-frames, gliding.
 let panelFrame=0
