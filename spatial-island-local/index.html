@@ -20,6 +20,7 @@
       <a href="#journal" data-go="1">Як це працює</a>
       <a href="#privacy" data-go="2">Приватність</a>
       <a href="#questions" data-go="3">Запитання</a>
+      <a href="#conversation" data-go="4">Розмова</a>
     </nav>
     <div class="header__actions">
       <button class="help-button" data-help>Якщо важко</button>
@@ -29,7 +30,7 @@
       <button class="menu-toggle" aria-label="Відкрити навігацію" aria-expanded="false" aria-controls="mobile-nav"><span></span><span></span></button>
     </div>
     <nav id="mobile-nav" class="mobile-nav" aria-label="Мобільна навігація" hidden>
-      <a href="#journal" data-go="1">Як це працює</a><a href="#privacy" data-go="2">Приватність</a><a href="#questions" data-go="3">Запитання</a>
+      <a href="#journal" data-go="1">Як це працює</a><a href="#privacy" data-go="2">Приватність</a><a href="#questions" data-go="3">Запитання</a><a href="#conversation" data-go="4">Розмова</a>
     </nav>
   </header>
   <main id="scroll-wrapper" tabindex="-1">
@@ -48,9 +49,9 @@
         <p class="eyebrow">02 / Ваш напрямок</p>
         <h2 id="journal-title" tabindex="-1">З чого <em>почнемо?</em></h2>
         <div class="journal-grid"><div class="journal-choice"><div class="directions" role="tablist" aria-label="Напрямок розмови">
-          <button class="direction is-selected" role="tab" aria-selected="true" aria-controls="direction-detail" id="direction-0" data-direction="0"><span>01 / Розмова</span><strong>Можна просто поговорити.</strong><small>Про день, думки й усе між ними.</small><b aria-hidden="true">↗</b></button>
-          <button class="direction" role="tab" aria-selected="false" aria-controls="direction-detail" id="direction-1" tabindex="-1" data-direction="1"><span>02 / Спокій</span><strong>Зробіть місце для видиху.</strong><small>Коли хочеться трохи менше шуму.</small><b aria-hidden="true">↗</b></button>
-          <button class="direction" role="tab" aria-selected="false" aria-controls="direction-detail" id="direction-2" tabindex="-1" data-direction="2"><span>03 / Турбота</span><strong>Будьте на своєму боці.</strong><small>Ваші почуття мають значення.</small><b aria-hidden="true">↗</b></button>
+          <button class="direction is-selected" role="tab" aria-selected="true" aria-controls="direction-detail" id="direction-0" data-direction="0"><span>01 / Розмова</span><strong>Можна просто поговорити.</strong><small>Про день, думки й усе між ними.</small></button>
+          <button class="direction" role="tab" aria-selected="false" aria-controls="direction-detail" id="direction-1" tabindex="-1" data-direction="1"><span>02 / Спокій</span><strong>Зробіть місце для видиху.</strong><small>Коли хочеться трохи менше шуму.</small></button>
+          <button class="direction" role="tab" aria-selected="false" aria-controls="direction-detail" id="direction-2" tabindex="-1" data-direction="2"><span>03 / Турбота</span><strong>Будьте на своєму боці.</strong><small>Ваші почуття мають значення.</small></button>
         </div>
         <div id="direction-detail" role="tabpanel" aria-labelledby="direction-0"><p class="direction-status" aria-live="polite">Можемо почати з того, як минув ваш день.</p><a class="text-link" href="#conversation" data-go="4">Поговорімо про це <span aria-hidden="true">↗</span></a></div>
         </div><div class="process"><h3>Маленька розмова.<br />Трохи більше ясності.</h3>
@@ -87,14 +88,14 @@
         <div class="conversation-heading"><span class="live-dot"></span><h2 id="chat-title" tabindex="-1">Я поруч. <em>Слухаю вас.</em></h2><span class="demo-label">Локальна демоверсія</span></div>
         <div class="scenario-chips" aria-label="Почніть із готової фрази"><button data-scenario="0">+ Вільна розмова</button><button data-scenario="1">Розбір ситуації</button><button data-scenario="2">Відновити спокій</button></div>
         <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions" tabindex="0" aria-label="Повідомлення розмови"><p class="chat-welcome">Можна почати з одного слова. Поспішати нікуди.</p></div>
-        <div class="chat-options"><label class="toggle"><input type="checkbox" id="private-mode" checked /><span aria-hidden="true"></span>Не зберігати цю розмову</label><button class="notes-toggle" aria-expanded="false" aria-controls="notes-panel">Важливе <span data-note-count>0</span></button></div>
+        <div class="chat-options"><label class="toggle"><input type="checkbox" id="private-mode" checked aria-describedby="private-mode-note" /><span aria-hidden="true"></span>Не зберігати цю розмову</label><span id="private-mode-note" class="sr-only">Поки перемикач увімкнено, тези розмови не зберігаються і кнопок «Залишити важливе» немає.</span><button class="notes-toggle" aria-expanded="false" aria-controls="notes-panel">Важливе <span data-note-count>0</span></button></div>
         <div id="notes-panel" class="notes-panel" hidden><p>Обрані тези залишаються лише до оновлення цієї вкладки.</p><div data-notes></div></div>
-        <form class="composer" autocomplete="off"><label class="sr-only" for="chat-input">Ваше повідомлення</label><input id="chat-input" type="text" maxlength="500" placeholder="Пишіть так, як думаєте..." /><button class="microphone" type="button" aria-pressed="false" aria-label="Увімкнути голосове введення"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></svg></button><button class="send" type="submit" aria-label="Надіслати повідомлення" disabled>↑</button></form>
+        <form class="composer" autocomplete="off"><label class="sr-only" for="chat-input">Ваше повідомлення</label><input id="chat-input" type="text" maxlength="500" placeholder="Пишіть так, як думаєте…" /><button class="microphone" type="button" aria-pressed="false" aria-label="Увімкнути голосове введення"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></svg></button><button class="send" type="submit" aria-label="Надіслати повідомлення" disabled>↑</button></form>
         <p class="chat-disclaimer">AI, не людина · може помилятися · не терапія<br /><span>Текст розмови не надсилається серверу. Після оновлення зникнуть розмова й обрані тези.</span></p>
       </div>
     </section>
   </main>
-  <footer class="journey-footer"><button data-next aria-label="Перейти до наступного етапу"><span class="footer-arrow" aria-hidden="true">↓</span><span data-stage-label>Гортайте повільно</span></button><div class="stage-steps" aria-label="Етапи простору"><button data-go="0" class="is-current" aria-label="Етап 1 — Початок" aria-current="step"></button><button data-go="1" aria-label="Етап 2 — Щоденник"></button><button data-go="2" aria-label="Етап 3 — Приватність"></button><button data-go="3" aria-label="Етап 4 — Запитання"></button><button data-go="4" aria-label="Етап 5 — Розмова"></button></div><span data-stage-count>01 / 05</span></footer>
+  <footer class="journey-footer"><button data-next><span class="footer-arrow" aria-hidden="true">↓</span><span data-stage-label>Далі: Як це працює</span></button><div class="stage-steps" aria-label="Етапи простору"><button data-go="0" class="is-current" aria-label="Етап 1 — Початок" aria-current="step"></button><button data-go="1" aria-label="Етап 2 — Як це працює"></button><button data-go="2" aria-label="Етап 3 — Приватність"></button><button data-go="3" aria-label="Етап 4 — Запитання"></button><button data-go="4" aria-label="Етап 5 — Розмова"></button></div><span data-stage-count>01 / 05</span></footer>
   <dialog class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="help-title"><button class="dialog-close" aria-label="Закрити">×</button><p class="eyebrow">Ви не маєте залишатися наодинці</p><h2 id="help-title">Якщо зараз <em>дуже важко.</em></h2><p>Якщо є безпосередня загроза життю чи здоров’ю, зверніться до екстреної допомоги в Україні:</p><a href="tel:112"><strong>112</strong><span>Єдина екстрена допомога ↗</span></a><a href="tel:103"><strong>103</strong><span>Екстрена медична допомога ↗</span></a><p>Поговорити з людиною можна й без екстреного виклику:</p><a href="https://howareu.com/hot-lines" target="_blank" rel="noopener noreferrer"><strong>«Ти як?»</strong><span>Гарячі лінії підтримки ↗</span><span class="sr-only"> (відкриється в новій вкладці)</span></a><p class="fine-print">Якщо можете, попросіть людину, якій довіряєте, побути поруч. Liora не замінює професійної чи екстреної допомоги.</p></dialog>
   <div class="toast" role="status" aria-live="polite" hidden></div>
   <div class="webgl-notice" hidden><p>3D-простір зараз недоступний. Усі розділи та розмова працюють.</p><button data-retry>Спробувати 3D ще раз</button></div>

@@ -24,13 +24,20 @@ export function setupChat(onTalking:(value:boolean)=>void,onVoice:(value:number)
   function prefill(index:number):void {input.value=starters[Math.max(0,Math.min(2,index))];sync();if(active)input.focus({preventScroll:true})}
   const chips=document.querySelectorAll<HTMLButtonElement>('[data-scenario]')
   chips.forEach(button=>{const click=():void=>prefill(Number(button.dataset.scenario));button.addEventListener('click',click);listeners.push(()=>button.removeEventListener('click',click))})
+  // iOS zooms into a field under 16px, so phones type at 16px (style.css): there the long placeholder would be cut off.
+  const narrow=matchMedia('(max-width: 400px)'),placeholder=():void=>{input.placeholder=narrow.matches?'Напишіть думку…':'Пишіть так, як думаєте…'}
+  placeholder();narrow.addEventListener('change',placeholder)
   const scroll=():void=>{messages.scrollTop=messages.scrollHeight}
-  const add=(role:'user'|'assistant',text:string):{article:HTMLElement;body:HTMLElement}=>{
+  // `spoken`: a reply that types itself in. Screen readers get the whole reply in the same addition to the log (sr-only),
+  // while the typed copy, rewritten on every step, stays out of the accessibility tree.
+  const add=(role:'user'|'assistant',text:string,spoken?:string):{article:HTMLElement;body:HTMLElement}=>{
     messages.querySelector('.chat-welcome')?.remove()
     // All content, including adversarial input and generated replies, enters as text nodes.
     const article=document.createElement('article');article.className=`message message--${role}`
     const author=document.createElement('span');author.className='message__author';author.textContent=role==='user'?'Ви':'Liora · демовідповідь'
-    const body=document.createElement('p');body.className='message__text';body.textContent=text;article.append(author,body);messages.append(article)
+    const body=document.createElement('p');body.className='message__text';body.textContent=text;article.append(author,body)
+    if(spoken!==undefined){body.setAttribute('aria-hidden','true');const full=document.createElement('span');full.className='sr-only';full.textContent=spoken;article.append(full)}
+    messages.append(article)
     while(messages.children.length>60)messages.firstElementChild?.remove()
     scroll();return {article,body}
   }
@@ -44,7 +51,7 @@ export function setupChat(onTalking:(value:boolean)=>void,onVoice:(value:number)
     event.preventDefault();const text=input.value.trim().slice(0,500)
     if(!text||busy||disposed)return
     busy=true;input.value='';sync();add('user',text);onTalking(true)
-    const reply=answer(text,turn++),{article,body}=add('assistant','…');messages.setAttribute('aria-busy','true')
+    const reply=answer(text,turn++),{article,body}=add('assistant','…',reply);messages.setAttribute('aria-busy','true')
     const began=performance.now()+350
     let offset=0
     const type=():void=>{
@@ -52,7 +59,11 @@ export function setupChat(onTalking:(value:boolean)=>void,onVoice:(value:number)
       offset=matchMedia('(prefers-reduced-motion: reduce)').matches?reply.length:Math.min(reply.length,Math.max(1,Math.floor((performance.now()-began)*.07)));body.textContent=reply.slice(0,offset);scroll()
       if(offset<reply.length){timer=window.setTimeout(type,20);return}
       busy=false;onTalking(false);messages.removeAttribute('aria-busy');sync()
-      const button=document.createElement('button');button.className='save-note';button.textContent='Залишити важливе +';button.type='button';button.addEventListener('click',()=>save(reply,button));article.append(button);scroll()
+      // In private mode (the default) the button is hidden (style.css) and the last reply says how to keep a point instead;
+      // the hint is visual only: the switch itself carries the same fact for screen readers (aria-describedby).
+      const button=document.createElement('button');button.className='save-note';button.textContent='Залишити важливе +';button.type='button';button.addEventListener('click',()=>save(reply,button))
+      const hint=document.createElement('p');hint.className='save-hint';hint.setAttribute('aria-hidden','true');hint.textContent='Щоб залишити тезу, вимкніть «Не зберігати цю розмову».'
+      article.append(button,hint);scroll()
     }
     timer=window.setTimeout(type,350)
   }
@@ -61,5 +72,5 @@ export function setupChat(onTalking:(value:boolean)=>void,onVoice:(value:number)
   const privateChange=():void=>{if(privacy.checked){notesHost.replaceChildren();messages.querySelectorAll<HTMLButtonElement>('.save-note').forEach(b=>{b.disabled=false;b.textContent='Залишити важливе +'});updateNotes();notesPanel.hidden=true;notesToggle.setAttribute('aria-expanded','false')}};privacy.addEventListener('change',privateChange)
   const microphone=document.querySelector<HTMLButtonElement>('.microphone')!
   let disposeVoice=setupVoice(microphone,input,onVoice,notify)
-  return {prefill,setActive(value){if(active&&!value){disposeVoice();disposeVoice=setupVoice(microphone,input,onVoice,notify)}active=value},dispose(){disposed=true;clearTimeout(timer);onTalking(false);disposeVoice();input.removeEventListener('input',sync);form.removeEventListener('submit',submit);notesToggle.removeEventListener('click',toggleNotes);privacy.removeEventListener('change',privateChange);listeners.forEach(remove=>remove())}}
+  return {prefill,setActive(value){if(active&&!value){disposeVoice();disposeVoice=setupVoice(microphone,input,onVoice,notify)}active=value},dispose(){disposed=true;clearTimeout(timer);onTalking(false);disposeVoice();narrow.removeEventListener('change',placeholder);input.removeEventListener('input',sync);form.removeEventListener('submit',submit);notesToggle.removeEventListener('click',toggleNotes);privacy.removeEventListener('change',privateChange);listeners.forEach(remove=>remove())}}
 }
