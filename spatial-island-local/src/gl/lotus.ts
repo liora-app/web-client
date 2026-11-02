@@ -11,9 +11,9 @@ const CORE=new THREE.Vector3(0,(.53-.15)/.78,0)
  * One petal: a thin lens-section shell, cupped, widest a little past the middle, with a soft point.
  * uv.x runs once around the section (sin(2πu) is the across-petal coordinate, cos(2πu)>0 the outer face), uv.y base → tip.
  */
-function petalShell(length:number,width:number,seed:number,rows:number,columns:number):THREE.BufferGeometry {
+function petalShell(length:number,width:number,seed:number,rows:number,columns:number,depth=1):THREE.BufferGeometry {
   const positions:number[]=[],uvs:number[]=[],indices:number[]=[]
-  const cupping=.9+random(seed)*.22,flutter=random(seed+1)*6.28,ripple=.003+random(seed+2)*.005
+  const cupping=(.88+random(seed)*.12)*depth,flutter=random(seed+1)*6.28,ripple=.003+random(seed+2)*.005
   for(let i=0;i<=rows;i++)for(let j=0;j<=columns;j++){
     const t=i/rows,a=j/columns*Math.PI*2,v=Math.sin(a),swell=Math.sin(Math.PI*Math.pow(t,1.15))
     const breadth=width*Math.pow(swell,.55+.4*t),thickness=.024*Math.pow(Math.sin(Math.PI*t),.5)*(1-.3*t)
@@ -96,16 +96,16 @@ function lotusBase():THREE.BufferGeometry {
     for(let i=0;i<positions.count;i++){color.copy(from).lerp(to,THREE.MathUtils.smoothstep(positions.getY(i),low,high));colors.push(color.r,color.g,color.b)}
     geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));return geometry
   }
-  const calyx=new THREE.LatheGeometry([[0,-.19],[.05,-.186],[.1,-.17],[.14,-.14],[.163,-.1],[.168,-.07],[.15,-.046],[.1,-.032],[0,-.026]].map(([x,y])=>new THREE.Vector2(x,y)),18)
+  const calyx=new THREE.LatheGeometry([[0,-.18],[.05,-.177],[.1,-.163],[.14,-.135],[.163,-.1],[.168,-.07],[.15,-.046],[.1,-.032],[0,-.026]].map(([x,y])=>new THREE.Vector2(x,y)),18)
   const positions=calyx.getAttribute('position')
-  for(let i=0;i<positions.count;i++){const x=positions.getX(i),z=positions.getZ(i),rib=1+.06*Math.sin(Math.atan2(z,x)*5)*THREE.MathUtils.smoothstep(positions.getY(i),-.19,-.08);positions.setXYZ(i,x*rib,positions.getY(i),z*rib)}
-  calyx.computeVertexNormals();parts.push(paint(calyx,new THREE.Color('#2f3a22'),olive,-.19,-.06))
+  for(let i=0;i<positions.count;i++){const x=positions.getX(i),z=positions.getZ(i),rib=1+.06*Math.sin(Math.atan2(z,x)*5)*THREE.MathUtils.smoothstep(positions.getY(i),-.18,-.08);positions.setXYZ(i,x*rib,positions.getY(i),z*rib)}
+  calyx.computeVertexNormals();parts.push(paint(calyx,new THREE.Color('#2f3a22'),olive,-.18,-.06))
   const head=new THREE.LatheGeometry([[0,-.03],[.04,-.03],[.06,.06],[.082,.16],[.088,.19],[.07,.2],[0,.205]].map(([x,y])=>new THREE.Vector2(x,y)),14)
   parts.push(paint(head,olive,pod,.0,.19))
   const helper=new THREE.Object3D()
   for(let i=0;i<5;i++){
-    const sepal=petalShell(.3,.12,900+i*7,10,8),angle=i/5*Math.PI*2+.31
-    helper.position.set(Math.sin(angle)*.11,-.13,Math.cos(angle)*.11);helper.rotation.set(1.36+random(940+i)*.12,angle,0,'YXZ');helper.scale.setScalar(.92+random(950+i)*.12);helper.updateMatrix()
+    const sepal=petalShell(.3,.12,900+i*7,10,8,.3),angle=i/5*Math.PI*2+.31
+    helper.position.set(Math.sin(angle)*.11,-.13,Math.cos(angle)*.11);helper.rotation.set(1.36+random(940+i)*.12,angle,0,'YXZ');helper.scale.setScalar(.9+random(950+i)*.1);helper.updateMatrix()
     sepal.applyMatrix4(helper.matrix);parts.push(paint(sepal,new THREE.Color('#38452a'),new THREE.Color('#6b5a3a'),-.14,-.11))
   }
   const merged=mergeGeometries(parts,false);parts.forEach(g=>g.dispose());if(!merged)throw new Error('Lotus base merge failed')
@@ -133,9 +133,10 @@ export function createLotus():{group:THREE.Group;petalCount:number;material:THRE
   let index=0
   rings.forEach((ring,layer)=>{
     for(let i=0;i<ring.count;i++,index++){
-      // Hand-made spread: a little angle, tilt, twist and size jitter per petal, never larger than the original petal.
+      // Hand-made spread: a little angle, twist and size jitter per petal; tilt only closes and scale only shrinks, so the
+      // flower never reaches past the original footprint (scene.inspect() frames every vertex against the chat panel).
       const seed=index*31+7,angle=i/ring.count*Math.PI*2+layer*.37+(random(seed)-.5)*.1
-      const tilt=ring.tilt+Math.max(0,Math.cos(angle))*(layer===3?.42:layer===2?.28:.035)+(random(seed+1)-.5)*.07
+      const tilt=ring.tilt+Math.max(0,Math.cos(angle))*(layer===3?.42:layer===2?.28:.035)-random(seed+1)*.06
       const geometry=petalShell(ring.length,ring.width,seed,28,16),count=geometry.getAttribute('position').count
       helper.position.set(Math.sin(angle)*ring.radius,ring.y,Math.cos(angle)*ring.radius);helper.rotation.set(tilt,angle,(random(seed+2)-.5)*.12,'YXZ');helper.scale.setScalar(.93+random(seed+3)*.07);helper.updateMatrix()
       geometry.applyMatrix4(helper.matrix)
