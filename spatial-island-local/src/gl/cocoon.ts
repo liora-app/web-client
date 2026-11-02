@@ -30,24 +30,25 @@ function seam(k:number,theta:number):number {
   return wrap+id*Math.PI/3+Math.sin(theta)*(noise3(theta*1.9,id*3.7+.31,.53)*.24+noise3(theta*7.3,id*1.9+.17,2.3)*.06)
 }
 
-const glazeDeep=new THREE.Color(.012,.031,.028),glazeBlue=new THREE.Color(.01,.025,.034),kaki=new THREE.Color(.13,.052,.02),glazePool=new THREE.Color(.007,.022,.026),clay=new THREE.Color(.2,.11,.055)
-/** Broad glaze tone baked into vertex colours (object space, so it travels with the shard): a slow teal/blue-black
- * drift, the glaze breaking to persimmon brown where it runs thin at the crown, pooling darker at the foot.
+const glazeDeep=new THREE.Color(.024,.05,.04),glazeBlue=new THREE.Color(.018,.042,.05),kaki=new THREE.Color(.21,.085,.03),glazePool=new THREE.Color(.012,.036,.04),clay=new THREE.Color(.2,.11,.055)
+/** Broad glaze tone baked into vertex colours (object space, so it travels with the shard): a slow teal-black drift,
+ * the glaze breaking to persimmon (kaki) where it runs thin over the upper half, pooling darker at the foot.
  * The fine hare's-fur streaks and the crazing live in the glaze map. */
 function glaze(p:THREE.Vector3,theta:number,out:THREE.Color):THREE.Color {
-  const n=fractal(p.x*4+11,p.y*4,p.z*4),crown=THREE.MathUtils.smoothstep(theta/Math.PI+n*.12,.56,.92)
-  out.copy(glazeDeep).lerp(glazeBlue,THREE.MathUtils.clamp(.5+n*1.2,0,1)).lerp(kaki,crown*.85).lerp(glazePool,(1-THREE.MathUtils.smoothstep(theta,.25,1.1))*.6)
+  const n=fractal(p.x*4+11,p.y*4,p.z*4),crown=THREE.MathUtils.smoothstep(theta/Math.PI+n*.14,.42,.82)
+  out.copy(glazeDeep).lerp(glazeBlue,THREE.MathUtils.clamp(.5+n*1.2,0,1)).lerp(kaki,crown*.9).lerp(glazePool,(1-THREE.MathUtils.smoothstep(theta,.25,1.1))*.6)
   return out.multiplyScalar((1+n*.2)/MAP_BASE)
 }
 
 let glazeCache:{color:THREE.DataTexture;rough:THREE.DataTexture}|undefined
 /** Tileable glaze map (u runs round the egg, v down it). Colour: fine hare's-fur streaks running down the glaze and a
- * two-scale crazing of lighter hairlines. Roughness (G): the crazing breaks the clear coat. */
+ * two-scale crazing of barely lighter hairlines. Roughness (G, multiplies clearcoatRoughness): the crazing only dulls
+ * the coat a little; a crackle much rougher than the glaze around it smeared every highlight into a white web. */
 function glazeMaps():{color:THREE.DataTexture;rough:THREE.DataTexture} {
   if(glazeCache)return glazeCache
   const size=256,color=new Uint8Array(size*size*4),rough=new Uint8Array(size*size*4),tau=Math.PI*2
   const sites=(cells:number,seed:number):Float32Array=>{const points=new Float32Array(cells*cells*2);for(let i=0;i<points.length;i++)points[i]=random(seed+i);return points}
-  const coarse=sites(16,1101),fine=sites(34,2707)
+  const coarse=sites(26,1101),fine=sites(34,2707)
   const edge=(points:Float32Array,cells:number,u:number,v:number):number=>{
     const gx=u*cells,gy=v*cells,ix=Math.floor(gx),iy=Math.floor(gy);let f1=9,f2=9
     for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++){
@@ -60,9 +61,9 @@ function glazeMaps():{color:THREE.DataTexture;rough:THREE.DataTexture} {
     const u=(x+.5)/size,v=(y+.5)/size,i=(y*size+x)*4
     const warp=Math.sin(tau*(v+u*2))*.35+Math.sin(tau*v*2+1.7)*.2
     const fur=Math.pow(Math.max(0,Math.sin(tau*(u*29+warp))*.55+Math.sin(tau*(u*47-warp*.6+v))*.45),3)*(.55+.45*Math.sin(tau*(u*5+v*3)))
-    const line=Math.max(1-THREE.MathUtils.smoothstep(edge(coarse,16,u,v),.12,.95),(1-THREE.MathUtils.smoothstep(edge(fine,34,u,v),.08,.6))*.45),lift=1+line*.32
+    const line=Math.max(1-THREE.MathUtils.smoothstep(edge(coarse,26,u,v),.12,.95),(1-THREE.MathUtils.smoothstep(edge(fine,34,u,v),.08,.6))*.45),lift=1+line*.12
     color[i]=Math.round(Math.min(1,MAP_BASE*(1+fur*1.4)*lift)*255);color[i+1]=Math.round(Math.min(1,MAP_BASE*(1+fur*.6)*lift)*255);color[i+2]=Math.round(Math.min(1,MAP_BASE*(1-fur*.2)*lift)*255);color[i+3]=255
-    rough[i]=rough[i+2]=0;rough[i+1]=Math.round((.24+.5*line+.15*fur)*255);rough[i+3]=255
+    rough[i]=rough[i+2]=0;rough[i+1]=Math.round(Math.min(1,.8+.14*line+.06*fur)*255);rough[i+3]=255
   }
   const texture=(data:Uint8Array):THREE.DataTexture=>{const t=new THREE.DataTexture(data,size,size,THREE.RGBAFormat);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.magFilter=THREE.LinearFilter;t.minFilter=THREE.LinearMipmapLinearFilter;t.generateMipmaps=true;t.anisotropy=8;t.colorSpace=THREE.NoColorSpace;t.needsUpdate=true;return t}
   glazeCache={color:texture(color),rough:texture(rough)}
@@ -129,27 +130,39 @@ function shardGeometry(k:number):THREE.BufferGeometry {
   geometry.computeVertexNormals();return geometry
 }
 
+/** How far the shell parts at rest (closure 0): the shards hold the core loosely and its light shows through the gaps. */
+const REST_OPEN=.6
+/** Seal flare when the shell closes: attack and decay (s) of the gold's emission, and its peak. */
+const SEAL_ATTACK=.12,SEAL_DECAY=.22,SEAL_PEAK=3.4
+
 export function createCocoon(kit:Kit):Cocoon {
-  const group=new THREE.Group();group.name='Kintsugi privacy cocoon';group.position.set(-1.05,0,1.55)
+  // A little smaller than the cradle was carved for: from the hero camera the crown now sits under the lotus.
+  const group=new THREE.Group();group.name='Kintsugi privacy cocoon';group.position.set(-1.05,0,1.55);group.scale.setScalar(.82)
   // Carved cradle: foot, inlaid waist, scalloped rim with one lobe under each shard, a shallow bowl for the egg.
   const wobble=(angle:number,y:number):number=>1+fractal(Math.sin(angle)*1.4+7,y*2.6,Math.cos(angle)*1.4)*.035
   const cradle=[[0,-.06],[.37,-.06],[.4,-.025],[.414,.025],[.418,.068],[.404,.093],[.374,.104],[.336,.11],[.312,.124],[.302,.148],[.298,.163],[.287,.166],[.287,.184],[.298,.187],[.302,.205],[.306,.226],[.297,.246],[.276,.258],[.25,.261],[.233,.255],[.19,.239],[.12,.229],[0,.225]]
   const pedestal=new THREE.Mesh(kit.lathe(cradle,64,(angle,y,r)=>r*wobble(angle,y)+(y>.2&&r>.2?.006*Math.cos(angle*6):0)),kit.stone);pedestal.castShadow=pedestal.receiveShadow=true;pedestal.name='Carved cocoon cradle';group.add(pedestal)
-  const band=new THREE.Mesh(kit.ring(.2925,.175,.0055,wobble),kit.inlay);band.castShadow=false;band.receiveShadow=true;band.name='Brass cradle inlay';group.add(band)
+  const band=new THREE.Mesh(kit.ring(.2925,.175,.008,wobble),kit.inlay);band.castShadow=false;band.receiveShadow=true;band.name='Brass cradle inlay';group.add(band)
 
+  // Glaze: a glossy coat with one small crisp window of the moon, reflecting the night sky at its own, weak strength
+  // (the scene's 2.4 turned the crown into a blooming white halo and the brown-black tenmoku into navy plastic).
   const textures=glazeMaps(),coreGlow={value:0}
-  const glazeMat=new THREE.MeshPhysicalMaterial({color:'#ffffff',vertexColors:true,map:textures.color,roughness:.46,metalness:0,clearcoat:1,clearcoatRoughness:.42,clearcoatRoughnessMap:textures.rough,specularIntensity:.6})
+  const glazeMat=kit.environment(new THREE.MeshPhysicalMaterial({color:'#ffffff',vertexColors:true,map:textures.color,roughness:.46,metalness:0,clearcoat:1,clearcoatRoughness:.26,clearcoatRoughnessMap:textures.rough,specularIntensity:.6}),.55)
   glazeMat.onBeforeCompile=shader=>{
     shader.uniforms.uCoreGlow=coreGlow
     shader.vertexShader='attribute float aInner;varying float vInner;varying float vShellY;\n'+shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvInner=aInner;vShellY=position.y;')
     // The inner wall is plain fired clay (no glaze map). When the shell is open it is lit by the core it holds:
     // that is the core's light falling on it, kept well under the bloom threshold.
-    shader.fragmentShader='uniform float uCoreGlow;varying float vInner;varying float vShellY;\n'+shader.fragmentShader
+    // The coat's highlight keeps its small crisp shape but rolls off softly towards .7 (linear), under the bloom
+    // threshold: a glint on glaze, not a light source.
+    shader.fragmentShader='uniform float uCoreGlow;varying float vInner;varying float vShellY;\nvec3 glazeHighlight(vec3 s){float peak=max(s.r,max(s.g,s.b));return peak>.4?s*(.4+.3*(1.-exp(-(peak-.4)/.3)))/peak:s;}\n'+shader.fragmentShader
       .replace('#include <map_fragment>',`#include <map_fragment>\ndiffuseColor.rgb=mix(diffuseColor.rgb,vec3(${MAP_BASE.toFixed(2)}),vInner);`)
       .replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(1.,.6,.3)*vInner*uCoreGlow*exp(-abs(vShellY)*4.5)*.6;')
+      .replace('( clearcoatSpecularDirect + clearcoatSpecularIndirect ) * material.clearcoat','glazeHighlight( clearcoatSpecularDirect + clearcoatSpecularIndirect ) * material.clearcoat')
   }
-  glazeMat.customProgramCacheKey=()=>'kintsugi-glaze-v3';kit.reflect(glazeMat,1.6)
-  const goldMat=kit.reflect(new THREE.MeshStandardMaterial({color:'#d2a04e',metalness:1,roughness:.3,emissive:'#ff9a3c',emissiveIntensity:0}),1.8)
+  glazeMat.customProgramCacheKey=()=>'kintsugi-glaze-v5'
+  // Gold leaf is a metal: all of its colour is reflection, so it gets a stronger sky than the glaze.
+  const goldMat=kit.environment(new THREE.MeshStandardMaterial({color:'#d2a04e',metalness:1,roughness:.32,emissive:'#ff9a3c',emissiveIntensity:0}),1.5)
   const pivots:THREE.Group[]=[]
   for(let k=0;k<SHARDS;k++){
     const pivot=new THREE.Group();pivot.position.y=CENTER_Y;group.add(pivot);pivots.push(pivot)
@@ -160,11 +173,16 @@ export function createCocoon(kit:Kit):Cocoon {
     fragmentShader:'uniform float uFade,uPulse;varying vec3 vCoreNormal,vCoreView,vCoreObject;void main(){float facing=abs(dot(normalize(vCoreNormal),normalize(vCoreView)));float heart=pow(facing,2.4);float swirl=.9+.1*sin(vCoreObject.y*48.+sin(vCoreObject.x*31.+vCoreObject.z*17.)*2.2);vec3 color=mix(vec3(.5,.18,.05),vec3(1.15,.72,.32),heart)*swirl*(.88+.12*uPulse);gl_FragColor=vec4(color,uFade);}'})
   const core=new THREE.Mesh(new THREE.IcosahedronGeometry(.1,3),coreMat);core.position.y=CENTER_Y;core.castShadow=false;core.name='Protected memory core';group.add(core)
   const opening=(open:number,k:number):number=>{const raw=THREE.MathUtils.clamp(open*1.3-k*.06,0,1);return raw*raw*(3-2*raw)}
+  let lastClosure=0,sealedAt=-Infinity
   return {group,core,moving:[...pivots,core],update(time,closure,reduced){
-    const open=1-closure
-    pivots.forEach((pivot,k)=>{const a=(k+.5)*Math.PI/3,o=opening(open,k);pivot.position.set(-Math.cos(a)*o*.17,CENTER_Y+o*.055,Math.sin(a)*o*.17);pivot.rotation.set(Math.sin(a)*o*.16,0,Math.cos(a)*o*.16)})
-    // The gold only warms a little as the shell seals; the core's light inside fades with the gap.
-    goldMat.emissiveIntensity=closure*.045
+    const open=1-closure,parted=open*REST_OPEN
+    pivots.forEach((pivot,k)=>{const a=(k+.5)*Math.PI/3,o=opening(parted,k);pivot.position.set(-Math.cos(a)*o*.14,CENTER_Y+o*.05,Math.sin(a)*o*.14);pivot.rotation.set(Math.sin(a)*o*.16,0,Math.cos(a)*o*.16)})
+    // The moment the shell seals, the gold seams flare warm (attack .12 s) and cool back within ~.7 s; the shell then
+    // keeps only a faint warmth. A function of time since sealing, so it runs the same at any frame rate; none if reduced.
+    if(closure>=.98&&lastClosure<.98&&!reduced)sealedAt=time
+    lastClosure=closure
+    const since=time-sealedAt,flare=since<0?0:since<SEAL_ATTACK?THREE.MathUtils.smoothstep(since,0,SEAL_ATTACK):Math.exp(-(since-SEAL_ATTACK)/SEAL_DECAY)
+    goldMat.emissiveIntensity=closure*.045+flare*SEAL_PEAK
     const pulse=reduced?.5:.5+.5*Math.sin(time*1.15);coreMat.uniforms.uPulse.value=pulse;coreGlow.value=open*(.85+.15*pulse)
     core.rotation.set(reduced?0:Math.sin(time*.17+1)*.22,reduced?0:Math.sin(time*.23)*.6,0);core.position.y=CENTER_Y+(reduced?0:Math.sin(time*.8)*.018);core.visible=closure<.98
   }}
