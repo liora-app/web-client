@@ -25,6 +25,14 @@ export interface SurfaceOptions {
   roughnessVariation?:number
   /** Moss on up-facing faces: amount 0..1, the normal-y window it fades in over. */
   moss?:{color:THREE.ColorRepresentation;amount:number;low?:number;high?:number}
+  /** For wide, mostly level carpets (the island moss). The top projection of the broad layer is sampled twice, the
+   *  second time turned ~37° and at ×.61 scale, and the pair is recombined at full contrast, so the 256² tile never
+   *  lines up into a visible repeat. Steep faces keep the plain triplanar (blended by weight, no branching).
+   *  Off by default: other materials compile exactly as before. */
+  planar?:boolean
+  /** Felted speckle in the albedo from the fine layer (mm-scale near the lens, mip-averaged away in the distance),
+   *  0..1. Off by default: other materials compile exactly as before. */
+  grain?:number
 }
 
 let noiseTexture:THREE.DataTexture|undefined
@@ -66,9 +74,15 @@ const fragmentPars=`
     vec3 sigmaX=normalize(dFdx(surfPos)),sigmaY=normalize(dFdy(surfPos)),r1=cross(sigmaY,surfNorm),r2=cross(surfNorm,sigmaX);
     float det=dot(sigmaX,r1)*faceDir;vec3 grad=sign(det)*(dHdxy.x*r1+dHdxy.y*r2);return normalize(abs(det)*surfNorm-grad);}
   float surfHeight;float surfMoss;`
-const colorMain=`
+/** Planar variant of the broad fetch: two decorrelated top samples summed and rescaled by 1/√2 keep the contrast. */
+const planarPars=`
+  vec4 surfPlanar(vec3 p,vec3 w){
+    vec4 a=texture2D(uSurfNoise,p.xz),b=texture2D(uSurfNoise,mat2(.799,.602,-.602,.799)*p.xz*.61+vec2(.37,.19));
+    vec4 top=clamp(.5+(a+b-1.)*.72,0.,1.);
+    return top*w.y+texture2D(uSurfNoise,p.yz)*w.x+texture2D(uSurfNoise,p.xy)*w.z;}`
+const colorMain=(planar:boolean):string=>`
   vec3 surfN=normalize(vSurfNormal);vec3 surfW=pow(abs(surfN),vec3(4.));surfW/=surfW.x+surfW.y+surfW.z;
-  vec4 surfBroad=surfTriplanar(vSurfWorld*uSurfScale,surfW),surfDetail=surfTriplanar(vSurfWorld*uSurfScale*4.3+vec3(.37,.11,.73),surfW);
+  vec4 surfBroad=${planar?'surfPlanar':'surfTriplanar'}(vSurfWorld*uSurfScale,surfW),surfDetail=surfTriplanar(vSurfWorld*uSurfScale*4.3+vec3(.37,.11,.73),surfW);
   surfHeight=mix(dot(surfBroad,vec4(.46,.3,.16,.08)),dot(surfDetail,vec4(.2,.35,.3,.15)),uSurfFine);
   diffuseColor.rgb*=1.+(surfBroad.r-.5)*2.*uSurfVariation;
   diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*uSurfTint,smoothstep(.42,.68,surfBroad.g));
@@ -81,7 +95,9 @@ const normalMain=`
 
 /** Patch a standard/physical material in place; earlier onBeforeCompile hooks keep running first. */
 export function applySurface<T extends THREE.MeshStandardMaterial>(material:T,options:SurfaceOptions={}):T {
-  const moss=options.moss
+  const moss=options.moss,planar=options.planar===true,grain=options.grain??0
+  // Appended to the colour code only when asked for, after the variation/tint/cavity lines.
+  const grainMain=grain>0?`\n  diffuseColor.rgb*=1.+((surfDetail.a-.5)*1.2+(surfDetail.b-.5)*.8)*${grain.toFixed(3)};`:''
   const uniforms={
     uSurfOrigin:surfaceOrigin,uSurfNoise:{value:surfaceNoise()},uSurfScale:{value:options.scale??1.2},uSurfBump:{value:options.bump??.018},uSurfFine:{value:options.fine??.35},
     uSurfVariation:{value:options.variation??.16},uSurfTint:{value:new THREE.Color(options.tint??'#ffffff')},uSurfCavity:{value:options.cavity??.22},
@@ -95,12 +111,13 @@ export function applySurface<T extends THREE.MeshStandardMaterial>(material:T,op
     Object.assign(shader.uniforms,uniforms)
     shader.vertexShader=vertexPars+shader.vertexShader.replace('#include <project_vertex>','#include <project_vertex>'+vertexMain)
     shader.fragmentShader=shader.fragmentShader
-      .replace('#include <common>','#include <common>'+fragmentPars)
-      .replace('#include <color_fragment>','#include <color_fragment>'+colorMain)
+      .replace('#include <common>','#include <common>'+fragmentPars+(planar?planarPars:''))
+      .replace('#include <color_fragment>','#include <color_fragment>'+colorMain(planar)+grainMain)
       .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>'+roughnessMain)
       .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>'+normalMain)
   }
-  material.customProgramCacheKey=()=>key+'|surface-v2'
+  // The planar and grain variants compile different code, so they must not share a program with the plain surfaces.
+  material.customProgramCacheKey=()=>key+'|surface-v2'+(planar?'|planar':'')+(grain>0?`|grain${grain.toFixed(3)}`:'')
   material.needsUpdate=true
   return material
 }

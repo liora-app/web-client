@@ -23,8 +23,28 @@ export function surfaceHeight(x:number,z:number):number {
   const distance=Math.hypot(x+.25,(z+.55)*1.12)
   return .018+fractal(x*.95,7,z*.95)*.065-.028*Math.exp(-distance*distance*1.8)+relief(x,z)
 }
-/** Outline of the moss cap (ellipse parameter; world z = sin·r·SQUASH). */
-function rimRadius(angle:number):number {return 4.05*(1+Math.sin(angle*7)*.018+noise3(Math.cos(angle)*2,3,Math.sin(angle)*2)*.055)}
+const TAU=Math.PI*2
+const turn=(a:number,b:number):number=>{let d=(a-b)%TAU;if(d>Math.PI)d-=TAU;else if(d<-Math.PI)d+=TAU;return d}
+/** Where the moss edge is bitten in or pushed out: angle, angular width, depth as a fraction of the radius. */
+const bites=[[2.62,.16,.075],[.55,.12,.06],[4.35,.2,.07],[5.55,.1,.05]],capes=[[1.62,.22,.06],[3.35,.18,.05],[5.05,.25,.045]]
+/**
+ * Outline of the moss cap (ellipse parameter; world z = sin·r·SQUASH): two slow lobes, a coarse and a fine noise along
+ * the edge, a few bitten-in coves and pushed-out capes, so the rim never reads as a pill. Stays within −10%…+7%.
+ */
+function rimRadius(angle:number):number {
+  const c=Math.cos(angle),s=Math.sin(angle)
+  let f=.035*Math.sin(2*angle+.7)+.028*Math.sin(3*angle+2.1)+.05*noise3(c*1.6,3,s*1.6)+.026*noise3(c*5.5,7,s*5.5)
+  for(const [at,width,depth] of bites){const t=turn(angle,at)/width;f-=depth*Math.exp(-t*t)}
+  for(const [at,width,depth] of capes){const t=turn(angle,at)/width;f+=depth*Math.exp(-t*t)}
+  return 4.05*(1+f)
+}
+/** 0 at the centre, 1 on the rim. */
+const rimFraction=(x:number,z:number):number=>Math.hypot(x,z/SQUASH)/rimRadius(Math.atan2(z/SQUASH,x))
+/** Pull a fixed placement inwards so it keeps at least `margin` (ellipse units) from the rim. */
+function inset([x,z]:[number,number],margin:number):[number,number] {
+  const r=Math.hypot(x,z/SQUASH),limit=rimRadius(Math.atan2(z/SQUASH,x))-margin
+  return r<=limit?[x,z]:[x*limit/r,z*limit/r]
+}
 
 /** Bare soil: a few worn patches and a trodden ring round the two stone plinths. */
 function bareness(x:number,z:number):number {
@@ -34,7 +54,7 @@ function bareness(x:number,z:number):number {
   return clamp(Math.max(patches,worn),0,1)
 }
 
-interface Boulder {x:number;z:number;size:number;height:number;seed:number;turn:number}
+interface Boulder {x:number;z:number;size:number;height:number;seed:number;turn:number;lip?:boolean}
 function placeBoulders():Boulder[] {
   const boulders:Boulder[]=[]
   for(let i=0;i<14;i++){
@@ -45,23 +65,55 @@ function placeBoulders():Boulder[] {
   }
   // Two stones by the willow roots and one behind the companion's cushion, so the interior is not a plain lawn.
   boulders.push({x:2.42,z:-.5,size:.16,height:.11,seed:91,turn:.4},{x:2.55,z:-.32,size:.07,height:.05,seed:92,turn:1.3},{x:1.42,z:-1.62,size:.12,height:.08,seed:93,turn:2.2})
+  // Stones that sit right on the rolled lip and break the outline (angle, size); kept out of the sector the cameras of
+  // stops .25 and .5 hover over (≈2.0–2.4 rad), and small enough to stay on icosphere detail 2–3.
+  for(const [angle,size,seed] of [[2.9,.2,101],[1.32,.17,102],[.2,.22,103],[3.95,.19,104],[5.3,.16,105]]){
+    const reach=rimRadius(angle)+.005;boulders.push({x:Math.cos(angle)*reach,z:Math.sin(angle)*reach*SQUASH,size,height:size*.78,seed,turn:angle+1.1,lip:true})
+  }
   return boulders
+}
+
+/** Lighter, open glades (x, z, radius) where the moon falls on short moss; grass thins out there. */
+const glades:[number,number,number][]=[[-.55,2.75,1.05],[2.35,1.2,.9],[.45,.5,.62],[-2.55,-.6,.85],[.6,-2.55,.75]]
+function glade(x:number,z:number):number {let g=0;for(const [gx,gz,r] of glades){const d=Math.hypot(x-gx,(z-gz)/SQUASH)/r;g=Math.max(g,Math.exp(-d*d*2.2))}return g}
+/** Distance outside a footprint in metres (negative inside), close enough for soft falloffs. */
+const outside=(x:number,z:number,f:Footprint):number=>(inside(x,z,f)-1)*Math.min(f[2],f[3])
+
+/** Macro light of the ground: occlusion pools under the stations, the cushion and every stone, the willow's shade, a
+ *  darker rolled rim. Moss vertices and grass blades share it, so the large tonal structure reads through the vegetation. */
+function groundShade(x:number,z:number,boulders:Boulder[]):number {
+  let shade=1
+  for(const f of stations)shade*=1-.4*Math.exp(-Math.max(0,outside(x,z,f)+.04)/.3)
+  for(const b of boulders){const d=Math.hypot(x-b.x,(z-b.z)/.9)-b.size*.9;shade*=1-.36*Math.exp(-Math.max(0,d)/(.08+b.size*.35))}
+  const tree=Math.hypot(x-1.65,(z+.6)/.9);shade*=1-.34*Math.exp(-tree*tree*.75)
+  shade*=1-.36*smooth(rimFraction(x,z),.66,1)
+  return shade
+}
+/** 0..1: how close a spot is to the stations and the companion, where fuller grass gathers (stones pull a little). */
+function gathering(x:number,z:number,boulders:Boulder[]):number {
+  let g=0
+  for(const f of stations)g=Math.max(g,Math.exp(-Math.max(0,outside(x,z,f))/.55))
+  for(const b of boulders)if(!b.lip)g=Math.max(g,.55*Math.exp(-Math.max(0,Math.hypot(x-b.x,z-b.z)-b.size)/.22))
+  return g*(1-glade(x,z)*.7)
 }
 
 /** One seamless polar mesh: moss carpet → rolled moss lip with an overhang → stratified rock face → wet base under the waterline. */
 function islandMass(boulders:Boulder[]):{moss:THREE.BufferGeometry;rock:THREE.BufferGeometry} {
-  const segments=144,topRings=22,lip=[[.03,-.016],[.055,-.046],[.058,-.084],[.036,-.118]],rockRings=13
+  // ~.11 m between rings and ~.12 m between columns at the rim: fine enough to carry the large tonal structure and a
+  // ragged outline in the vertices (moss and rock cast no shadow, so this costs no shadow-pass triangles).
+  const segments=208,topRings=36,lip=[[.03,-.016],[.055,-.046],[.058,-.084],[.036,-.118]],rockRings=13
   const positions:number[]=[],colors:number[]=[],color=new THREE.Color(),shade=new THREE.Color()
-  const mossDeep=new THREE.Color('#1b3123'),mossMid=new THREE.Color('#2a4630'),mossSun=new THREE.Color('#465a33'),soil=new THREE.Color('#2c241a'),soilDark=new THREE.Color('#1d1812')
+  const mossDeep=new THREE.Color('#1c3224'),mossMid=new THREE.Color('#2a4630'),mossSun=new THREE.Color('#3e5634'),mossGlade=new THREE.Color('#536c3d'),soil=new THREE.Color('#2c241a'),soilDark=new THREE.Color('#1d1812')
   const rock=new THREE.Color('#7b786a'),rockBrown=new THREE.Color('#665a48'),rockCool=new THREE.Color('#5c6862'),wet=new THREE.Color('#1c2420')
-  const footprints:Footprint[]=[...stations,...boulders.map(b=>[b.x,b.z,b.size*.9,b.size*.9] as Footprint)]
+  // Only large shapes live in the vertices (≥ ~.5 m); the felted fine grain comes from the shader, so nothing aliases into blotches.
   const groundColor=(x:number,z:number,out:THREE.Color):THREE.Color=>{
-    const broad=fractal(x*1.25,2,z*1.25),fine=fractal(x*3.4+7,4,z*3.4)
-    out.copy(mossDeep).lerp(mossMid,clamp(.5+broad*1.9,0,1)).lerp(mossSun,smooth(fine,.08,.38)*.7).multiplyScalar(.82+.36*smooth(broad,-.25,.3))
-    const bare=bareness(x,z);shade.copy(soil).lerp(soilDark,clamp(.5+fine*2,0,1));out.lerp(shade,bare)
-    let ao=1;for(const f of footprints){const d=inside(x,z,f);ao*=1-.42*Math.exp(-Math.max(0,d-.92)*7)}
-    return out.multiplyScalar(ao)
+    const broad=fractal(x*.48+11,2,z*.48),mid=fractal(x*1.35,4,z*1.35)
+    out.copy(mossDeep).lerp(mossMid,clamp(.55+broad*1.7,0,1)).lerp(mossSun,smooth(mid,.04,.36)*.4).lerp(mossGlade,glade(x,z)*.72)
+    const bare=bareness(x,z);shade.copy(soil).lerp(soilDark,clamp(.5+mid*2,0,1));out.lerp(shade,bare)
+    return out.multiplyScalar(groundShade(x,z,boulders))
   }
+  // How deep the rolled lip hangs and how far it overhangs, varied along the edge (.08–.16 deep).
+  const lipDepth=(c:number,s:number):number=>.7+.62*clamp(.5+noise3(c*3.2,11,s*3.2)*.95,0,1)
   // Top: centre vertex, then rings out to the rim.
   positions.push(0,surfaceHeight(0,0),0);groundColor(0,0,color);colors.push(color.r,color.g,color.b)
   for(let ring=1;ring<=topRings;ring++)for(let i=0;i<segments;i++){
@@ -71,13 +123,13 @@ function islandMass(boulders:Boulder[]):{moss:THREE.BufferGeometry;rock:THREE.Bu
   // Lip and rock: offsets from each column's rim point.
   const sideStart=positions.length/3
   for(let ring=0;ring<lip.length+rockRings;ring++)for(let i=0;i<segments;i++){
-    const angle=i/segments*Math.PI*2,c=Math.cos(angle),s=Math.sin(angle),rim=rimRadius(angle),top=surfaceHeight(c*rim,s*rim*SQUASH)
+    const angle=i/segments*Math.PI*2,c=Math.cos(angle),s=Math.sin(angle),rim=rimRadius(angle),top=surfaceHeight(c*rim,s*rim*SQUASH),depth=lipDepth(c,s)
     let out:number,y:number
     if(ring<lip.length){
-      [out,y]=lip[ring];y+=top;groundColor(c*rim,s*rim*SQUASH,color).multiplyScalar([1.08,.95,.72,.45][ring])
+      [out,y]=lip[ring];out*=.75+.3*depth;y=y*depth+top;groundColor(c*rim,s*rim*SQUASH,color).multiplyScalar([1.08,.95,.72,.45][ring])
     } else {
       const u=(ring-lip.length)/(rockRings-1)
-      y=THREE.MathUtils.lerp(top-.15,-.74,Math.pow(u,.92))
+      y=THREE.MathUtils.lerp(top-.118*depth-.035,-.74,Math.pow(u,.92))
       const band=(y+noise3(c*2.6,1.7,s*2.6)*.05)*8.2,stratum=band-Math.floor(band)
       out=-.035+.13*Math.pow(u,1.6)+.075*noise3(c*1.7+4,y*1.2,s*1.7)+.04*noise3(c*7.5,y*.8+2,s*7.5)+.04*Math.pow(stratum,3)
       if(ring===lip.length)out=-.045+.015*noise3(c*9,1,s*9)
@@ -161,15 +213,17 @@ export function createIsland() {
   const group=new THREE.Group();group.name='Moss-capped rock sanctuary'
   const artifacts=createArtifacts();group.add(artifacts.stations,artifacts.canopy);for(const lantern of artifacts.lanterns)group.add(lantern.light)
   const boulders=placeBoulders()
-  // Moss carpet: colour lives in the vertices (soil patches, contact darkening); the shader adds felted micro relief.
-  const mossMat=applySurface(new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.96,vertexColors:true}),{scale:2.6,bump:.013,fine:.62,variation:.38,tint:'#e2d58c',cavity:.34,roughnessVariation:.05})
+  // Moss carpet: the large tonal structure lives in the vertices (glades, pools under objects, the darker rim); the shader
+  // only adds a quiet felted grain: big soft patches (~25 cm), low contrast, fine relief, and a planar fetch that never tiles.
+  const mossMat=applySurface(new THREE.MeshPhysicalMaterial({color:'#ffffff',roughness:.96,vertexColors:true,sheen:.4,sheenRoughness:.7,sheenColor:new THREE.Color('#5b7552')}),{scale:1.05,bump:.02,fine:.8,variation:.14,tint:'#e6e0b2',cavity:.26,roughnessVariation:.05,planar:true,grain:.45})
   const rockMat=applySurface(new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.86,vertexColors:true}),{scale:1.7,bump:.05,fine:.5,variation:.24,tint:'#bcae92',cavity:.55,roughnessVariation:.14,moss:{color:'#33533a',amount:.9,low:.5,high:.85}})
   const mass=islandMass(boulders)
   const carpet=mesh(mass.moss,mossMat,group);carpet.name='Moss carpet and rolled lip';carpet.castShadow=false
   const cliff=mesh(mass.rock,rockMat,group);cliff.name='Stratified rock mass';cliff.castShadow=false
   const boulderMat=applySurface(new THREE.MeshStandardMaterial({color:'#ffffff',roughness:.84,vertexColors:true}),{scale:2.8,bump:.026,fine:.45,variation:.2,tint:'#c6b99d',cavity:.45,roughnessVariation:.12,moss:{color:'#2c472d',amount:.85,low:.42,high:.82}})
   for(const b of boulders){
-    const stone=mesh(boulderGeometry(b.seed,b.size>.26?4:b.size>.17?3:2),boulderMat,group,b.x,surfaceHeight(b.x,b.z)-b.height*.22,b.z)
+    // Lip stones sink deeper: their outer half hangs over the rolled edge, so they must not show a gap beneath.
+    const stone=mesh(boulderGeometry(b.seed,b.size>.26?4:b.size>.17?3:2),boulderMat,group,b.x,surfaceHeight(b.x,b.z)-b.height*(b.lip?.5:.22),b.z)
     stone.name='Moss boulder';stone.scale.set(b.size,b.height,b.size*(.75+random(b.seed+5)*.4));stone.rotation.y=b.turn
   }
   // Pebbles share the rock material (and its shadow flags), so batching folds them into the cliff draw call.
@@ -184,25 +238,30 @@ export function createIsland() {
   const cushion=mesh(cushionGeometry(),cushionMat,group,.8,.205,-1.1);cushion.name='Companion moss cushion';cushion.scale.set(.49,.22,.34)
   // Only the cushion gets a contact disc; the lotus is a light source, its clearing is grounded by the vertex occlusion instead.
   contact(group,shadowTexture(),.8,-1.1,1.3,.95)
-  // Matte crystals: only the tips carry light, and gently.
-  const crystalMat=new THREE.MeshStandardMaterial({color:'#7c958a',roughness:.38,metalness:0,emissive:'#d9e8bb',emissiveIntensity:.85,emissiveMap:crystalTipMask()})
+  // Matte mineral, not a lamp: a cool grey-green stone whose tips hold only a faint pale sheen.
+  const crystalMat=new THREE.MeshStandardMaterial({color:'#5d6a64',roughness:.6,metalness:0,emissive:'#cfd6c6',emissiveIntensity:.1,emissiveMap:crystalTipMask()})
   const crystalSpots:[number,number][]=[]
   for(let i=0;i<3;i++){
-    const angle=-.8+i*2.2,x=Math.cos(angle)*3.2,z=Math.sin(angle)*3.2*SQUASH;crystalSpots.push([x,z])
-    const cluster=mesh(crystalCluster(i*17+3),crystalMat,group,x,surfaceHeight(x,z)-.01,z);cluster.name='Quiet crystal cluster';cluster.castShadow=false;cluster.rotation.y=angle;cluster.scale.setScalar(1.15)
+    const angle=-.8+i*2.2,reach=Math.min(3.2,rimRadius(angle)-.7),x=Math.cos(angle)*reach,z=Math.sin(angle)*reach*SQUASH;crystalSpots.push([x,z])
+    const cluster=mesh(crystalCluster(i*17+3),crystalMat,group,x,surfaceHeight(x,z)-.025,z);cluster.name='Quiet crystal cluster';cluster.castShadow=false;cluster.rotation.y=angle;cluster.scale.setScalar(.95)
   }
-  const fernClumps:[number,number][]=[[2.4,-.12],[1.25,-1.62],[.15,-1.72],[2.75,-1.25],[-2.45,1.35],[-3.15,.3],[-2.2,-1.75],[.9,2.55],[2.9,1.1],[-.95,2.35],[1.75,.55],[-1.9,-.6]]
+  const fernClumps=([[2.4,-.12],[1.25,-1.62],[.15,-1.72],[2.75,-1.25],[-2.45,1.35],[-3.15,.3],[-2.2,-1.75],[.9,2.55],[2.9,1.1],[-.95,2.35],[1.75,.55],[-1.9,-.6]] as [number,number][]).map(p=>inset(p,.45))
+  // Ground points under the three cameras that fly lowest (stops .25, .5 and 1): flowers there would read as big flat stickers.
+  const lensSpots=[[-2.25,1.95],[-1.75,2.65],[0,1.85]]
   const keepouts:Footprint[]=[...stations,...boulders.map(b=>[b.x,b.z,b.size*.8,b.size*.75] as Footprint),...crystalSpots.map(([x,z])=>[x,z,.09,.09] as Footprint),...fernClumps.map(([x,z])=>[x,z,.07,.07] as Footprint)]
   const vegetation=createVegetation({
     height:surfaceHeight,
     edge:angle=>rimRadius(angle)-.07,
     blocked:(x,z)=>keepouts.some(f=>inside(x,z,f)<1),
+    gather:(x,z)=>gathering(x,z,boulders),
+    shade:(x,z)=>groundShade(x,z,boulders)*(1+glade(x,z)*.18),
+    nearLens:(x,z)=>lensSpots.some(([cx,cz])=>Math.hypot(x-cx,z-cz)<1.3),
     lush:(x,z)=>{
       const rim=smooth(Math.hypot(x,z/SQUASH)/rimRadius(Math.atan2(z/SQUASH,x)),.72,.97)
       let near=0;for(const b of boulders)near=Math.max(near,Math.exp(-Math.max(0,Math.hypot(x-b.x,z-b.z)-b.size)*5))
-      return clamp((.42+fractal(x*.7+17,1,z*.7)*1.2+rim*.35+near*.3+relief(x,z)*3)*(1-bareness(x,z)*.92),0,1)
+      return clamp((.42+fractal(x*.7+17,1,z*.7)*1.2+rim*.35+near*.3+relief(x,z)*3)*(1-bareness(x,z)*.92)*(1-glade(x,z)*.55),0,1)
     },
-  },fernClumps,[[1.25,-.8],[.4,-1.6],[-1.25,-1.3],[.65,.7],[2.25,.4],[-2.55,.5],[-.35,1.05],[1.05,1.65]],[[2.32,-1.08],[1.4,-.5],[2.62,-.55],[-2.05,-1.55]])
+  },fernClumps,([[1.25,-.8],[.4,-1.6],[-1.25,-1.3],[.65,.7],[2.25,.4],[-2.55,.5],[-.35,1.05],[1.05,1.65]] as [number,number][]).map(p=>inset(p,.5)),([[2.32,-1.08],[1.4,-.5],[2.62,-.55],[-2.05,-1.55]] as [number,number][]).map(p=>inset(p,.5)))
   group.add(vegetation.grass,vegetation.ferns,vegetation.flowers,vegetation.mushrooms)
   batchStatic(group,[artifacts.stations,artifacts.canopy,vegetation.grass,vegetation.ferns,...artifacts.lanterns.map(l=>l.light)])
   return {group,...artifacts,grass:vegetation.grass,terraces:3,update(time:number,reduced:boolean){vegetation.update(time,reduced);artifacts.update(time,reduced)}}

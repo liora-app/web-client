@@ -12,6 +12,12 @@ export interface Ground {
   blocked:(x:number,z:number)=>boolean
   /** 0..1: how dense and tall the grass grows here (0 on bare soil). */
   lush:(x:number,z:number)=>number
+  /** 0..1: closeness to the stations and the companion; fuller tufts gather there and open moss stays between. Default 0. */
+  gather?:(x:number,z:number)=>number
+  /** Macro light of the ground under a spot (occlusion pools, the darker rim, glades), so blades share it. Default 1. */
+  shade?:(x:number,z:number)=>number
+  /** True where a camera flies low over the ground: flowers stay out (up close they read as flat stickers). */
+  nearLens?:(x:number,z:number)=>boolean
 }
 export interface Vegetation {
   grass:THREE.InstancedMesh
@@ -21,7 +27,8 @@ export interface Vegetation {
   update:(time:number,reduced:boolean)=>void
 }
 
-const SQUASH=.84,BLADE_HEIGHT=.16,BLADE_WIDTH=.019
+// Slimmer and a little taller than a leaf card, so a tuft reads as grass rather than spikes (.015 keeps ≥ ~2 px at the root).
+const SQUASH=.84,BLADE_HEIGHT=.18,BLADE_WIDTH=.015,BLADES=4500
 /** A curved, tapering blade: 4 rows and a point (7 triangles). Normals bow outwards across the width so a flat card shades like a round leaf. */
 function bladeGeometry():THREE.BufferGeometry {
   const rows=[0,.3,.56,.8],positions:number[]=[],normals:number[]=[],blade:number[]=[],indices:number[]=[],normal=new THREE.Vector3()
@@ -72,12 +79,12 @@ function foliageMaterial(time:{value:number}):THREE.MeshStandardMaterial {
   const uniforms={uWindTime:time,uWindNoise:{value:surfaceNoise()},uLotus:{value:new THREE.Vector3(-.25,.53,-.55)},uLotusGlow:{value:new THREE.Color('#ffb25a')}}
   material.onBeforeCompile=shader=>{
     Object.assign(shader.uniforms,uniforms)
-    shader.vertexShader='uniform float uWindTime;uniform sampler2D uWindNoise;uniform vec3 uLotus;attribute vec2 aBlade;varying float vTip;varying float vLotus;varying vec3 vToLotus;\n'+shader.vertexShader
+    shader.vertexShader='uniform float uWindTime;uniform sampler2D uWindNoise;uniform vec3 uLotus;attribute vec2 aBlade;varying float vTip;varying float vHeart;varying float vLotus;varying vec3 vToLotus;\n'+shader.vertexShader
       .replace('#include <begin_vertex>',`#include <begin_vertex>
         vec3 bladeRoot=instanceMatrix[3].xyz;
         float lensNear=smoothstep(.4,1.15,distance(cameraPosition,(modelMatrix*vec4(bladeRoot,1.)).xyz));
         transformed.y*=mix(.22,1.,lensNear);transformed.xz*=mix(.5,1.,lensNear);
-        vTip=aBlade.x;`)
+        vTip=min(aBlade.x,1.);vHeart=clamp(aBlade.x-1.,0.,1.);`)
       .replace('#include <project_vertex>',`
         vec4 mvPosition=instanceMatrix*vec4(transformed,1.);
         float bladeLength=aBlade.y*length(instanceMatrix[1].xyz)*mix(.22,1.,lensNear);
@@ -92,27 +99,51 @@ function foliageMaterial(time:{value:number}):THREE.MeshStandardMaterial {
         mvPosition=modelViewMatrix*mvPosition;
         vToLotus=lotusView-mvPosition.xyz;
         gl_Position=projectionMatrix*mvPosition;`)
-    shader.fragmentShader='uniform vec3 uLotusGlow;varying float vTip;varying float vLotus;varying vec3 vToLotus;\n'+shader.fragmentShader
+    shader.fragmentShader='uniform vec3 uLotusGlow;varying float vTip;varying float vHeart;varying float vLotus;varying vec3 vToLotus;\n'+shader.fragmentShader
+      // Thin leaves pass light: every direct light (the moon with its shadow already applied, the lotus, the lanterns)
+      // also lights the far side of a blade, yellow-green and mostly towards the tip. Seen against the moon the blades
+      // glow at their edges instead of reading as black spikes.
+      .replace('#include <lights_physical_pars_fragment>',`#include <lights_physical_pars_fragment>
+        void RE_Direct_Leaf(const in IncidentLight directLight,const in vec3 geometryPosition,const in vec3 geometryNormal,const in vec3 geometryViewDir,const in vec3 geometryClearcoatNormal,const in PhysicalMaterial material,inout ReflectedLight reflectedLight){
+          RE_Direct_Physical(directLight,geometryPosition,geometryNormal,geometryViewDir,geometryClearcoatNormal,material,reflectedLight);
+          float through=saturate(-dot(geometryNormal,directLight.direction)),forward=pow(saturate(dot(-geometryViewDir,directLight.direction)),4.);
+          reflectedLight.directDiffuse+=directLight.color*BRDF_Lambert(material.diffuseContribution)*vec3(1.05,1.15,.62)*(through*.5+forward*.55)*(.3+.7*vTip)*(1.-vHeart);
+        }
+        #undef RE_Direct
+        #define RE_Direct RE_Direct_Leaf`)
       .replace('#include <color_fragment>',`#include <color_fragment>
-        float bladeLight=smoothstep(0.,.8,vTip);
-        diffuseColor.rgb*=mix(.26,1.,bladeLight);
+        float bladeLight=smoothstep(0.,.7,vTip);
+        diffuseColor.rgb*=mix(.5,1.,bladeLight);
+        diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.2,.13,.03),vHeart);
         diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(1.22,1.16,.82),smoothstep(.6,1.,vTip)*.7);`)
       .replace('#include <aomap_fragment>',`
         float throughLeaf=pow(max(0.,dot(normalize(-vViewPosition),normalize(vToLotus))),3.);
         reflectedLight.indirectDiffuse+=diffuseColor.rgb*uLotusGlow*vLotus*(.25+throughLeaf)*smoothstep(.3,1.,vTip)*1.4;
         #include <aomap_fragment>`)
   }
-  material.customProgramCacheKey=()=> 'liora-foliage-v2'
+  material.customProgramCacheKey=()=> 'liora-foliage-v3'
   return material
 }
 
 const grassTones=['#28462f','#33553a','#3d5a3c','#4b6440','#2f4f45','#5a6340'].map(c=>new THREE.Color(c))
-/** A tiny five-petal flower on a stem (7 triangles); it sways with the grass through the foliage material. */
+/**
+ * A small night flower that sways with the grass through the foliage material (17 triangles): a stem quad, a raised
+ * ochre heart and five cupped petals, each a two-triangle fan whose tip lifts. aBlade.x runs 0→1 up the stem; heart
+ * vertices carry 1+heart, which the shader turns into the ochre centre.
+ */
 function flowerGeometry():THREE.BufferGeometry {
-  const height=.05,positions:number[]=[0,0,-.0012,0,0,.0012,0,height,0],blade:number[]=[0,height,0,height,1,height],indices:number[]=[0,1,2]
-  const centre=positions.length/3;positions.push(0,height,0);blade.push(1,height)
-  for(let k=0;k<5;k++)for(const side of [-.42,.42]){const a=k/5*Math.PI*2+side;positions.push(Math.cos(a)*.016,height+.004,Math.sin(a)*.016);blade.push(1,height)}
-  for(let k=0;k<5;k++)indices.push(centre,centre+1+k*2,centre+2+k*2)
+  const height=.045,positions:number[]=[],blade:number[]=[],indices:number[]=[]
+  const vertex=(x:number,y:number,z:number,tip:number):number=>{positions.push(x,y,z);blade.push(tip,height);return positions.length/3-1}
+  const stem=[vertex(-.0016,0,0,0),vertex(.0016,0,0,0),vertex(-.0015,height,0,1),vertex(.0015,height,0,1)]
+  indices.push(stem[0],stem[1],stem[2],stem[1],stem[3],stem[2])
+  const at=(a:number,r:number,y:number,tip:number):number=>vertex(Math.cos(a)*r,height+y,Math.sin(a)*r,tip)
+  const centre=vertex(0,height+.0045,0,2),heart:number[]=[]
+  for(let k=0;k<5;k++)heart.push(at((k+.5)/5*Math.PI*2,.0036,.0024,1.85))
+  for(let k=0;k<5;k++)indices.push(centre,heart[(k+1)%5],heart[k])
+  for(let k=0;k<5;k++){
+    const a=k/5*Math.PI*2+(k%2)*.08,base=at(a,.0028,.0018,1.35),left=at(a-.36,.0092,.003,1),right=at(a+.36,.0092,.003,1),tip=at(a,.0168,.0068,1)
+    indices.push(base,tip,left,base,right,tip)
+  }
   const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('aBlade',new THREE.Float32BufferAttribute(blade,2))
   geometry.setIndex(indices);geometry.computeVertexNormals();return geometry
 }
@@ -127,32 +158,50 @@ function mushroomGeometry():THREE.BufferGeometry {
 }
 
 const fernTones=['#355f3c','#41693f','#4d7045'].map(c=>new THREE.Color(c))
-const petalTones=['#d9d3bf','#cfc8d6','#e3d6b0'].map(c=>new THREE.Color(c))
+// Moonlit, not lit from within: cool lilac and bone tones, kept well below the paper and the lanterns in value.
+const petalTones=['#cdc6d8','#a9a6c4','#d4cab2'].map(c=>new THREE.Color(c))
 
 export function createVegetation(ground:Ground,fernClumps:[number,number][],flowerDrifts:[number,number][],mushroomRings:[number,number][]):Vegetation {
   const windTime={value:0},material=foliageMaterial(windTime),dummy=new THREE.Object3D(),color=new THREE.Color()
   dummy.rotation.order='YXZ'
-  const grass=new THREE.InstancedMesh(bladeGeometry(),material,4500);grass.name='4500 living blades';grass.receiveShadow=true
-  // Tufts, not a uniform scatter: dense where the moss is lush, sparse or bare on soil, each tuft fanning outwards.
-  let placed=0,attempt=0
-  while(placed<4500){
-    const seed=attempt++,angle=random(seed*7+1)*Math.PI*2,reach=Math.sqrt(random(seed*11+2))*ground.edge(angle)
+  const grass=new THREE.InstancedMesh(bladeGeometry(),material,BLADES);grass.name='4500 living blades';grass.receiveShadow=true
+  const gather=ground.gather??(():number=>0),shade=ground.shade??(():number=>1)
+  let placed=0
+  const blade=(x:number,z:number,height:number,width:number,lean:number,yaw:number,roll:number,tone:THREE.Color,seed:number):void=>{
+    dummy.position.set(x,ground.height(x,z)-.006,z);dummy.rotation.set(lean,yaw,roll)
+    dummy.scale.set(width,height,(width+height)*.5);dummy.updateMatrix();grass.setMatrixAt(placed,dummy.matrix)
+    color.copy(tone).lerp(grassTones[seed%grassTones.length],random(seed*61+16)*.35).multiplyScalar((1+random(seed*67+17)*.3)*shade(x,z));grass.setColorAt(placed,color)
+    placed++
+  }
+  // 1) A ragged fringe on the rolled lip: short tufts in patches along the edge, leaning out over it, so the outline of
+  //    the moss is broken by grass the way a real overhang is. ~8% of the blades.
+  for(let attempt=0;placed<360&&attempt<20000;attempt++){
+    const seed=attempt+7000,angle=random(seed*7+1)*Math.PI*2
+    if(random(seed*13+5)>Math.pow(.5+.5*Math.sin(angle*5.3+1.7)*Math.sin(angle*2.1+.4),2))continue
+    const reach=ground.edge(angle)+.03+random(seed*11+2)*.035,cx=Math.cos(angle)*reach,cz=Math.sin(angle)*reach*SQUASH
+    if(ground.blocked(cx,cz))continue
+    const outward=Math.atan2(Math.cos(angle),Math.sin(angle)/SQUASH),count=4+Math.floor(random(seed*17+3)*7),tone=grassTones[Math.floor(random(seed*29+7)*grassTones.length)]
+    for(let b=0;b<count&&placed<360;b++){
+      const s=seed*31+b*7,around=outward+(random(s+8)-.5)*1.6,out=Math.sqrt(random(s+9)),x=cx+Math.sin(around)*out*.035,z=cz+Math.cos(around)*out*.035
+      blade(x,z,(.55+random(s+10)*.5),.8+random(s+12)*.4,.55+random(s+13)*.5,around,(random(s+15)-.5)*.2,tone,s)
+    }
+  }
+  // 2) Tufts, not a uniform scatter: they gather round the stations and the companion (seen on four of five stops) and
+  //    round the stones, and stay thin on the open glades, so clean moss shows between full clumps. Each tuft fans out.
+  for(let attempt=0;placed<BLADES;attempt++){
+    const seed=attempt,angle=random(seed*7+1)*Math.PI*2,reach=Math.sqrt(random(seed*11+2))*ground.edge(angle)
     const cx=Math.cos(angle)*reach,cz=Math.sin(angle)*reach*SQUASH
     if(ground.blocked(cx,cz))continue
-    const lush=ground.lush(cx,cz)
-    if(random(seed*13+5)>.3+lush*.7)continue
-    // A third are loose singles and pairs between the tufts, so the lawn never reads as a grid of rosettes.
-    const loose=random(seed*71+18)<.34,count=loose?1+Math.floor(random(seed*17+3)*2):4+Math.floor(random(seed*17+3)*(4+lush*9)),spread=loose?.06:.014+random(seed*19+4)*.022+lush*.012
-    const tall=(.78+lush*.72)*(.8+random(seed*23+6)*.45),tone=grassTones[Math.floor(random(seed*29+7)*grassTones.length)]
-    for(let b=0;b<count&&placed<4500;b++){
-      const around=random(seed*31+b*7+8)*Math.PI*2,out=Math.sqrt(random(seed*37+b*5+9)),x=cx+Math.cos(around)*out*spread,z=cz+Math.sin(around)*out*spread
+    const lush=ground.lush(cx,cz),near=gather(cx,cz)
+    if(random(seed*13+5)>(.1+.9*near)*(.35+.65*lush))continue
+    // A few loose singles and pairs between the tufts, so the lawn never reads as a grid of rosettes.
+    const loose=random(seed*71+18)<.14,count=loose?1+Math.floor(random(seed*17+3)*2):7+Math.floor(random(seed*17+3)*(5+lush*6+near*8))
+    const spread=loose?.06:.018+random(seed*19+4)*.02+lush*.01+near*.014
+    const tall=(.74+lush*.4+near*.3)*(.8+random(seed*23+6)*.4),tone=grassTones[Math.floor(random(seed*29+7)*grassTones.length)]
+    for(let b=0;b<count&&placed<BLADES;b++){
+      const s=seed*31+b*7,around=random(s+8)*Math.PI*2,out=Math.sqrt(random(s+9)),x=cx+Math.cos(around)*out*spread,z=cz+Math.sin(around)*out*spread
       if(ground.blocked(x,z))continue
-      const height=tall*(.66+random(seed*41+b*3+10)*.5)*(1.1-out*.25),width=.78+random(seed*43+b*11+12)*.45
-      dummy.position.set(x,ground.height(x,z)-.006,z)
-      dummy.rotation.set(.04+out*(loose?.12:.26)+random(seed*47+b+13)*.1,Math.atan2(Math.cos(around),Math.sin(around))+(random(seed*53+b+14)-.5)*.9,(random(seed*59+b+15)-.5)*.16)
-      dummy.scale.set(width,height,(width+height)*.5);dummy.updateMatrix();grass.setMatrixAt(placed,dummy.matrix)
-      color.copy(tone).lerp(grassTones[(seed+b)%grassTones.length],random(seed*61+b+16)*.35).multiplyScalar(.85+random(seed*67+b+17)*.3);grass.setColorAt(placed,color)
-      placed++
+      blade(x,z,tall*(.62+random(s+10)*.5)*(1.1-out*.3),.78+random(s+12)*.42,.04+out*(loose?.12:.3)+random(s+13)*.1,Math.atan2(Math.cos(around),Math.sin(around))+(random(s+14)-.5)*.9,(random(s+15)-.5)*.16,tone,s)
     }
   }
   grass.computeBoundingSphere()
@@ -171,9 +220,9 @@ export function createVegetation(ground:Ground,fernClumps:[number,number][],flow
   let bloom=0
   for(let i=0;bloom<140&&i<2000;i++){
     const [cx,cz]=flowerDrifts[i%flowerDrifts.length],angle=random(i*7+900)*Math.PI*2,out=Math.pow(random(i*11+901),.7)*.3,x=cx+Math.cos(angle)*out,z=cz+Math.sin(angle)*out*.8
-    if(ground.blocked(x,z))continue
-    dummy.position.set(x,ground.height(x,z)-.004,z);dummy.rotation.set((random(i+902)-.5)*.5,random(i+903)*6.28,(random(i+904)-.5)*.5);dummy.scale.setScalar(.75+random(i+905)*.6);dummy.updateMatrix();flowers.setMatrixAt(bloom,dummy.matrix)
-    color.copy(petalTones[i%petalTones.length]).multiplyScalar(.62+random(i+906)*.2);flowers.setColorAt(bloom,color);bloom++
+    if(ground.blocked(x,z)||ground.nearLens?.(x,z))continue
+    dummy.position.set(x,ground.height(x,z)-.004,z);dummy.rotation.set((random(i+902)-.5)*.4,random(i+903)*6.28,(random(i+904)-.5)*.4);dummy.scale.setScalar(.5+random(i+905)*.4);dummy.updateMatrix();flowers.setMatrixAt(bloom,dummy.matrix)
+    color.copy(petalTones[i%petalTones.length]).multiplyScalar((.36+random(i+906)*.14)*(ground.shade?.(x,z)??1));flowers.setColorAt(bloom,color);bloom++
   }
   flowers.count=bloom;flowers.computeBoundingSphere()
   // Little rings of mushrooms by the willow roots and the stones.
