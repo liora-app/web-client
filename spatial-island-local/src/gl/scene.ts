@@ -319,8 +319,10 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
     pacing.span=0
     frames.length=0
     // A clean window's p95 may reach the next whole vsync multiple of the budget: at 75 Hz a 60 fps cap draws on four of five
-    // vsyncs (gaps of 13.3, 13.3, 13.3 and 26.7 ms), which is no stutter. At 60, 90 and 144 Hz the bound stays ~1.35 budgets.
-    const clean=Math.max(budget*1.35,(vsync?Math.ceil(budget/vsync-.01)*vsync:0)+2)
+    // vsyncs (gaps of 13.3, 13.3, 13.3 and 26.7 ms), which is no stutter. The vsync count rounds up only past 90 % of the next
+    // one, as probeVsync reads a little short (its low quantile): a 60, 120 or 144 Hz period read up to ~9 % short (72/75 Hz:
+    // ~7 %) must not let a vsync missed on most frames pass as clean. 60, 120, 144 Hz: ~1.35 budgets; 75 Hz: 28.7; 90 Hz: 24.2.
+    const clean=Math.max(budget*1.35,(vsync?Math.ceil(budget/vsync*.9)*vsync:0)+2)
     if(mean>budget*1.12||p95>budget*1.9){pacing.good=0;if(pacing.probe)pacing.noProbe=true;pacing.probe=false;if(rung<qualityLadder.length-1){rung++;applyQuality()}}
     else if(mean<budget*1.03&&p95<clean){pacing.probe=false;if(++pacing.good>=5&&rung>startRung&&!pacing.noProbe){rung--;pacing.probe=true;applyQuality()}}
     else pacing.good=0
