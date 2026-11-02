@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { random } from './noise'
+import { fractal,random } from './noise'
 import { surfaceNoise } from './surface'
 
 /** What the island tells the vegetation about its ground. All coordinates are island-local. */
@@ -29,6 +29,8 @@ export interface Vegetation {
 
 // Slimmer and a little taller than a leaf card, so a tuft reads as grass rather than spikes (.015 keeps ≥ ~2 px at the root).
 const SQUASH=.84,BLADE_HEIGHT=.18,BLADE_WIDTH=.015,BLADES=4500
+/** Wind direction in island xz: the shader bends the blades along it, and the placement combs them the same way at rest. */
+const WIND=[.86,.51],WIND_YAW=Math.atan2(WIND[0],WIND[1])
 /** A curved, tapering blade: 4 rows and a point (7 triangles). Normals bow outwards across the width so a flat card shades like a round leaf. */
 function bladeGeometry():THREE.BufferGeometry {
   const rows=[0,.3,.56,.8],positions:number[]=[],normals:number[]=[],blade:number[]=[],indices:number[]=[],normal=new THREE.Vector3()
@@ -88,7 +90,7 @@ function foliageMaterial(time:{value:number}):THREE.MeshStandardMaterial {
       .replace('#include <project_vertex>',`
         vec4 mvPosition=instanceMatrix*vec4(transformed,1.);
         float bladeLength=aBlade.y*length(instanceMatrix[1].xyz)*mix(.22,1.,lensNear);
-        vec2 windDir=vec2(.86,.51);
+        vec2 windDir=vec2(${WIND[0]},${WIND[1]});
         float gust=smoothstep(.38,.8,texture2D(uWindNoise,bladeRoot.xz*.085-windDir*uWindTime*.024).r);
         float flutter=sin(uWindTime*1.3+dot(bladeRoot.xz,vec2(3.1,2.3)))*.55+sin(uWindTime*2.9+bladeRoot.x*11.+bladeRoot.z*7.)*.2;
         float bend=(.16+gust*.85+flutter*(.12+gust*.2))*vTip*vTip*bladeLength*.6;
@@ -126,6 +128,11 @@ function foliageMaterial(time:{value:number}):THREE.MeshStandardMaterial {
 }
 
 const grassTones=['#28462f','#33553a','#3d5a3c','#4b6440','#2f4f45','#5a6340'].map(c=>new THREE.Color(c))
+// Dead straw among the green (art r2-9): ochre, but no brighter than the upper greens, so it reads as a hue shift in the
+// tussock rather than as pale specks scattered over a dark lawn.
+const dryTones=['#6e5d3a','#665634','#5f5536'].map(c=>new THREE.Color(c))
+/** Straw chance: offset of the per-tuft drift (tuned to ~12% of all blades) and a flat share on the wind-dried lip. */
+const DRY_BASE=-.12,DRY_LIP=.16
 /**
  * A small night flower that sways with the grass through the foliage material (17 triangles): a stem quad, a raised
  * ochre heart and five cupped petals, each a two-triangle fan whose tip lifts. aBlade.x runs 0→1 up the stem; heart
@@ -167,10 +174,13 @@ export function createVegetation(ground:Ground,fernClumps:[number,number][],flow
   const grass=new THREE.InstancedMesh(bladeGeometry(),material,BLADES);grass.name='4500 living blades';grass.receiveShadow=true
   const gather=ground.gather??(():number=>0),shade=ground.shade??(():number=>1)
   let placed=0
-  const blade=(x:number,z:number,height:number,width:number,lean:number,yaw:number,roll:number,tone:THREE.Color,seed:number):void=>{
+  // yaw is a heading (local +z → world (sin, cos)); lean tips the blade towards it.
+  const blade=(x:number,z:number,height:number,width:number,lean:number,yaw:number,roll:number,tone:THREE.Color,seed:number,dry=false):void=>{
     dummy.position.set(x,ground.height(x,z)-.006,z);dummy.rotation.set(lean,yaw,roll)
     dummy.scale.set(width,height,(width+height)*.5);dummy.updateMatrix();grass.setMatrixAt(placed,dummy.matrix)
-    color.copy(tone).lerp(grassTones[seed%grassTones.length],random(seed*61+16)*.35).multiplyScalar((1+random(seed*67+17)*.3)*shade(x,z));grass.setColorAt(placed,color)
+    if(dry)color.copy(dryTones[seed%dryTones.length]).lerp(tone,random(seed*61+16)*.3)
+    else color.copy(tone).lerp(grassTones[seed%grassTones.length],random(seed*61+16)*.35)
+    color.multiplyScalar((1+random(seed*67+17)*.3)*shade(x,z));grass.setColorAt(placed,color)
     placed++
   }
   // 1) A ragged fringe on the rolled lip: short tufts in patches along the edge, leaning out over it, so the outline of
@@ -183,25 +193,34 @@ export function createVegetation(ground:Ground,fernClumps:[number,number][],flow
     const outward=Math.atan2(Math.cos(angle),Math.sin(angle)/SQUASH),count=4+Math.floor(random(seed*17+3)*7),tone=grassTones[Math.floor(random(seed*29+7)*grassTones.length)]
     for(let b=0;b<count&&placed<360;b++){
       const s=seed*31+b*7,around=outward+(random(s+8)-.5)*1.6,out=Math.sqrt(random(s+9)),x=cx+Math.sin(around)*out*.035,z=cz+Math.cos(around)*out*.035
-      blade(x,z,(.55+random(s+10)*.5),.8+random(s+12)*.4,.55+random(s+13)*.5,around,(random(s+15)-.5)*.2,tone,s)
+      blade(x,z,(.55+random(s+10)*.5),.8+random(s+12)*.4,.55+random(s+13)*.5,around,(random(s+15)-.5)*.2,tone,s,random(s*89+21)<DRY_LIP)
     }
   }
   // 2) Tufts, not a uniform scatter: they gather round the stations and the companion (seen on four of five stops) and
-  //    round the stones, and stay thin on the open glades, so clean moss shows between full clumps. Each tuft fans out.
+  //    round the stones. Both masks are squared (art r2-9): with a linear floor (.1×.35) lone tufts were sprinkled evenly
+  //    over the whole cap; now the glades between full clumps stay bare moss, and the fixed 4500 blades crowd the clumps.
   for(let attempt=0;placed<BLADES;attempt++){
     const seed=attempt,angle=random(seed*7+1)*Math.PI*2,reach=Math.sqrt(random(seed*11+2))*ground.edge(angle)
     const cx=Math.cos(angle)*reach,cz=Math.sin(angle)*reach*SQUASH
     if(ground.blocked(cx,cz))continue
     const lush=ground.lush(cx,cz),near=gather(cx,cz)
-    if(random(seed*13+5)>(.1+.9*near)*(.35+.65*lush))continue
+    if(random(seed*13+5)>(.02+.98*near*near)*(.12+.88*lush*lush))continue
     // A few loose singles and pairs between the tufts, so the lawn never reads as a grid of rosettes.
     const loose=random(seed*71+18)<.14,count=loose?1+Math.floor(random(seed*17+3)*2):7+Math.floor(random(seed*17+3)*(5+lush*6+near*8))
     const spread=loose?.06:.018+random(seed*19+4)*.02+lush*.01+near*.014
     const tall=(.74+lush*.4+near*.3)*(.8+random(seed*23+6)*.4),tone=grassTones[Math.floor(random(seed*29+7)*grassTones.length)]
+    // Combed, not radial stars: every blade heads down the wind, which a slow field turns ±15° across the cap the way a
+    // breeze curls round stones, splayed a little away from the tuft's heart by how far out it stands, and leans that way.
+    const comb=WIND_YAW+fractal(cx*.45+9,4.1,cz*.45)*.5
+    // Straw gathers where the grass is thin and exposed, by drifts, not blade by blade, so it never reads as speckle; a
+    // dead blade also flops further over than a live one.
+    const parched=THREE.MathUtils.clamp(DRY_BASE+.25*(1-lush)+.15*(1-near)+fractal(cx*.55+5,2.9,cz*.55)*1.1,0,.65)
     for(let b=0;b<count&&placed<BLADES;b++){
       const s=seed*31+b*7,around=random(s+8)*Math.PI*2,out=Math.sqrt(random(s+9)),x=cx+Math.cos(around)*out*spread,z=cz+Math.sin(around)*out*spread
       if(ground.blocked(x,z))continue
-      blade(x,z,tall*(.62+random(s+10)*.5)*(1.1-out*.3),.78+random(s+12)*.42,.04+out*(loose?.12:.3)+random(s+13)*.1,Math.atan2(Math.cos(around),Math.sin(around))+(random(s+14)-.5)*.9,(random(s+15)-.5)*.16,tone,s)
+      const splay=out*(loose?.25:.6),heading=Math.atan2(Math.sin(comb)+Math.cos(around)*splay,Math.cos(comb)+Math.sin(around)*splay)+(random(s+14)-.5)*.7
+      const dry=random(s*89+21)<parched
+      blade(x,z,tall*(.62+random(s+10)*.5)*(1.1-out*.3),.78+random(s+12)*.42,.12+out*(loose?.1:.22)+random(s+13)*.12+(dry?.22:0),heading,(random(s+15)-.5)*.16,tone,s,dry)
     }
   }
   grass.computeBoundingSphere()
