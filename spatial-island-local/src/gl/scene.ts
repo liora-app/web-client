@@ -8,7 +8,6 @@ import { createEnvironment } from './environment'
 import { createLighting } from './lighting'
 import { createGlow } from './glow'
 import { configureRenderer,createPost } from './post'
-import { calibrateRadiance } from './optics'
 
 export interface SanctuaryScene {
   setProgress:(progress:number,velocity:number)=>void;setPointer:(x:number,y:number)=>void
@@ -44,15 +43,15 @@ function fadingMaterials(root:THREE.Object3D):(opacity:number)=>void {
 
 export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=>void,onLost:()=>void):Promise<SanctuaryScene> {
   let renderer:THREE.WebGLRenderer
-  try{renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'})}catch{throw new Error('WebGL unavailable')}
+  try{renderer=new THREE.WebGLRenderer({antialias:false,alpha:false,stencil:false,powerPreference:'high-performance'})}catch{throw new Error('WebGL unavailable')}
   configureRenderer(renderer);renderer.info.autoReset=false;renderer.transmissionResolutionScale=.5
-  const scene=new THREE.Scene();scene.background=new THREE.Color('#050D0A');scene.fog=new THREE.FogExp2('#12291e',.028)
+  const scene=new THREE.Scene();scene.background=new THREE.Color('#020509');scene.fog=new THREE.FogExp2('#0d2124',.028)
   const camera=new THREE.PerspectiveCamera(46,1,.035,120);host.append(renderer.domElement);renderer.domElement.setAttribute('aria-hidden','true')
   const cameraRig=curveRig(cameraWaypoints),targetRig=curveRig(targetWaypoints)
   const environment=createEnvironment(cameraRig.curve);scene.add(environment.group)
   const island=createIsland(),lotus=createLotus(),companion=createCompanion();scene.add(island.group);island.group.add(lotus.group,companion.group)
   const fadeCanopy=fadingMaterials(island.canopy),fadeStations=fadingMaterials(island.stations)
-  const lighting=createLighting(scene),glow=createGlow(island.group),post=createPost(renderer,scene,camera)
+  const lighting=createLighting(scene,renderer),glow=createGlow(island.group),post=createPost(renderer,scene,camera)
   let progress=0,velocity=0,volume=0,talking=false,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches,disposed=false,frame=0,elapsed=0,lastStamp=0,selectedLantern=-1,hasGreeted=false,parallaxX=0,parallaxY=0,lastBreath=0,contextLost=false,privacyActive=false
   let frameIndex=0,paperOrbitGoal=0,privacyTween:gsap.core.Tween|undefined,paperTween:gsap.core.Tween|undefined
   const frameTimes:number[]=[],pointer=new THREE.Vector2(),position=new THREE.Vector3(),target=new THREE.Vector3(),raycaster=new THREE.Raycaster(),ndc=new THREE.Vector2(),cameraDirection=new THREE.Vector3(),cordEnd=new THREE.Vector3(),cordDirection=new THREE.Vector3(),up=new THREE.Vector3(0,1,0),worldCore=new THREE.Vector3()
@@ -95,12 +94,11 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
     glow.core.getWorldPosition(worldCore);environment.update(elapsed,reduced,worldCore,renderer.getPixelRatio())
     lighting.update(frameIndex++);renderer.info.reset();post.render(delta,elapsed,reduced);frame=requestAnimationFrame(render)
   }
-  calibrateRadiance(scene)
   render(performance.now())
   return {
     setProgress(p,v){progress=THREE.MathUtils.clamp(p,0,1);velocity=Number.isFinite(v)?v:0},setPointer(x,y){pointer.set(THREE.MathUtils.clamp(x,-1,1),THREE.MathUtils.clamp(y,-1,1))},setTalking(value){talking=value},setVoice(value){volume=THREE.MathUtils.clamp(value,0,1)},setReduced(value){reduced=value},selectLantern(index){selectedLantern=index>=0&&index<3?index:-1},
     turnPage(){paperTween?.kill();paperOrbitGoal+=Math.PI*2/3;paperTween=gsap.to(island.paperState,{orbit:paperOrbitGoal,duration:reduced?.3:1.2,ease:'power2.inOut'});glow.burst(island.paperCenter,elapsed)},
-    async loadCompanion(url){const loaded=await companion.loadModel(url);calibrateRadiance(companion.group);lighting.refreshShadow();return loaded},
+    async loadCompanion(url){const loaded=await companion.loadModel(url);lighting.refreshShadow();return loaded},
     motion(){return {coreScale:glow.core.scale.toArray(),breath:lastBreath,avatar:companion.pose()}},
     inspect(){
       const avatar=companion.inspect(),projectBox=(box:THREE.Box3):number[]=>{const bounds=[Infinity,Infinity,-Infinity,-Infinity];for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z]){const v=new THREE.Vector3(x,y,z).project(camera),px=(v.x*.5+.5)*innerWidth,py=(.5-v.y*.5)*innerHeight;bounds[0]=Math.min(bounds[0],px);bounds[1]=Math.min(bounds[1],py);bounds[2]=Math.max(bounds[2],px);bounds[3]=Math.max(bounds[3],py)}return bounds}
