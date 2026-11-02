@@ -3,7 +3,10 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 export const palette = { forest:'#11221A', moss:'#2D4A3A', clay:'#3B362E', wood:'#4A3525', paper:'#F4EFE6', ivory:'#F2ECE1', terracotta:'#9E3B33', amber:'#FFB84D', gold:'#F5D08A' }
 
+const grainCache=new Map<string,THREE.CanvasTexture>()
+/** Canvas grain is drawn once per kind/size; callers get a clone that shares the uploaded image but owns its repeat/offset. */
 export function grainTexture(kind:'clay'|'wood'|'knit'|'paper',size=256):THREE.CanvasTexture {
+  const key=`${kind}:${size}`,cached=grainCache.get(key);if(cached)return cached.clone()
   const canvas=document.createElement('canvas');canvas.width=canvas.height=size
   const c=canvas.getContext('2d');if(!c)throw new Error('Canvas texture unavailable')
   c.fillStyle='#969696';c.fillRect(0,0,size,size)
@@ -15,7 +18,7 @@ export function grainTexture(kind:'clay'|'wood'|'knit'|'paper',size=256):THREE.C
     c.lineCap='round'
     for(let y=-12;y<size+12;y+=13)for(let x=-12;x<size+12;x+=14){c.strokeStyle='#626262';c.lineWidth=5;c.beginPath();c.moveTo(x-4,y-5);c.quadraticCurveTo(x-3,y+2,x,y+5);c.quadraticCurveTo(x+3,y+2,x+4,y-5);c.stroke();c.strokeStyle='#c6c6c6';c.lineWidth=2;c.beginPath();c.moveTo(x-3,y-5);c.quadraticCurveTo(x-1,y+3,x,y+4);c.stroke()}
   }
-  const texture=new THREE.CanvasTexture(canvas);texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.colorSpace=THREE.NoColorSpace;return texture
+  const texture=new THREE.CanvasTexture(canvas);texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.colorSpace=THREE.NoColorSpace;grainCache.set(key,texture);return texture.clone()
 }
 
 export function material(color:string,roughness=.9,bumpMap?:THREE.Texture,bumpScale=.025):THREE.MeshStandardMaterial {
