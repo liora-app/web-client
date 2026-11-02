@@ -20,8 +20,12 @@ export interface SanctuaryScene {
   setTransit:(target:number)=>void
   /** Stop drawing (e.g. while the help dialog covers the scene); resuming never makes the scene clock jump. */
   setPaused:(paused:boolean)=>void
-  /** Top edge (CSS px) of each stop's panel: on phones the station is framed in the band between the header and it. */
-  setPanelTops:(tops:number[])=>void
+  /**
+   * Where each stop's panel is (CSS px, index = stop; stop 0 is the hero's text block). A number is the panel's top edge
+   * only (the original call): phones frame each station in the band between the header and it, and the final stop lifts
+   * above the chat. A rect also frames the desktop stops: each station goes to the free zone beside its panel (reframe).
+   */
+  setPanelTops:(panels:readonly (number|PanelRect|null|undefined)[])=>void
   /** Camera arc length (0…1) at the five stops, for flights that keep the camera's speed even across the stops. */
   readonly arcKnots:number[]
   inspect:()=>SceneInspection
@@ -30,6 +34,8 @@ export interface SanctuaryScene {
   quality?:()=>QualityReport
   dispose:()=>void
 }
+/** A panel's box in CSS px, as getBoundingClientRect() gives it (measured without the sheet's own drift). */
+export interface PanelRect {left:number;top:number;right:number;bottom:number}
 export interface QualityReport {
   /** vsync: the display's rAF period read during the boot compile (ms; 0 = unknown), the pacing budget's floor. */
   gpu:string;tier:Tier;rung:number;forced:boolean;adaptive:boolean;fpsCap:number;vsync:number;idle:boolean;dpr:number
@@ -37,9 +43,11 @@ export interface QualityReport {
   finery:boolean;programs:number;lights:{point:number;directional:number};boot:[string,number][]
 }
 type AvatarInspection=ReturnType<ReturnType<typeof createCompanion>['inspect']>
-interface SceneInspection {progress:number;camera:number[];target:number[];coreScale:number[];breath:number;avatar:AvatarInspection;framing:{avatar:number[];lotus:number[]};lanterns:number[];lanternScreens:number[][];privacyClosure:number;paperOrbit:number;paperFront:number;fov:number;transit:number;resources:{geometries:number;textures:number};calls:number;cinematic:{grass:number;petals:number;particles:number;mistLayers:number;silhouettes:number;bloom:number[];exposure:number;transmission:number;grain:number;fps:number;frameP95:number;triangles:number;cameraClearance:number}}
+interface SceneInspection {progress:number;camera:number[];target:number[];coreScale:number[];breath:number;avatar:AvatarInspection;framing:{avatar:number[];lotus:number[]};screenBoxes:{lotus:number[];cocoon:number[];sheets:number[]};lanterns:number[];lanternScreens:number[][];privacyClosure:number;paperOrbit:number;paperFront:number;fov:number;transit:number;resources:{geometries:number;textures:number};calls:number;cinematic:{grass:number;petals:number;particles:number;mistLayers:number;silhouettes:number;bloom:number[];exposure:number;transmission:number;grain:number;fps:number;frameP95:number;triangles:number;cameraClearance:number}}
 export const cameraWaypoints=[[-2.1,2,5.6],[-2.25,1.1,1.95],[-1.75,.65,2.65],[.25,1.75,2.1],[0,1.35,1.85]]
-export const targetWaypoints=[[.5,.45,0],[-1.55,.66,.75],[-1.05,.56,1.55],[1.35,2.3,-.3],[0,.55,-.8]]
+// Stop .5 looks at the cocoon (cocoon.ts: (-1.2, 0, 1.8), ×.76). It now stands .29 m nearer this camera, so the aim sits
+// a little lower than the egg's middle: the cradle stays in frame instead of sinking under the bottom edge.
+export const targetWaypoints=[[.5,.45,0],[-1.55,.66,.75],[-1.2,.4,1.8],[1.35,2.3,-.3],[0,.55,-.8]]
 function curveRig(points:number[][]):{curve:THREE.CatmullRomCurve3;sample:(p:number,out:THREE.Vector3)=>THREE.Vector3} {
   const curve=new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(p[0],p[1],p[2])),false,'centripetal');curve.arcLengthDivisions=1000
   const lengths=curve.getLengths(1000),total=lengths[1000],knots=[0,250,500,750,1000].map(i=>lengths[i]/total)
@@ -66,9 +74,23 @@ const phoneQuery=matchMedia('(max-width: 760px)'),isPhone=():boolean=>phoneQuery
  * hold a station: there the lens stops widening and the station keeps its top above the sheet. Where the band is too thin
  * for all three lanterns (lanternsBand, e.g. a short phone whose FAQ sheet grows with an open answer), the frame follows
  * the lit lantern instead, so the answer's light is always seen. Panel tops can change (answers, steps): the framing then
- * glides to its new value instead of jumping.
+ * glides to its new value instead of jumping. The hero (art-10) is wider and shifted further, so the island is no longer
+ * pressed into the lower left corner; stop .5 opens 4° more because the cocoon now stands nearer its camera.
  */
-const PHONE={header:80,referenceHeight:844,referenceBand:[0,255,327,284],fov:[74,82,78,56,96],maxFov:84,bandFloor:.16,heroShift:-.1,lanternsBand:150}
+const PHONE={header:80,referenceHeight:844,referenceBand:[0,255,327,284],fov:[80,82,82,56,96],maxFov:84,bandFloor:.16,heroShift:-.13,lanternsBand:150}
+/**
+ * Desktop (art-1, ux-7): with measured panel rects each stop's anchor (hero: the lotus; .25: the front folio; .5: the
+ * cocoon; .75: the frame of all three lanterns) goes to the middle of the free zone between its panel (at least `gap` px
+ * away) and the far viewport edge (`edge` px in). An anchor wider than its zone widens the lens, up to maxFov; past that it
+ * keeps clear of the panel and lets the viewport edge crop it. Without rects the tuned offsets of reframe stay.
+ */
+const DESK={gap:24,edge:16,maxFov:[72,84,84,64]}
+/**
+ * Final stop (ux-2): the lotus + companion frame keeps its tuned lift until the conversation panel (a chat log that grows)
+ * reaches it. Then the camera lifts so the frame ends `gap` px above the panel, and once the frame no longer fits under
+ * the header (`top`: 84 px on desktop, 80 on phones) the lens widens, by up to `widen` degrees, until it does.
+ */
+const FINAL={top:84,gap:16,widen:12}
 /**
  * The character only belongs to the hero and the final stop (render-6, art-11, motion-7): between them it peeks from
  * behind the folios, over the shell and from the bottom edge under the lanterns. Presence is a target for the companion's
@@ -125,6 +147,16 @@ function within<T>(promise:Promise<T>,ms:number):Promise<T|undefined> {
 function measure(name:string,start:number|string,end=performance.now()):void {
   try{if(typeof start==='string')performance.measure(`sanctuary:${name}`,start);else performance.measure(`sanctuary:${name}`,{start,end})}catch{/* timing only */}
 }
+/** Points on a vertical cylinder (axis x, z; radius r; from y0 to y1): a station's silhouette for the framing probes. */
+function ring(x:number,z:number,r:number,y0:number,y1:number):THREE.Vector3[] {
+  const points:THREE.Vector3[]=[]
+  for(let i=0;i<12;i++){const a=i/12*Math.PI*2;for(const y of [y0,y1])points.push(new THREE.Vector3(x+Math.cos(a)*r,y,z+Math.sin(a)*r))}
+  return points
+}
+/** Vertical FOV (degrees) whose frame is `ratio` times as large as `fov`'s, capped at `max`. */
+function widen(fov:number,ratio:number,max:number):number {
+  return Math.min(max,THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(fov)/2)*ratio)))
+}
 /**
  * rAF period while nothing renders (code-2): the low quantile of the gaps, kept only when enough of them agree, so a gap
  * stretched by a long task is never taken for the period. A capped display (iOS Low Power Mode or Chrome Energy Saver at
@@ -174,23 +206,57 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
   let privacyTween:gsap.core.Tween|undefined,paperTween:gsap.core.Tween|undefined,greetAt=-Infinity,shownAt=-Infinity,paused=false,transitTo=-1,greetHold=0,privacyHold=0
   // Folio 0 faces the camera to match the first direction tab (motion-6); turnPage(index) keeps the two in step.
   let paperIndex=0;island.paperState.orbit=PAGE*(1-paperIndex)
-  // Framing per stop (see blend): desktop values are fixed, phone values follow the measured panel tops (reframe).
+  // Framing per stop (see blend): desktop values are tuned constants until panel rects arrive, phone values follow the
+  // measured panel tops, and the final stop lifts above a growing chat (reframe).
   // `framing` is what is drawn; it eases towards `frameGoal` (a resize snaps it).
   const framing={fov:[0,0,0,0,0],x:[0,0,0,0,0],y:[0,0,0,0,0]},frameGoal={fov:[0,0,0,0,0],x:[0,0,0,0,0],y:[0,0,0,0,0]}
   // `freshLayout`: the viewport changed and the panel tops held are stale; the next measurement snaps instead of gliding.
   let freshLayout=true
-  const panelTops:number[]=[],probe=new THREE.PerspectiveCamera(),probeTarget=new THREE.Vector3(),litAnchor=new THREE.Vector3()
+  const panelTops:number[]=[],panelRects:(PanelRect|undefined)[]=[],probe=new THREE.PerspectiveCamera(),probeTarget=new THREE.Vector3(),litAnchor=new THREE.Vector3()
   const lanternCentre=island.lanterns.reduce((sum,l)=>sum.add(l.root.getWorldPosition(probeTarget)),new THREE.Vector3()).divideScalar(island.lanterns.length)
   const stationAnchors=[new THREE.Vector3(...targetWaypoints[0]),new THREE.Vector3(-1.55,.8,.75),island.privacyCore.getWorldPosition(new THREE.Vector3()),lanternCentre.setY(lanternCentre.y-.05),new THREE.Vector3(...targetWaypoints[4])]
+  // Station silhouettes (world, island at rest) for the desktop framing and the final lift. The lotus keeps every fourth
+  // vertex; the front folio is the carousel's front slot (angle 2π/3, artifacts.ts) as a sheet-sized cylinder; the cocoon
+  // (its cradle is batched into the altar stone) and the lanterns (tassel, lit drop) are cylinders round their bodies.
+  lotus.group.updateWorldMatrix(true,true)
+  const lotusPoints:THREE.Vector3[]=[];lotus.group.traverse(object=>{if(!(object instanceof THREE.Mesh))return;const positions=object.geometry.getAttribute('position');for(let i=0;i<positions.count;i+=4)lotusPoints.push(new THREE.Vector3().fromBufferAttribute(positions,i).applyMatrix4(object.matrixWorld))})
+  const shell=island.privacyCore.parent??island.privacyCore,shellAt=shell.getWorldPosition(new THREE.Vector3()),shellScale=shell.getWorldScale(new THREE.Vector3()).x
+  const folioX=island.paperCenter.x+Math.cos(PAGE)*.23,folioY=.78+Math.sin(PAGE)*.08,folioZ=island.paperCenter.z+Math.sin(PAGE)*.17
+  // inspect(): the three folios, and the cradle's outline in the cocoon's own frame (cocoon.ts lathe: r .418, y -.06….26).
+  const folios:THREE.Object3D[]=[];island.stations.traverse(object=>{if(object.name.startsWith('Floating calligraphy folio'))folios.push(object)})
+  const cradle=ring(0,0,.418,-.06,.26)
+  const anchorPoints=[lotusPoints,ring(folioX,folioZ,.28,folioY-.28,folioY+.28),ring(shellAt.x,shellAt.z,.42*shellScale,shellAt.y-.06*shellScale,shellAt.y+.98*shellScale),
+    island.lanterns.flatMap(l=>{const at=l.root.getWorldPosition(new THREE.Vector3());return ring(at.x,at.z,.14,l.restY-.42,l.restY+.21)})]
+  // The companion's box (companion.inspect: the posed GLB, or the stand-in before it arrives); measured again once the GLB shows.
+  let avatarCorners:THREE.Vector3[]|undefined,refit=false
+  const avatarPoints=():THREE.Vector3[]=>{
+    if(!avatarCorners){companion.group.updateWorldMatrix(true,true);const [min,max]=companion.inspect().bounds;avatarCorners=[];for(const x of [min[0],max[0]])for(const y of [min[1],max[1]])for(const z of [min[2],max[2]])avatarCorners.push(new THREE.Vector3(x,y,z))}
+    return avatarCorners
+  }
+  /** Aim the probe camera like stop k's camera, through `fov` and without any view offset. */
+  const aim=(k:number,fov:number):void=>{probe.fov=fov;probe.aspect=innerWidth/innerHeight;probe.updateProjectionMatrix();probe.position.fromArray(cameraWaypoints[k]);probe.lookAt(probeTarget.fromArray(targetWaypoints[k]));probe.updateMatrixWorld()}
   /** Screen y (CSS px) of stop k's anchor seen from stop k's camera through `fov`, without any view offset. */
-  const anchorY=(k:number,fov:number,anchor:THREE.Vector3):number=>{
-    probe.fov=fov;probe.aspect=innerWidth/innerHeight;probe.updateProjectionMatrix();probe.position.fromArray(cameraWaypoints[k]);probe.lookAt(probeTarget.fromArray(targetWaypoints[k]));probe.updateMatrixWorld()
-    return (.5-probeTarget.copy(anchor).project(probe).y*.5)*innerHeight
+  const anchorY=(k:number,fov:number,anchor:THREE.Vector3):number=>{aim(k,fov);return (.5-probeTarget.copy(anchor).project(probe).y*.5)*innerHeight}
+  /** Screen box [left, top, right, bottom] (CSS px) of point sets seen from stop k's camera through `fov`, no view offset. */
+  const screenBox=(k:number,fov:number,...sets:THREE.Vector3[][]):number[]=>{
+    aim(k,fov);const box=[Infinity,Infinity,-Infinity,-Infinity]
+    for(const set of sets)for(const point of set){probeTarget.copy(point).project(probe);const x=(probeTarget.x*.5+.5)*innerWidth,y=(.5-probeTarget.y*.5)*innerHeight;box[0]=Math.min(box[0],x);box[1]=Math.min(box[1],y);box[2]=Math.max(box[2],x);box[3]=Math.max(box[3],y)}
+    return box
   }
   const reframe=(snap:boolean):void=>{
-    const h=innerHeight,short=1-THREE.MathUtils.smoothstep(h,650,900),goal=frameGoal
-    if(!isPhone()){goal.fov=[58,65,65,46,78+18*short];goal.x=[-.17,.19,.19,-.18,0];goal.y=[0,0,0,0,.21-.015*short]}
-    else{
+    const w=innerWidth,h=innerHeight,short=1-THREE.MathUtils.smoothstep(h,650,900),goal=frameGoal
+    if(!isPhone()){
+      goal.fov=[58,65,65,46,78+18*short];goal.x=[-.17,.19,.19,-.18,0];goal.y=[0,0,0,0,.21-.015*short]
+      for(let k=0;k<4;k++){
+        const rect=panelRects[k];if(!rect)continue
+        // The free zone lies on the side the panel leaves open (decided by the panel's centre).
+        const onLeft=rect.left+rect.right<w,from=onLeft?rect.right+DESK.gap:DESK.edge,to=onLeft?w-DESK.edge:rect.left-DESK.gap,room=to-from;if(room<=0)continue
+        let box=screenBox(k,goal.fov[k],anchorPoints[k])
+        if(box[2]-box[0]>room){goal.fov[k]=widen(goal.fov[k],(box[2]-box[0])/room,DESK.maxFov[k]);box=screenBox(k,goal.fov[k],anchorPoints[k])}
+        const half=(box[2]-box[0])/2,centre=half*2<=room?(from+to)/2:onLeft?from+half:to-half
+        goal.x[k]=((box[0]+box[2])/2-centre)/w
+      }
+    }else{
       goal.fov=[...PHONE.fov];goal.x=[PHONE.heroShift,0,0,0,0];goal.y=[-.23,.21,.21,.2,.22-.015*short]
       for(let k=1;k<=3;k++){
         const top=panelTops[k];if(!(top>PHONE.header))continue
@@ -205,6 +271,18 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
         }
         // Offset: the anchor goes to the middle of the band (a positive offset lifts the scene).
         goal.y[k]=(anchorY(k,goal.fov[k],anchor)-(PHONE.header+band/2))/h
+      }
+    }
+    // Final stop, every layout (FINAL): lift only when the conversation panel reaches the frame, widen once lifting alone
+    // would push the frame under the header; the frame's bottom then sits FINAL.gap above the panel.
+    const top=panelTops[4]
+    if(top>FINAL.top){
+      const limit=top-FINAL.gap,lotusAndAvatar=[lotusPoints,avatarPoints()]
+      let box=screenBox(4,goal.fov[4],...lotusAndAvatar)
+      if(box[3]-goal.y[4]*h>limit){
+        const band=limit-FINAL.top
+        if(box[3]-box[1]>band&&band>0){goal.fov[4]=widen(goal.fov[4],(box[3]-box[1])/band,goal.fov[4]+FINAL.widen);box=screenBox(4,goal.fov[4],...lotusAndAvatar)}
+        goal.y[4]=(box[3]-limit)/h
       }
     }
     if(snap)for(const key of ['fov','x','y'] as const)framing[key]=[...goal[key]]
@@ -295,6 +373,8 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
     camera.setViewOffset(innerWidth,innerHeight,blend(framing.x,OFFSET_LEGS,progress)*innerWidth,blend(framing.y,OFFSET_LEGS,progress)*innerHeight,innerWidth,innerHeight)
     companion.setPresence?.(1-THREE.MathUtils.smoothstep(progress,PRESENCE_OUT[0],PRESENCE_OUT[1])+THREE.MathUtils.smoothstep(progress,PRESENCE_IN[0],PRESENCE_IN[1]))
     lotus.update(elapsed,reduced);island.update(elapsed,reduced);companion.update(elapsed,breath,pointer,talking,reduced)
+    // A new model is measured for the final framing once it holds its seated pose (after an update, not in its bind pose).
+    if(refit){refit=false;avatarCorners=undefined;reframe(false)}
     // The wave waits for the character to be there and the camera to rest at the final stop (motion-14e), so its peak no
     // longer lands mid-flight; a flight bound elsewhere never greets on the way.
     const atRest=!hasGreeted&&companion.ready&&(transitTo<0||transitTo===4)&&Math.abs(progress-1)<GREET_REACH&&Math.abs(velocity)<GREET_VELOCITY&&companion.presence>=GREET_PRESENCE
@@ -386,24 +466,40 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
     },
     setTransit(value){const next=Number.isInteger(value)&&value>=0&&value<=4?value:-1;if(next!==transitTo){transitTo=next;wake()}},
     setPaused(value){if(value===paused)return;paused=value;visibility()},
-    setPanelTops(tops){panelTops.length=0;for(const top of tops)panelTops.push(Number.isFinite(top)?top:NaN);reframe(freshLayout);freshLayout=false;wake()},
+    setPanelTops(panels){
+      panelTops.length=0;panelRects.length=0
+      for(const panel of panels){
+        const rect=typeof panel==='object'&&panel?{left:panel.left,top:panel.top,right:panel.right,bottom:panel.bottom}:undefined,top=rect?rect.top:panel
+        panelTops.push(typeof top==='number'&&Number.isFinite(top)?top:NaN)
+        panelRects.push(rect&&Object.values(rect).every(Number.isFinite)&&rect.right>rect.left&&rect.bottom>rect.top?rect:undefined)
+      }
+      reframe(freshLayout);freshLayout=false;wake()
+    },
     arcKnots,
     async loadCompanion(url){
       const loaded=await companion.loadModel(url)
       // The knit GLB arrives after boot: compile it in parallel while it stays hidden, so it never stalls a frame.
       if(loaded&&!disposed&&!contextLost){const start=performance.now();companion.group.visible=false;try{await precompile(companion.group)}finally{companion.group.visible=true}measure('avatar-compile',start)}
-      lighting.refreshShadow();shownAt=elapsed;wake();holdPacing(2000);return loaded
+      lighting.refreshShadow();shownAt=elapsed;refit=true;wake();holdPacing(2000);return loaded
     },
     quality:report,
     motion(){return {coreScale:glow.core.scale.toArray(),breath:lastBreath,avatar:companion.pose()}},
     inspect(){
       const avatar=companion.inspect(),projectBox=(box:THREE.Box3):number[]=>{const bounds=[Infinity,Infinity,-Infinity,-Infinity];for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z]){const v=new THREE.Vector3(x,y,z).project(camera),px=(v.x*.5+.5)*innerWidth,py=(.5-v.y*.5)*innerHeight;bounds[0]=Math.min(bounds[0],px);bounds[1]=Math.min(bounds[1],py);bounds[2]=Math.max(bounds[2],px);bounds[3]=Math.max(bounds[3],py)}return bounds}
-      const lotusBounds=[Infinity,Infinity,-Infinity,-Infinity],vertex=new THREE.Vector3();lotus.group.updateWorldMatrix(true,true)
-      lotus.group.traverse(object=>{if(!(object instanceof THREE.Mesh))return;const positions=object.geometry.getAttribute('position');for(let i=0;i<positions.count;i++){vertex.fromBufferAttribute(positions,i).applyMatrix4(object.matrixWorld).project(camera);const x=(vertex.x*.5+.5)*innerWidth,y=(.5-vertex.y*.5)*innerHeight;lotusBounds[0]=Math.min(lotusBounds[0],x);lotusBounds[1]=Math.min(lotusBounds[1],y);lotusBounds[2]=Math.max(lotusBounds[2],x);lotusBounds[3]=Math.max(lotusBounds[3],y)}})
+      // Screen box of every vertex under `roots` (plus loose world points): the stations as drawn this frame.
+      const vertex=new THREE.Vector3(),meshBounds=(roots:THREE.Object3D[],extra:THREE.Vector3[]=[]):number[]=>{
+        const bounds=[Infinity,Infinity,-Infinity,-Infinity],add=(point:THREE.Vector3):void=>{point.project(camera);const x=(point.x*.5+.5)*innerWidth,y=(.5-point.y*.5)*innerHeight;bounds[0]=Math.min(bounds[0],x);bounds[1]=Math.min(bounds[1],y);bounds[2]=Math.max(bounds[2],x);bounds[3]=Math.max(bounds[3],y)}
+        for(const root of roots){root.updateWorldMatrix(true,true);root.traverse(object=>{if(!(object instanceof THREE.Mesh))return;const positions=object.geometry.getAttribute('position');for(let i=0;i<positions.count;i++)add(vertex.fromBufferAttribute(positions,i).applyMatrix4(object.matrixWorld))})}
+        for(const point of extra)add(vertex.copy(point))
+        return bounds
+      }
+      const lotusBounds=meshBounds([lotus.group])
+      // The cocoon's cradle is batched into the altar stone, so it joins the shell's vertices as its lathe outline.
+      shell.updateWorldMatrix(true,false);const cocoonBounds=meshBounds([shell],cradle.map(point=>point.clone().applyMatrix4(shell.matrixWorld)))
       const sorted=[...frameTimes].sort((a,b)=>a-b),median=sorted[Math.floor(sorted.length/2)]??16.67
-      const clearance=Math.min(camera.position.distanceTo(new THREE.Vector3(-1.55,.75,.75))-.55,camera.position.distanceTo(new THREE.Vector3(-1.05,.59,1.55))-.55,camera.position.distanceTo(new THREE.Vector3(-.25,.4,-.55))-1.05)
+      const clearance=Math.min(camera.position.distanceTo(new THREE.Vector3(-1.55,.75,.75))-.55,camera.position.distanceTo(island.privacyCore.getWorldPosition(new THREE.Vector3()))-.55,camera.position.distanceTo(new THREE.Vector3(-.25,.4,-.55))-1.05)
       const look=post.inspect()
-      return {progress,camera:camera.position.toArray(),target:target.toArray(),coreScale:glow.core.scale.toArray(),breath:lastBreath,avatar,framing:{avatar:projectBox(new THREE.Box3(new THREE.Vector3().fromArray(avatar.bounds[0]),new THREE.Vector3().fromArray(avatar.bounds[1]))),lotus:lotusBounds},lanterns:island.lanterns.map(l=>l.material.emissiveIntensity),lanternScreens:island.lanterns.map(l=>{const p=l.body.getWorldPosition(new THREE.Vector3()).project(camera);return [(p.x*.5+.5)*innerWidth,(.5-p.y*.5)*innerHeight]}),privacyClosure:island.privacyState.closure,paperOrbit:island.paperState.orbit,paperFront:((Math.round((PAGE-island.paperState.orbit)/PAGE)%3)+3)%3,fov:camera.fov,transit:transitTo,resources:{...renderer.info.memory},calls:renderer.info.render.calls,cinematic:{grass:island.grass.count,petals:lotus.petalCount,particles:glow.particleCount,mistLayers:environment.mists.length,silhouettes:6,bloom:look.bloom,exposure:look.exposure,transmission:lotus.material.transmission,grain:look.grain,fps:1000/median,frameP95:sorted[Math.floor(sorted.length*.95)]??median,triangles:renderer.info.render.triangles,cameraClearance:clearance}}
+      return {progress,camera:camera.position.toArray(),target:target.toArray(),coreScale:glow.core.scale.toArray(),breath:lastBreath,avatar,framing:{avatar:projectBox(new THREE.Box3(new THREE.Vector3().fromArray(avatar.bounds[0]),new THREE.Vector3().fromArray(avatar.bounds[1]))),lotus:lotusBounds},screenBoxes:{lotus:lotusBounds,cocoon:cocoonBounds,sheets:meshBounds(folios)},lanterns:island.lanterns.map(l=>l.material.emissiveIntensity),lanternScreens:island.lanterns.map(l=>{const p=l.body.getWorldPosition(new THREE.Vector3()).project(camera);return [(p.x*.5+.5)*innerWidth,(.5-p.y*.5)*innerHeight]}),privacyClosure:island.privacyState.closure,paperOrbit:island.paperState.orbit,paperFront:((Math.round((PAGE-island.paperState.orbit)/PAGE)%3)+3)%3,fov:camera.fov,transit:transitTo,resources:{...renderer.info.memory},calls:renderer.info.render.calls,cinematic:{grass:island.grass.count,petals:lotus.petalCount,particles:glow.particleCount,mistLayers:environment.mists.length,silhouettes:6,bloom:look.bloom,exposure:look.exposure,transmission:lotus.material.transmission,grain:look.grain,fps:1000/median,frameP95:sorted[Math.floor(sorted.length*.95)]??median,triangles:renderer.info.render.triangles,cameraClearance:clearance}}
     },
     dispose(){if(disposed)return;disposed=true;cancelAnimationFrame(frame);privacyTween?.kill();paperTween?.kill();window.removeEventListener('resize',onResize);if(import.meta.env.DEV)Reflect.deleteProperty(window,'__sanctuaryPerf');window.removeEventListener('pointerdown',onPress);window.removeEventListener('pointerup',onClick);window.removeEventListener('pointercancel',onCancel);window.removeEventListener('pointermove',onMove);document.removeEventListener('visibilitychange',visibility);renderer.domElement.removeEventListener('webglcontextlost',lost);document.body.classList.remove('lantern-hover');companion.dispose();disposeObject(scene);lighting.dispose();post.dispose();renderer.dispose();renderer.domElement.remove()},
   }

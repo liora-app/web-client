@@ -137,7 +137,7 @@ const SEAL_ATTACK=.12,SEAL_DECAY=.22,SEAL_PEAK=3.4
 
 export function createCocoon(kit:Kit):Cocoon {
   // A little smaller than the cradle was carved for: from the hero camera the crown now sits under the lotus.
-  const group=new THREE.Group();group.name='Kintsugi privacy cocoon';group.position.set(-1.05,0,1.55);group.scale.setScalar(.82)
+  const group=new THREE.Group();group.name='Kintsugi privacy cocoon';group.position.set(-1.2,0,1.8);group.scale.setScalar(.76) // art-5: off the lotus' bearing from the hero camera
   // Carved cradle: foot, inlaid waist, scalloped rim with one lobe under each shard, a shallow bowl for the egg.
   const wobble=(angle:number,y:number):number=>1+fractal(Math.sin(angle)*1.4+7,y*2.6,Math.cos(angle)*1.4)*.035
   const cradle=[[0,-.06],[.37,-.06],[.4,-.025],[.414,.025],[.418,.068],[.404,.093],[.374,.104],[.336,.11],[.312,.124],[.302,.148],[.298,.163],[.287,.166],[.287,.184],[.298,.187],[.302,.205],[.306,.226],[.297,.246],[.276,.258],[.25,.261],[.233,.255],[.19,.239],[.12,.229],[0,.225]]
