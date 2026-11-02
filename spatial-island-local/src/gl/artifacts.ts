@@ -14,6 +14,8 @@ export interface Artifacts {
   stations:THREE.Group;canopy:THREE.Group;lanterns:Lantern[]
   paperState:{orbit:number};privacyState:{closure:number}
   paperCenter:THREE.Vector3;privacyCore:THREE.Mesh
+  /** The cocoon's shell pivots and core: the scene hides them on the journal stop, whose camera passes beside them. */
+  cocoonParts:THREE.Object3D[]
   update:(time:number,reduced:boolean)=>void
 }
 /** What the altar, the cocoon and the willow share. */
@@ -137,7 +139,7 @@ export function createArtifacts():Artifacts {
   const willow=createWillow(kit)
   // Stone, brass and clay of both stations become one draw each; the moving parts stay articulated.
   batchStatic(stations,[...papers,flame,...cocoon.moving])
-  return {stations,canopy:willow.canopy,lanterns:willow.lanterns,paperState,privacyState,paperCenter,privacyCore:cocoon.core,update(time,reduced){
+  return {stations,canopy:willow.canopy,lanterns:willow.lanterns,paperState,privacyState,paperCenter,privacyCore:cocoon.core,cocoonParts:cocoon.moving,update(time,reduced){
     paperTime.value=reduced?0:time
     papers.forEach((sheet,i)=>{const a=i*Math.PI*2/3+paperState.orbit;sheet.position.set(Math.cos(a)*.23,.78+(reduced?0:Math.sin(time*.65+i*1.3)*.045)+Math.sin(a)*.08,Math.sin(a)*.17);sheet.rotation.set(-.38+(reduced?0:Math.sin(time*.45+i)*.075),-.25+Math.sin(a)*.32,Math.cos(a)*.15)})
     const flicker=reduced?0:Math.sin(time*7.3)*.5+Math.sin(time*11.9+1.3)*.3+Math.sin(time*3.1+.4)*.2

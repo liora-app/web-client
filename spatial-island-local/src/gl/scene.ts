@@ -96,7 +96,7 @@ const FINAL={top:84,gap:16,widen:12}
  * behind the folios, over the shell and from the bottom edge under the lanterns. Presence is a target for the companion's
  * own spring (~.45 s, alpha-hashed, no recompile); these windows are where the figure is clear of the frame edges.
  */
-const PRESENCE_OUT=[.06,.14],PRESENCE_IN=[.86,.94]
+const PRESENCE_OUT=[.06,.14],PRESENCE_IN=[.86,.94],COCOON_OUT=[.1,.18],COCOON_IN=[.32,.4]
 /**
  * Greeting (motion-14e): at the final stop, scroll at rest, character shown (presence still rising past .8 while the
  * hold runs, so it is ≈.95 when the wave starts and ≥.97 once the arm is up ~.2 s later), held for GREET_HOLD seconds.
@@ -198,7 +198,7 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
   const lotus=await step('lotus',createLotus),companion=await step('companion',createCompanion);scene.add(island.group);island.group.add(lotus.group,companion.group)
   // render-7: the three per-lantern lights leave the graph; lighting.lantern is the single light they share.
   for(const lantern of island.lanterns)lantern.light.removeFromParent()
-  const fadeCanopy=fadingMaterials(island.canopy),fadeStations=fadingMaterials(island.stations),filaments=island.canopy.getObjectByName('Falling light filaments')
+  const fadeCanopy=fadingMaterials(island.canopy),fadeStations=fadingMaterials(island.stations),fadeCocoon=island.cocoonParts.map(fadingMaterials),filaments=island.canopy.getObjectByName('Falling light filaments')
   const lighting=await step('lighting',()=>createLighting(scene,renderer,island.group,{size:preset.shadowSize,hz:preset.shadowHz}))
   const glow=createGlow(island.group),post=createPost(renderer,scene,camera,preset)
   environment.bokeh.visible=preset.finery;if(filaments)filaments.visible=preset.finery
@@ -384,6 +384,9 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
     greetHold=atRest?greetHold+delta:0
     if(greetHold>=GREET_HOLD){hasGreeted=true;greetAt=elapsed;companion.greet(elapsed)}
     const stationFade=1-THREE.MathUtils.smoothstep(progress,.84,.9);fadeCanopy(stationFade);fadeStations(stationFade)
+    // The journal camera passes ~1.5 m beside the cocoon (art-5 moved it off the hero's lotus bearing): its open shell
+    // filled the frame's lower right under the panel. It leaves and returns inside the dead zones around that stop.
+    const cocoonFade=Math.min(stationFade,1-THREE.MathUtils.smoothstep(progress,COCOON_OUT[0],COCOON_OUT[1])+THREE.MathUtils.smoothstep(progress,COCOON_IN[0],COCOON_IN[1]));for(const fade of fadeCocoon)fade(cocoonFade)
     // The shell seals once the camera has all but arrived (and not on a flight bound elsewhere), after a short beat, and
     // opens as soon as the camera leaves the stop: closing used to start at .42 and be over before the camera arrived.
     const fromPrivacy=Math.abs(progress-.5),mayClose=transitTo<0||transitTo===2
