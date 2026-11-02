@@ -9,32 +9,38 @@ import { applySurface } from './surface'
 const CORE=new THREE.Vector3(0,(.53-.15)/.78,0)
 
 /**
- * One petal: a thin lens-section shell. Narrow claw at the base, widest a little past the middle, then tapering to a
- * pointed tip; boat-cupped across, and (petals) curling in towards the flower's heart along its length so the rings
- * read as a bowl, or (sepals, `reflex`) bending out. Local +z is the outer face.
+ * One petal: a thin shell. Narrow claw at the base, widest a little past the middle, then (petals) a full spoon of a
+ * tip with only a short point, or (sepals) a long pointed one; boat-cupped across, a little lopsided like a pressed one,
+ * and (petals) curling in towards the flower's heart along its length so the rings read as a bowl, or (sepals,
+ * `reflex`) bending out. Local +z is the outer face.
  * uv.x runs once around the section (sin(2πu) is the across-petal coordinate, cos(2πu)>0 the outer face), uv.y base → tip.
  *
  * Shading normals are the porcelain sheet's own (the mid-surface normal, flipped on the inner face), and each rim is two
  * coincident vertex columns, one per face. Smooth normals averaged across the knife-thin rim pointed sideways and,
  * interpolated over the last 1/8 of the section, drew a dark crescent along every petal edge.
+ * The section is a rounded slab, not a knife-edged lens (|cos|^.6 instead of cos): a pressed clay petal has a soft edge
+ * with some body to it. The duplicated rim columns sit at cos=0, so they still coincide and the skipped quads stay shut.
  */
 function petalShell(length:number,width:number,seed:number,rows:number,columns:number,shape:{depth?:number;curl?:number;point?:number;reflex?:boolean}={}):THREE.BufferGeometry {
   const {depth=1,curl=0,point:tip=.38,reflex=false}=shape
   const positions:number[]=[],normals:number[]=[],uvs:number[]=[],indices:number[]=[]
-  const cupping=(.88+random(seed)*.12)*depth,flutter=random(seed+1)*6.28,ripple=.003+random(seed+2)*.005
-  const breadthAt=(t:number):number=>{const swell=Math.sin(Math.PI*Math.pow(t,1.15));return width*Math.pow(swell,.5+.7*t)*(1-tip*THREE.MathUtils.smoothstep(t,.74,1))}
+  const cupping=(.88+random(seed)*.12)*depth,flutter=random(seed+1)*6.28,ripple=.003+random(seed+2)*.005,lop=(random(seed+6)-.5)*.1
+  // The swell's exponent sets the tip: rising to 1.2 it closes to a point (sepals); held under .9 the petal stays full
+  // into a rounded spoon, and the short point lives in its last 14%.
+  const taper=reflex?.7:.4,pointFrom=reflex?.74:.86
+  const breadthAt=(t:number):number=>{const swell=Math.sin(Math.PI*Math.pow(t,1.15));return width*Math.pow(swell,.5+taper*t)*(1-tip*THREE.MathUtils.smoothstep(t,pointFrom,1))}
   const mid=(t:number,v:number,out:THREE.Vector3):THREE.Vector3=>{
     const swell=Math.sin(Math.PI*Math.pow(t,1.15)),across=(reflex?.15:.2)*Math.pow(swell,.8)*(1-v*v)
     const along=reflex?.17*t*t-.1*Math.pow(t,6):-curl*t*t
-    return out.set(breadthAt(t)*v,length*t,(across+along)*cupping+ripple*Math.sin(t*11+flutter+v*2)*v*v*t)
+    return out.set(breadthAt(t)*v*(1+lop*v),length*t,(across+along)*cupping+ripple*Math.sin(t*11+flutter+v*2)*v*v*t)
   }
   // Section angles: the outer face, a duplicated rim, the inner face, the other duplicated rim, back to the outer seam.
   const quarter=columns/4,angles:{a:number;inner:boolean}[]=[]
   for(let j=0;j<=columns;j++){const a=j/columns*Math.PI*2;angles.push({a,inner:j>quarter&&j<=3*quarter});if(j===quarter||j===3*quarter)angles.push({a,inner:j===quarter})}
   const point=new THREE.Vector3(),du=new THREE.Vector3(),dv=new THREE.Vector3(),normal=new THREE.Vector3(),e=1e-3
   for(let i=0;i<=rows;i++)for(const {a,inner} of angles){
-    const t=i/rows,v=Math.sin(a),thickness=.022*Math.pow(Math.sin(Math.PI*t),.5)*(1-.3*t)
-    mid(t,v,point);positions.push(point.x,point.y,point.z+thickness*Math.cos(a));uvs.push(a/(Math.PI*2),t)
+    const t=i/rows,v=Math.sin(a),c=Math.cos(a),thickness=.026*Math.pow(Math.sin(Math.PI*t),.5)*(1-.3*t)
+    mid(t,v,point);positions.push(point.x,point.y,point.z+thickness*Math.sign(c)*Math.pow(Math.abs(c),.6));uvs.push(a/(Math.PI*2),t)
     const tn=THREE.MathUtils.clamp(t,.02,.97),vn=THREE.MathUtils.clamp(v,-1+e,1-e)
     mid(tn+e,vn,du).sub(mid(tn-e,vn,point));mid(tn,vn+e,dv).sub(mid(tn,vn-e,point))
     normal.crossVectors(dv,du).normalize();if(normal.z<0)normal.negate();if(inner)normal.negate();normals.push(normal.x,normal.y,normal.z)
@@ -134,8 +140,10 @@ function lotusBase():THREE.BufferGeometry {
 
 export function createLotus():{group:THREE.Group;petalCount:number;material:THREE.MeshPhysicalMaterial;update:(time:number,reduced:boolean)=>void} {
   const group=new THREE.Group();group.name='Porcelain Lotus — 36 petals';group.position.set(-.25,.15,-.55);group.scale.setScalar(.78)
-  const material=new THREE.MeshPhysicalMaterial({color:'#ffffff',transmission:.35,thickness:.2,roughness:.46,metalness:0,ior:1.42,specularIntensity:.42,
-    sheen:.55,sheenRoughness:.55,sheenColor:new THREE.Color('#ffd6c8'),clearcoat:.2,clearcoatRoughness:.32,attenuationColor:new THREE.Color('#f5c4ae'),attenuationDistance:.45})
+  // Matte bisque next to the knitted, clay-handed companion: a rough body and only a breath of coat (a glossy coat made
+  // the bowl read as CG porcelain). Transmission stays: the core's light through the petals is the lotus' whole point.
+  const material=new THREE.MeshPhysicalMaterial({color:'#ffffff',transmission:.35,thickness:.2,roughness:.58,metalness:0,ior:1.42,specularIntensity:.42,
+    sheen:.55,sheenRoughness:.55,sheenColor:new THREE.Color('#ffd6c8'),clearcoat:.06,clearcoatRoughness:.32,attenuationColor:new THREE.Color('#f5c4ae'),attenuationDistance:.45})
   const uniforms={uTime:{value:0},uSway:{value:1},uOpen:{value:0},uCore:{value:CORE},uGlow:{value:.5},uRelief:{value:.0006},
     uGlowColor:{value:new THREE.Color('#ffc58a')},uBase:{value:new THREE.Color('#e6e0bb')},uIvory:{value:new THREE.Color('#fbf4ea')},uBlush:{value:new THREE.Color('#eeb3bb')},uRose:{value:new THREE.Color('#b4566e')}}
   material.onBeforeCompile=shader=>{
@@ -150,19 +158,22 @@ export function createLotus():{group:THREE.Group;petalCount:number;material:THRE
   material.customProgramCacheKey=()=>'liora-porcelain-petal-v3'
   // A bowl, not a stack of saucers: each ring leaves the receptacle a little more upright than the one outside it and
   // curls in towards the heart (curl), so the outer petals cup the inner ones instead of fanning out flat.
-  const rings=[{length:.8,width:.27,radius:.17,y:-.08,tilt:1.22,curl:.14,point:.4,count:11},{length:.85,width:.265,radius:.12,y:.035,tilt:.94,curl:.13,point:.32,count:10},{length:.8,width:.26,radius:.075,y:.15,tilt:.8,curl:.14,point:.18,count:8},{length:.68,width:.24,radius:.035,y:.245,tilt:.6,curl:.15,point:.08,count:7}]
+  const rings=[{length:.8,width:.27,radius:.17,y:-.08,tilt:1.22,curl:.14,point:.2,count:12},{length:.85,width:.265,radius:.12,y:.035,tilt:.94,curl:.13,point:.16,count:10},{length:.8,width:.26,radius:.075,y:.15,tilt:.8,curl:.14,point:.1,count:8},{length:.68,width:.24,radius:.035,y:.245,tilt:.6,curl:.15,point:.05,count:6}]
+  // Tired petals: two of the outer ring, on the flanks (the final camera looks in along +z, so a petal sagging there
+  // would push the bowl's lower edge down towards the chat panel), lean further out and lose part of their curl.
+  const tired=new Map([[4,{tilt:.15,curl:.3}],[9,{tilt:.12,curl:.3}]])
   const shells:THREE.BufferGeometry[]=[],helper=new THREE.Object3D()
   let index=0
   rings.forEach((ring,layer)=>{
     for(let i=0;i<ring.count;i++,index++){
-      // Hand-made spread: a little angle, twist and size jitter per petal; the jitter only closes the tilt and only shrinks
-      // the scale. The front petals of the inner rings open a little towards the viewers so the lit cup shows. The bowl stays
-      // inside the old footprint: scene.inspect() frames every vertex against the header and the chat panel (checked at
-      // 320×568, 390×844 and 1000×600).
-      const seed=index*31+7,angle=i/ring.count*Math.PI*2+layer*.37+(random(seed)-.5)*.1
-      const tilt=ring.tilt+Math.max(0,Math.cos(angle))*(layer===3?.26:layer===2?.16:.03)-random(seed+1)*.1
-      const geometry=petalShell(ring.length,ring.width,seed,28,16,{curl:ring.curl,point:ring.point}),count=geometry.getAttribute('position').count
-      helper.position.set(Math.sin(angle)*ring.radius,ring.y,Math.cos(angle)*ring.radius);helper.rotation.set(tilt,angle,(random(seed+2)-.5)*.2,'YXZ');helper.scale.setScalar(.93+random(seed+3)*.07);helper.updateMatrix()
+      // Hand-made spread: angle, tilt, twist and size differ visibly from petal to petal so the crowns never line up into
+      // a regular zigzag; the tilt jitter only closes the petal and the scale only shrinks it. The front petals of the
+      // inner rings open a little towards the viewers so the lit cup shows. The bowl stays inside the old footprint:
+      // scene.inspect() frames every vertex against the header and the chat panel (checked at 320×568, 390×844 and 1000×600).
+      const seed=index*31+7,angle=i/ring.count*Math.PI*2+layer*.37+(random(seed)-.5)*.3,droop=layer===0?tired.get(i):undefined
+      const tilt=ring.tilt+Math.max(0,Math.cos(angle))*(layer===3?.26:layer===2?.16:.03)-random(seed+1)*.24+(droop?.tilt??0)
+      const geometry=petalShell(ring.length,ring.width,seed,28,16,{curl:ring.curl*(droop?.curl??1),point:ring.point}),count=geometry.getAttribute('position').count
+      helper.position.set(Math.sin(angle)*ring.radius,ring.y,Math.cos(angle)*ring.radius);helper.rotation.set(tilt,angle,(random(seed+2)-.5)*.45,'YXZ');helper.scale.setScalar(.82+random(seed+3)*.18);helper.updateMatrix()
       geometry.applyMatrix4(helper.matrix)
       const pivot=new Float32Array(count*3),petal=new Float32Array(count*4)
       for(let k=0;k<count;k++){pivot.set([helper.position.x,helper.position.y,helper.position.z],k*3);petal.set([angle,layer,i*.29,random(seed+4)],k*4)}
