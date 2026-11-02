@@ -8,7 +8,8 @@ const report={hardware:'',viewport:'1440x900 @1.25 DPR',stations:[],route:null,e
 page.on('pageerror',error=>report.errors.push(error.message))
 page.on('console',message=>{if(message.type()==='error')report.errors.push(message.text())})
 try {
-  await page.goto(process.env.CHECK_URL??'http://127.0.0.1:8083/')
+  // The scene caps itself at 60 fps (30 when idle); the dev-only ?fps=uncapped lifts the cap so the median measures GPU headroom.
+  await page.goto(process.env.CHECK_URL??'http://127.0.0.1:8083/?fps=uncapped')
   await page.waitForFunction(()=>document.documentElement.dataset.avatar==='ready',null,{timeout:60000})
   await page.locator('.entry').waitFor({state:'detached'})
   report.hardware=await page.evaluate(()=>{const canvas=document.createElement('canvas'),gl=canvas.getContext('webgl2');if(!gl)return 'WebGL unavailable';const extension=gl.getExtension('WEBGL_debug_renderer_info');return extension?gl.getParameter(extension.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER)})
