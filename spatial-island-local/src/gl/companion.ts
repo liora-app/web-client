@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 import { batchStatic,disposeObject,ellipsoid,grainTexture,material,mesh,tube } from './craft'
+import { noise3,random } from './noise'
 
 export interface Companion {
   group:THREE.Group
@@ -20,6 +21,35 @@ export interface Companion {
   dispose:()=>void
 }
 
+/** Scalar spring. It is stepped in fixed 1/240 s slices, so a pose depends on elapsed time and never on the frame rate. */
+interface Spring {x:number;v:number}
+const SLICE=1/240,TAU=Math.PI*2,SIDES=[-1,1] as const
+const ARM_BONES=[['upper_arm.R','forearm.R','hand.R'],['upper_arm.L','forearm.L','hand.L']] as const,SHOULDERS=['upper_arm.L','upper_arm.R'] as const
+/** Lotus core in the island frame the companion group shares (glow.ts: the light above the lotus). */
+const LOTUS_CORE=new THREE.Vector3(-.25,.53,-.55)
+const spring=():Spring=>({x:0,v:0})
+/** omega: stiffness in rad/s; zeta: 1 = critically damped, below 1 overshoots. snap: jump straight to the target. */
+function drive(s:Spring,target:number,omega:number,zeta:number,dt:number,snap:boolean):number {
+  if(snap){s.x=target;s.v=0;return target}
+  for(let left=dt;left>0;left-=SLICE){const h=Math.min(left,SLICE);s.v+=(omega*omega*(target-s.x)-2*zeta*omega*s.v)*h;s.x+=s.v*h}
+  return s.x
+}
+/** 0 → 1 over [a,b], held, 1 → 0 over [c,d]; smooth at every corner. */
+const window4=(x:number,a:number,b:number,c:number,d:number):number=>THREE.MathUtils.smoothstep(x,a,b)*(1-THREE.MathUtils.smoothstep(x,c,d))
+
+/**
+ * Knitted clay toy: the Tripo base colour stays the only texture. Sheen gives the yarn its soft warm fuzz along the
+ * silhouette, a low specular keeps it matte instead of plastic, and the painted cables double as a bump map.
+ */
+function knitMaterial(source:THREE.MeshStandardMaterial):THREE.MeshPhysicalMaterial {
+  const map=source.map;if(map)map.anisotropy=8
+  const result=new THREE.MeshPhysicalMaterial({
+    name:source.name,map,color:source.color,metalness:0,roughness:.86,specularIntensity:.42,
+    sheen:1,sheenColor:new THREE.Color('#ffd9b5'),sheenColorMap:map,sheenRoughness:.5,bumpMap:map,bumpScale:.9,
+  })
+  source.dispose();return result
+}
+
 export function createCompanion():Companion {
   const group=new THREE.Group();group.name='CompanionCharacter';group.position.set(.8,.15,-1.1)
   const figure=new THREE.Group();figure.visible=false;group.add(figure)
@@ -32,7 +62,7 @@ export function createCompanion():Companion {
   // Real raised yarn columns keep the knitted silhouette tactile, even without textures.
   for(let i=0;i<20;i++){const angle=i/20*Math.PI*2;const x=Math.sin(angle)*.274,z=Math.cos(angle)*.194;tube(torsoGroup,thread,[[x*.78,-.05,z*.78],[x,.12,z],[x*.82,.31,z*.82]],.006,8)}
   for(const y of [.12,.23]){const button=mesh(new THREE.CylinderGeometry(.033,.033,.015,16),wood,torsoGroup,.035,y,.199);button.rotation.x=Math.PI/2;for(const x of [-.009,.009])ellipsoid(torsoGroup,eye,.035+x,y,.21,.003,.006,.002,8)}
-  const headGroup=new THREE.Group();headGroup.name='headGroup';headGroup.position.set(0,.83,0);figure.add(headGroup)
+  const headGroup=new THREE.Group();headGroup.name='headGroup';headGroup.position.set(0,.83,0);headGroup.rotation.order='YXZ';figure.add(headGroup)
   ellipsoid(headGroup,skin,0,.02,.015,.227,.245,.205)
   ellipsoid(headGroup,skin,-.223,.005,.005,.045,.07,.042);ellipsoid(headGroup,skin,.223,.005,.005,.045,.07,.042)
   const eyesMesh=new THREE.Group();eyesMesh.name='eyesMesh';headGroup.add(eyesMesh)
@@ -51,7 +81,8 @@ export function createCompanion():Companion {
   const bud=new THREE.Group();bud.position.set(-.015,.39,.015);headGroup.add(bud)
   const budMat=new THREE.MeshStandardMaterial({color:'#d4bd87',emissive:'#ffb84d',emissiveIntensity:.55,roughness:.88})
   for(let i=0;i<5;i++){const angle=i/5*Math.PI*2;const p=ellipsoid(bud,budMat,Math.sin(angle)*.035,.035,Math.cos(angle)*.035,.031,.065,.025,16);p.rotation.z=-Math.sin(angle)*.28;p.rotation.x=Math.cos(angle)*.28}
-  const budLight=new THREE.PointLight('#ffb84d',0,1.4,2);budLight.position.set(0,1.1,0);group.add(budLight)
+  // Only the fallback's bud glows; the GLB wears a green sprout, so the scene renders one point light fewer.
+  const budLight=new THREE.PointLight('#ffb84d',0,1.4,2);budLight.position.set(0,1.1,0)
   const makeArm=(side:number):THREE.Group=>{
     const root=new THREE.Group();root.name=side<0?'rightArmGroup':'leftArmGroup';root.position.set(side*.25,.58,0);figure.add(root)
     const sleeve=mesh(new THREE.CapsuleGeometry(.08,.17,6,16),sweater,root,side*.045,-.12,.025);sleeve.rotation.z=side*.25
@@ -69,13 +100,23 @@ export function createCompanion():Companion {
     ellipsoid(figure,skin,side*.14,-.075,.38,.09,.055,.13)
   }
   batchStatic(figure,[headGroup,torsoGroup,rightArmGroup,leftArmGroup]);batchStatic(torsoGroup);batchStatic(headGroup,[eyesMesh,bud]);batchStatic(eyesMesh);batchStatic(rightArmGroup);batchStatic(leftArmGroup)
+
   let nextBlink=3.7,greeting=-100,disposed=false,imported:THREE.Object3D|undefined,source:Companion['source']='loading'
   type RigPart={object:THREE.Object3D;rotation:THREE.Quaternion;position:THREE.Vector3;modelRotation:THREE.Quaternion;direction:THREE.Vector3}
-  const importedParts=new Map<string,RigPart>(),pose=new THREE.Quaternion(),angles=new THREE.Euler()
+  const importedParts=new Map<string,RigPart>(),pose=new THREE.Quaternion()
   const modelRotation=new THREE.Quaternion(),parentInverse=new THREE.Quaternion(),worldRest=new THREE.Quaternion(),restDirection=new THREE.Vector3(),worldDirection=new THREE.Vector3()
   const thighLeft=new THREE.Vector3(.12,-.14,.98).normalize(),thighRight=new THREE.Vector3(-.12,-.14,.98).normalize(),shinDirection=new THREE.Vector3(0,-1,.08).normalize()
-  const armDirection=new THREE.Vector3(),forearmDirection=new THREE.Vector3()
-  const budPosition=new THREE.Vector3();let budOffset=.44
+  const armDirection=new THREE.Vector3(),forearmDirection=new THREE.Vector3(),handDirection=new THREE.Vector3(),scratch=new THREE.Vector3()
+  const budPosition=new THREE.Vector3()
+
+  // Motion state. Springs snap to their targets while `settle` is set: before the first frame with a model and a known viewer.
+  let lastTime=-1,settle=true,viewer:THREE.Camera|undefined,eyeLift=.04,seed=917,nextFlick=.6,nextGlance=10,glanceEnd=0,talkClock=0,flickYaw=0,flickPitch=0
+  const gazeYaw=spring(),gazePitch=spring(),tilt=spring(),flickYawSpring=spring(),flickPitchSpring=spring(),talk=spring(),raise=spring(),gesture=spring(),lean=spring()
+  const euler=new THREE.Euler(0,0,0,'YXZ'),turn=new THREE.Quaternion(),headLocal=new THREE.Vector3(),viewPoint=new THREE.Vector3(),ray=new THREE.Vector3(),look=new THREE.Vector3()
+  // The main camera, captured as the character is drawn: the shadow pass calls onBeforeShadow instead, so this is the viewer.
+  const watch=(_renderer:THREE.WebGLRenderer,_scene:THREE.Object3D,camera:THREE.Camera):void=>{viewer=camera}
+  const watcher=torsoGroup.children.find(child=>child instanceof THREE.Mesh);if(watcher)watcher.onBeforeRender=watch
+
   const pointBone=(name:string,direction:THREE.Vector3):void=>{
     const part=importedParts.get(name);if(!part?.object.parent||!imported)return
     restDirection.copy(part.direction).applyQuaternion(modelRotation)
@@ -90,43 +131,100 @@ export function createCompanion():Companion {
     parentInverse.copy(part.object.parent.getWorldQuaternion(parentInverse)).invert()
     part.object.quaternion.copy(parentInverse).multiply(modelRotation).multiply(part.modelRotation);part.object.updateWorldMatrix(false,true)
   }
+  /** Rotate a rest-identity bone in its own (= model) frame: pitch about x (+ looks down), yaw about y, roll about z. */
+  const bend=(name:string,x:number,y:number,z:number):void=>{const part=importedParts.get(name);if(part)part.object.quaternion.multiply(turn.setFromEuler(euler.set(x,y,z,'YXZ')))}
+
   const api:Companion={
     group,headGroup,torsoGroup,rightArmGroup,leftArmGroup,eyesMesh,
     get ready(){return source!=='loading'},get source(){return source},
     greet(time){greeting=time},
     update(time,breath,pointer,talking,reduced){
-      torsoGroup.scale.y=1+(reduced?0:breath*.025);torsoGroup.position.y=.38+(reduced?0:breath*.006)
-      const follow=reduced?0:pointer.x*.16
-      headGroup.rotation.y=THREE.MathUtils.lerp(headGroup.rotation.y,follow,.045)
-      headGroup.rotation.x=THREE.MathUtils.lerp(headGroup.rotation.x,(talking?-.025+Math.sin(time*2.7)*.035:.018)+(reduced?0:pointer.y*.05),.05)
-      const elapsed=time-greeting
-      if(elapsed>=0&&elapsed<2&&!reduced){const envelope=Math.sin(Math.min(1,elapsed/.3)*Math.PI/2)*Math.sin(Math.min(1,(2-elapsed)/.35)*Math.PI/2);rightArmGroup.rotation.z=-1.95*envelope;rightArmGroup.rotation.x=(-.1+Math.sin(elapsed*12)*.16)*envelope}
-      else{rightArmGroup.rotation.z=THREE.MathUtils.lerp(rightArmGroup.rotation.z,talking&&!reduced?-.12-Math.sin(time*2.2)*.1:0,.05);rightArmGroup.rotation.x=THREE.MathUtils.lerp(rightArmGroup.rotation.x,talking&&!reduced?-.1:0,.05)}
-      leftArmGroup.rotation.x=talking&&!reduced?Math.sin(time*1.8)*.06:0
+      const dt=lastTime<0?0:THREE.MathUtils.clamp(time-lastTime,0,.1),snap=reduced||settle;lastTime=time
+      const live=reduced?0:1,since=time-greeting,greetingNow=!reduced&&since>=0&&since<2.6,speaking=talking&&!reduced
+      const head=importedParts.get('head');
+
+      // Gaze: towards the viewer, pulled along the pointer ray; now and then a glance down at the lotus.
+      (head?.object??headGroup).getWorldPosition(headLocal);group.worldToLocal(headLocal);headLocal.y+=eyeLift
+      let yawTarget=-.12,pitchTarget=.05,engaged=0
+      const talkAmount=drive(talk,speaking?1:0,3.5,1,dt,snap)
+      if(!reduced){
+        if(viewer){
+          viewPoint.setFromMatrixPosition(viewer.matrixWorld)
+          ray.set(pointer.x,pointer.y,.5).unproject(viewer).sub(viewPoint).normalize()
+          look.copy(headLocal);group.localToWorld(look);const distance=viewPoint.distanceTo(look)
+          // A point on the pointer ray between the viewer and the character: the cursor steers the gaze, and while
+          // replying the character keeps eye contact.
+          look.copy(viewPoint).addScaledVector(ray,distance*THREE.MathUtils.lerp(.4,.12,talkAmount));group.worldToLocal(look).sub(headLocal)
+          yawTarget=Math.atan2(look.x,look.z);pitchTarget=Math.atan2(look.y,Math.hypot(look.x,look.z))
+          engaged=1-THREE.MathUtils.smoothstep(distance,3.45,4.1)
+        }else{yawTarget=pointer.x*.3;pitchTarget=pointer.y*.12}
+        if(time>=nextGlance){if(talking||greetingNow)nextGlance=time+2.5;else{glanceEnd=time+1.7+random(seed++)*.9;nextGlance=glanceEnd+8+random(seed++)*7}}
+        if(time<glanceEnd&&!talking&&!greetingNow){look.copy(LOTUS_CORE).sub(group.position).sub(headLocal);yawTarget=Math.atan2(look.x,look.z);pitchTarget=Math.atan2(look.y,Math.hypot(look.x,look.z))}
+        // Micro-saccades: tiny held jumps through a fast spring, never a continuous jitter.
+        if(time>=nextFlick){nextFlick=time+.9+random(seed++)*2.1;flickYaw=(random(seed++)-.5)*.05;flickPitch=(random(seed++)-.5)*.03}
+      }else{flickYaw=flickPitch=0}
+      const yaw=drive(gazeYaw,THREE.MathUtils.clamp(yawTarget,-.78,.6),6,1,dt,snap)+drive(flickYawSpring,flickYaw,22,1,dt,snap)
+      const pitch=drive(gazePitch,THREE.MathUtils.clamp(pitchTarget,-.36,.3),6,1,dt,snap)+drive(flickPitchSpring,flickPitch,22,1,dt,snap)
+
+      // Greeting (~2.3 s): anticipation, the arm springs up past its mark, 2–3 waves with the hand lagging the
+      // forearm, then a critically damped return so the hand settles on the knee instead of bouncing through it.
+      const raiseTarget=greetingNow?since<.18?-.12:since<1.5?1:0:0
+      const raised=drive(raise,raiseTarget,raiseTarget>.5?10:7.5,raiseTarget>.5?.48:1,dt,snap)
+      const swing=greetingNow?window4(since,.42,.62,1.22,1.48):0,phase=TAU*2.3*(since-.45)
+      const forearmSwing=Math.sin(phase)*swing,handSwing=Math.sin(phase-.95)*swing
+      const greetTilt=greetingNow?window4(since,.1,.45,1.35,1.85):0,greetNod=greetingNow?window4(since,.25,.5,.5,.95)*.05:0
+      const anticipation=greetingNow?window4(since,0,.12,.12,.4):0
+
+      // Talking: soft uneven nods and, once per reply cycle, one open-handed gesture.
+      talkClock=speaking?talkClock+dt:0
+      const opened=drive(gesture,talkClock>0?window4(talkClock%7,.35,.9,1.7,2.5):0,6,.75,dt,snap)
+      const nod=live*talkAmount*.032*Math.max(0,Math.sin(time*TAU*.85))**2*(.65+.35*noise3(time*.6,1.7,4.2))
+
+      // Idle body: breath lifts chest and shoulders; the weight drifts between the hips on two incommensurate periods.
+      const inhale=live*breath,shift=live*(Math.sin(time*TAU/7.7)*.62+Math.sin(time*TAU/11.3+1.7)*.38),sway=live*Math.sin(time*TAU/9.1+.6)
+      const leanIn=drive(lean,live*(engaged*(1-talkAmount)*.03+talkAmount*.014),2.2,1,dt,snap)
+      const roll=drive(tilt,live*(engaged*(1-talkAmount)*.075*(1+.25*Math.sin(time*.21))+talkAmount*.02+greetTilt*.085),3,1,dt,snap)
+
       if(time>=nextBlink)nextBlink=time+3.2+(Math.sin(time*4.3)+1)*.85
       const till=nextBlink-time;eyesMesh.scale.y=!reduced&&till<.18?Math.max(.08,Math.abs(till-.09)/.09):1
-      budMat.emissiveIntensity=.5+breath*.22+(talking?.45+Math.sin(time*3)*.12:0);budLight.intensity=source==='loading'?0:.12+breath*.08+(talking?.14:0)
+
       if(imported){
         for(const part of importedParts.values()){part.object.quaternion.copy(part.rotation);part.object.position.copy(part.position)}
-        const chest=importedParts.get('chest'),head=importedParts.get('head')
-        if(chest)chest.object.position.y+=reduced?0:breath*.008
-        if(head){angles.set(headGroup.rotation.x,headGroup.rotation.y,0);head.object.quaternion.multiply(pose.setFromEuler(angles))}
+        bend('pelvis',0,sway*.006,shift*.013)
+        bend('spine',-inhale*.006+leanIn*.4,yaw*.07,-shift*.008)
+        bend('chest',-inhale*.02+leanIn*.6-anticipation*.035,yaw*.18,-shift*.004-greetTilt*.02)
+        bend('head',-pitch*.85+nod+greetNod-leanIn*.5,yaw*.75,roll)
+        const chest=importedParts.get('chest');if(chest)chest.object.position.y+=inhale*.011
+        for(const name of SHOULDERS){const part=importedParts.get(name);if(part)part.object.position.y+=inhale*.008}
         imported.updateWorldMatrix(true,true);imported.getWorldQuaternion(modelRotation)
         pointBone('thigh.L',thighLeft);pointBone('thigh.R',thighRight)
         pointBone('shin.L',shinDirection);pointBone('shin.R',shinDirection)
         restoreWorldOrientation('foot.L');restoreWorldOrientation('foot.R')
-        const wave=elapsed>=0&&elapsed<2&&!reduced?Math.sin(Math.min(1,elapsed/.3)*Math.PI/2)*Math.sin(Math.min(1,(2-elapsed)/.35)*Math.PI/2):0
-        for(const side of [-1,1]){
-          const suffix=side<0?'R':'L',gesture=talking&&!reduced?Math.sin(time*2.2+side)*.07:0
-          armDirection.set(side*.14,-.9,.30+gesture).normalize()
-          forearmDirection.set(side*.05,-.40,.88+gesture).normalize()
-          if(side<0&&wave>0){armDirection.lerp(worldDirection.set(-.86,.40,.12).normalize(),wave);forearmDirection.lerp(worldDirection.set(Math.sin(elapsed*11)*.28,.97,.18).normalize(),wave)}
-          pointBone(`upper_arm.${suffix}`,armDirection);pointBone(`forearm.${suffix}`,forearmDirection);pointBone(`hand.${suffix}`,forearmDirection)
+        for(const side of SIDES){
+          armDirection.set(side*.14,-.9,.30);forearmDirection.set(side*.05,-.40,.88);handDirection.set(side*.05,-.52,.84)
+          if(side<0&&raised!==0){
+            armDirection.lerp(scratch.set(-.86,.40,.12),raised)
+            forearmDirection.lerp(scratch.set(forearmSwing*.3,.97,.18),raised)
+            handDirection.lerp(scratch.set(handSwing*.62,.9,.22),raised)
+          }
+          if(side>0&&opened>0){
+            armDirection.lerp(scratch.set(.24,-.76,.6),opened)
+            forearmDirection.lerp(scratch.set(.12,.2,.97),opened)
+            handDirection.lerp(scratch.set(.22,.32,.92),opened)
+          }
+          const [upper,fore,hand]=ARM_BONES[side<0?0:1]
+          pointBone(upper,armDirection);pointBone(fore,forearmDirection);pointBone(hand,handDirection)
         }
-        if(head){budPosition.set(0,budOffset,.02);head.object.localToWorld(budPosition);group.worldToLocal(budPosition);budLight.position.copy(budPosition)}
       }else if(source==='fallback'){
+        torsoGroup.scale.y=1+inhale*.025;torsoGroup.position.y=.38+inhale*.006;torsoGroup.rotation.set(leanIn-anticipation*.035,yaw*.15,-shift*.01)
+        headGroup.rotation.set(-pitch*.85+nod+greetNod,yaw*.8,roll)
+        rightArmGroup.rotation.z=-1.95*raised;rightArmGroup.rotation.x=(-.1+forearmSwing*.16)*raised
+        leftArmGroup.rotation.x=-opened*.55;leftArmGroup.rotation.z=opened*.2
+        budMat.emissiveIntensity=.5+inhale*.22+(speaking?.45+Math.sin(time*3)*.12:0);budLight.intensity=.12+inhale*.08+(speaking?.14:0)
         bud.getWorldPosition(budPosition);group.worldToLocal(budPosition);budLight.position.copy(budPosition)
       }
+      // Stay snapped until the viewer is known, so the first visible pose already looks at the camera.
+      if(source!=='loading'&&(viewer||reduced))settle=false
     },
     async loadModel(url){
       try{
@@ -144,18 +242,25 @@ export function createCompanion():Companion {
           importedParts.set(name,{object,rotation:object.quaternion.clone(),position:object.position.clone(),modelRotation:rotation,direction})
         }
         const scale=1.32/size.y,pelvis=gltf.scene.getObjectByName('pelvis')
-        const head=importedParts.get('head');if(head)budOffset=box.max.y-head.object.getWorldPosition(new THREE.Vector3()).y-.04
+        const headY=importedParts.get('head')?.object.getWorldPosition(new THREE.Vector3()).y
+        // Eyes sit a little under half way from the head bone to the crown.
+        if(headY!==undefined)eyeLift=(box.max.y-headY)*.42*scale
         const hipY=pelvis?.getWorldPosition(new THREE.Vector3()).y??size.y*.45
         gltf.scene.scale.setScalar(scale);gltf.scene.position.set(-center.x*scale,.29-hipY*scale,-center.z*scale)
-        gltf.scene.traverse(o=>{if(o instanceof THREE.Mesh){o.castShadow=o.receiveShadow=true;if(o instanceof THREE.SkinnedMesh)o.frustumCulled=false}})
+        gltf.scene.traverse(o=>{
+          if(!(o instanceof THREE.Mesh))return
+          o.castShadow=o.receiveShadow=true
+          if(o instanceof THREE.SkinnedMesh){o.frustumCulled=false;o.onBeforeRender=watch}
+          if(o.material instanceof THREE.MeshStandardMaterial&&!(o.material instanceof THREE.MeshPhysicalMaterial))o.material=knitMaterial(o.material)
+        })
         if(imported){imported.removeFromParent();disposeObject(imported)}
-        imported=gltf.scene;group.add(imported);figure.visible=false;source='glb'
+        imported=gltf.scene;group.add(imported);figure.visible=false;source='glb';settle=true
         return true
-      }catch(error){if(!disposed){figure.visible=true;source='fallback';console.warn('Liora: using the procedural companion.',error instanceof Error?error.message:'Model unavailable')}return false}
+      }catch(error){if(!disposed){figure.visible=true;group.add(budLight);source='fallback';settle=true;console.warn('Liora: using the procedural companion.',error instanceof Error?error.message:'Model unavailable')}return false}
     },
     pose(){return {source,bones:[...importedParts.keys()],rightHand:(importedParts.get('hand.R')?.object??rightArmGroup).getWorldPosition(new THREE.Vector3()).toArray(),leftHand:(importedParts.get('hand.L')?.object??leftArmGroup).getWorldPosition(new THREE.Vector3()).toArray()}},
     inspect(){if(imported)imported.traverse(object=>{if(object instanceof THREE.SkinnedMesh){object.skeleton.update();object.computeBoundingBox()}});const bounds=imported?new THREE.Box3().setFromObject(imported):new THREE.Box3().setFromObject(figure);return {...api.pose(),bounds:[bounds.min.toArray(),bounds.max.toArray()]}},
-    dispose(){disposed=true;importedParts.clear()},
+    dispose(){disposed=true;viewer=undefined;importedParts.clear()},
   }
   return api
 }
