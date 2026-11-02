@@ -75,9 +75,19 @@ function sheetGeometry(index:number):THREE.PlaneGeometry {
 
 export function createArtifacts():Artifacts {
   const stations=new THREE.Group();stations.name='Luminous sanctuary artifacts'
-  // Cold fine-grained basalt, a thin skin of moss only where rain sits on the top faces: it no longer reads as the
-  // island's mottled moss.
-  const stone=applySurface(material('#45474a',.93),{scale:5,bump:.01,fine:.55,variation:.06,tint:'#e4e4e0',cavity:.12,roughnessVariation:.14,moss:{color:'#4d6b44',amount:.3,low:.86,high:.99}})
+  // Warm greige basalt in broad tonal masses with real relief and moss where rain sits on the top faces, so it belongs
+  // to the island beside the knit and the paper (the old cold, fine, even speckle read as painted plastic under the
+  // blue moon). The oil lamp warms the stone round it as emission, as it does the folios: the altar top glows by the
+  // lamp without another light. kit.stone also carves the cocoon cradle, ~.95 m from the lamp: exp(-6d) < .004 there.
+  const lampWorld={value:new THREE.Vector3()},carved=material('#56514a',.93)
+  carved.onBeforeCompile=shader=>{
+    shader.uniforms.uLamp=lampWorld
+    // Distance taken in view space (rigid, so it equals the world distance): vSurfWorld has the island bob removed and
+    // the lamp position does not.
+    shader.fragmentShader='uniform vec3 uLamp;\n'+shader.fragmentShader.replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(1.,.55,.25)*.35*exp(-length((viewMatrix*vec4(uLamp,1.)).xyz+vViewPosition)*6.);')
+  }
+  carved.customProgramCacheKey=()=>'altar-stone-lamp-v1'
+  const stone=applySurface(carved,{scale:2.2,bump:.018,fine:.55,variation:.16,tint:'#e4e4e0',cavity:.12,roughnessVariation:.14,moss:{color:'#4d6b44',amount:.45,low:.86,high:.99}})
   const brass=environment(new THREE.MeshStandardMaterial({color:'#a07e4c',metalness:.9,roughness:.46}),1.05)
   const inlay=environment(new THREE.MeshStandardMaterial({color:'#7d6743',metalness:.85,roughness:.58}),.85)
   const kit:Kit={environment,stone,brass,inlay,ground,lathe,ring}
@@ -85,7 +95,8 @@ export function createArtifacts():Artifacts {
 
   // Altar: one carved block — buried foot, inlaid foot band, fluted waist with a brass ring, overhanging slab, dished top.
   const altar=new THREE.Group();altar.name='Origami altar';altar.position.set(-1.55,0,.75);stations.add(altar)
-  const wobble=(angle:number,y:number):number=>1+fractal(Math.sin(angle)*1.5+3,y*2.4,Math.cos(angle)*1.5)*.03
+  // Hand-carved, not turned: the radius wanders a few per cent round and up the block (the inlay follows the same wobble).
+  const wobble=(angle:number,y:number):number=>1+fractal(Math.sin(angle)*1.5+3,y*2.4,Math.cos(angle)*1.5)*.06
   const profile=[[0,-.05],[.47,-.05],[.506,-.022],[.522,.012],[.528,.052],[.528,.061],[.516,.063],[.516,.079],[.528,.081],[.528,.097],[.513,.116],[.49,.125],[.43,.13],[.405,.139],
     [.395,.158],[.392,.188],[.38,.191],[.38,.211],[.392,.214],[.395,.252],[.405,.271],[.44,.281],[.468,.289],[.475,.302],[.475,.31],[.463,.312],[.463,.325],[.475,.327],[.475,.333],[.463,.346],[.432,.352],[.3,.349],[.12,.344],[0,.343]]
   const block=mesh(lathe(profile,80,(angle,y,r)=>r*wobble(angle,y)-(y>.14&&y<.27&&r>.386?.0045*(.5+.5*Math.cos(angle*10)):0)),stone,altar);block.name='Carved altar stone'
@@ -100,7 +111,7 @@ export function createArtifacts():Artifacts {
   const flame=mesh(flameGeometry,new THREE.MeshBasicMaterial({vertexColors:true}),altar,0,.357,0);flame.castShadow=flame.receiveShadow=false;flame.name='Oil lamp flame'
 
   // Folios: hand-made paper with a deckled edge, brush calligraphy in the paper itself, lit through by the lamp.
-  const paperTime={value:0},lampWorld={value:new THREE.Vector3()},papers:THREE.Group[]=[]
+  const paperTime={value:0},papers:THREE.Group[]=[]
   for(let i=0;i<3;i++){
     const texture=paperSheetTexture(i)
     // Unbleached washi at night by an oil lamp: an off-white albedo under white, the sky barely reflects in it. The
