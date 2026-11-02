@@ -1,0 +1,190 @@
+[
+  {
+    "path": ".gitignore",
+    "sha256": "9671eb5784a683eb6bc6d972982b05dedb11caf4e641cee0db480a2c98c89f23"
+  },
+  {
+    "path": "index.html",
+    "sha256": "8fe82f8e0f2b961f2d88b5fb8cf7ee1be4f4e6b08b49363e1ffd57e720db59f9"
+  },
+  {
+    "path": "package-lock.json",
+    "sha256": "a66c5772568f8535bdd11922f88f830d17e77bab6a7accdd3c890fdd628dd0cd"
+  },
+  {
+    "path": "package.json",
+    "sha256": "0f3993f26bd73432e3fb90f51f15dbb27747bd4cf95b71b206eb33d82090693e"
+  },
+  {
+    "path": "public/fonts/jost/jost-cyrillic.woff2",
+    "sha256": "732ac61fdb7b964d3edfe40fe4a96aba1d1e34c349aebf0353118f8bda4aabdb"
+  },
+  {
+    "path": "public/fonts/jost/jost-latin-ext.woff2",
+    "sha256": "312ef2b80cefd8d6fd0e8553536862e7103f80be117a5aeba333dac68e4c0a6a"
+  },
+  {
+    "path": "public/fonts/jost/jost-latin.woff2",
+    "sha256": "7726a5cd6f3c0e876c028ea2a643d45f7aad4b0f164b70966c669f4a4668f4b9"
+  },
+  {
+    "path": "public/fonts/jost/OFL.txt",
+    "sha256": "1af3438a4d5f0ed2bdbc5751a5a67ebf6d537334161184b7fbb68503ef0ea0c5"
+  },
+  {
+    "path": "public/fonts/solitus/OFL.txt",
+    "sha256": "a02126f43a441ece0f7a70d57e426b38c7fafc25ad9ec76d0fedecded06f4b5d"
+  },
+  {
+    "path": "public/fonts/solitus/Solitus.ttf",
+    "sha256": "19b1b985b433ac01ca26bb9166cfd14d3c0fc8338e18a5ede3c3d10eccf22c99"
+  },
+  {
+    "path": "public/fonts/solitus/solitus.woff2",
+    "sha256": "e356859fe9a293b56c0a0dee3d459771bdd2ec78960edee983bc24b8606b64fe"
+  },
+  {
+    "path": "public/icon.svg",
+    "sha256": "e3a054c7a197a2d49442e7f0554a1776ad2bccdd5a7ec570d002d210aa3370e6"
+  },
+  {
+    "path": "public/models/companion.glb",
+    "sha256": "9a9f3f75b9dac2ad0dd3f42e17b924dccce2ffcd6ab5fd945c7257fa613addcd"
+  },
+  {
+    "path": "README.md",
+    "sha256": "7d376f270c577c25143673fd3a03f0b206940bc9d9c4f939ba3aa3982608a471"
+  },
+  {
+    "path": "scripts/optimize-model.mjs",
+    "sha256": "8381474586375006b39a17f1fded1a3e259d8fae3305ff68ec232d51156cadf8"
+  },
+  {
+    "path": "scripts/shoot.mjs",
+    "sha256": "a2a7bfa8756be822766e9ede20e2d6b833a48907d46f07f18ef34549c48479e4"
+  },
+  {
+    "path": "scripts/verify-cinematic.mjs",
+    "sha256": "1a5a8257f18b09d312757884b701e0bb69f32d59d87583b9ecf7aade26c5a1cf"
+  },
+  {
+    "path": "scripts/verify-production.mjs",
+    "sha256": "a92ffd512ce3874483ce8e8153d5fba0dd7cdd534e75c92fe374c49c249ea30c"
+  },
+  {
+    "path": "scripts/verify.mjs",
+    "sha256": "cd4daa6b8e496343f6606b51babfd95c4fd67688f1335b78b9eb49e5328bf758"
+  },
+  {
+    "path": "SPECIFICATION-CINEMATIC.md",
+    "sha256": "edf6518153157c9f3c61c6c3762b3d41d836b1c3f010c24c27337aa0689ff08d"
+  },
+  {
+    "path": "SPECIFICATION-UI-FIX.md",
+    "sha256": "1af0f3f88919c1ccea224c5a2ad2724f283c790176d9a384ac99bae18db10f8a"
+  },
+  {
+    "path": "SPECIFICATION.md",
+    "sha256": "ce67f01baa205c4fc35ab6cb03c949c5598895e3310d7e57169d3a18a7229515"
+  },
+  {
+    "path": "src/fonts.css",
+    "sha256": "27a07c5dc8662049afcee0e9e03d8fa39b077baaa4cce70772792edd939cef04"
+  },
+  {
+    "path": "src/gl/artifacts.ts",
+    "sha256": "c3a78d6ba50501c5afe26f2ae6cb2fb79f888dbdd4d4caf0b546eee904179b88"
+  },
+  {
+    "path": "src/gl/cocoon.ts",
+    "sha256": "41bf2ef752888ab9da921ffeb290d17ea143c65e3a8b3393d9fca56c2722e94d"
+  },
+  {
+    "path": "src/gl/companion.ts",
+    "sha256": "c864c028020bd08702b6af61ae4f755d8cec9fcb349a6f75870f5b7e04cb46a5"
+  },
+  {
+    "path": "src/gl/craft.ts",
+    "sha256": "3dfb05c45b617c3f492a7a1a6ffeb0bbe7c077768274126dd9218fb06b88f883"
+  },
+  {
+    "path": "src/gl/environment.ts",
+    "sha256": "bdf9e4ff41cf1ef828188a7509faa7266c50f2e58bfbae3883cf93851b635b66"
+  },
+  {
+    "path": "src/gl/glow.ts",
+    "sha256": "75c671f3c6d5531e69ddb6af8a8ca2949d13db918583daed3e1f660b4cf661e1"
+  },
+  {
+    "path": "src/gl/island.ts",
+    "sha256": "099478851e6476456411a0e82c734ad5ac45b3569653b0c6c9793c28572b6001"
+  },
+  {
+    "path": "src/gl/lighting.ts",
+    "sha256": "66e5ef240da5971dac162bb76566a7ca8e2a17165cbef76cebb9ab360bb551ab"
+  },
+  {
+    "path": "src/gl/lotus.ts",
+    "sha256": "201e23a7fe802fc393948ceb0a6b20470d22dafb803ba6bc6ceb63deaa8d976c"
+  },
+  {
+    "path": "src/gl/noise.ts",
+    "sha256": "9ed201b0c1ea3b2b950b71f8af6d5ca92722c4a131a55f17f9f3330a11b36753"
+  },
+  {
+    "path": "src/gl/optics.ts",
+    "sha256": "baf6cee37d24b6d40219f8dd6e4627ec4249f6b19f8219f09ec05e4cbbc83054"
+  },
+  {
+    "path": "src/gl/paper.ts",
+    "sha256": "148880f44906c319e3adc658a6536d997ef723e246811ca3a9e534b6c13530a9"
+  },
+  {
+    "path": "src/gl/post.ts",
+    "sha256": "6e19619132490f50107d243123d9b476611049712c313737231fc79b2c3a6340"
+  },
+  {
+    "path": "src/gl/scene.ts",
+    "sha256": "03f4cb7553d7f01aa70040cd58014fadd4a3e65cb9d47d0fccf492ee93a997c0"
+  },
+  {
+    "path": "src/gl/surface.ts",
+    "sha256": "2e5610aeed8e49a5a2ca8253fdff94de56e52259b94883d295e7b187cb61af1a"
+  },
+  {
+    "path": "src/gl/vegetation.ts",
+    "sha256": "a67d08aeae6ea7f8aa2a6c6173e0bb5076c9b36c2e3d1f5662cfbe4e54a3568f"
+  },
+  {
+    "path": "src/gl/willow.ts",
+    "sha256": "e7c71b048fb9d3b818c5365b136971e23aa21549bab5acc52924b651813cb929"
+  },
+  {
+    "path": "src/main.ts",
+    "sha256": "f9e4716238ce149b73712762720aa8efbadb0eae69dc83fdaa43782dbe1e41da"
+  },
+  {
+    "path": "src/style.css",
+    "sha256": "8821638b5ebc7f7f4545e7ba84b98ad12d5d774c04df9a44f403351b7e30e38b"
+  },
+  {
+    "path": "src/ui/chat.ts",
+    "sha256": "79e028be6e221b43eb95965536f2a628c967a625b0e27544a55c645e58a434a4"
+  },
+  {
+    "path": "src/ui/sound.ts",
+    "sha256": "3dccedf720a7b3fc36262c4227be2b56cb2c518114895479043bde3249d175c9"
+  },
+  {
+    "path": "src/ui/voice.ts",
+    "sha256": "5f8072b77ef22493ed1116d46fc87646943dccfd422c2696582d881298f9ca58"
+  },
+  {
+    "path": "tsconfig.json",
+    "sha256": "69aedf2c2a34ea29445670361e438a550194e94245f741ffac96d73733f728bd"
+  },
+  {
+    "path": "vite.config.ts",
+    "sha256": "f06b7d7b26b40d9d9b2b64a7d902bcdce0f586e4be583fe9ce15ac063e611a49"
+  }
+]
