@@ -48,8 +48,12 @@ export function createMotionClock():MotionClock {
   return clock
 }
 
-/** In the island frame: the core sits inside the bowl; the one lotus light hangs above the petal tips. */
-const CORE_POSITION=new THREE.Vector3(-.25,.53,-.55),LIGHT_POSITION=new THREE.Vector3(-.25,1,-.55),LIGHT_INTENSITY=1.3
+/**
+ * In the island frame: the core sits inside the bowl; the one lotus light hangs above the petal tips. 1.65 (was 1.3) gives
+ * back some of the warm pool on the grass and the face that the removed second light used to give; raising the light
+ * instead (y 1.25, 2.2) washed the inner petals pale. Measured at the final stop: face +8 %, grass +10–20 %, bowl unchanged.
+ */
+const CORE_POSITION=new THREE.Vector3(-.25,.53,-.55),LIGHT_POSITION=new THREE.Vector3(-.25,1,-.55),LIGHT_INTENSITY=1.65
 
 export function createGlow(parent:THREE.Object3D):Glow {
   // The only lotus light. It rides in the island frame (the island bobs; a world-space light would swing the hot spot
