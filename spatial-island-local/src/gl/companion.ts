@@ -11,6 +11,8 @@ export interface Companion {
   rightArmGroup:THREE.Group
   leftArmGroup:THREE.Group
   eyesMesh:THREE.Group
+  /** Procedural stand-in (child of the presence-carrying body); hidden unless the GLB fails. */
+  fallback:THREE.Object3D
   readonly ready:boolean
   readonly source:'loading'|'glb'|'fallback'
   /** How much of the character is drawn right now, 0…1 (entrance × presence spring); cheap, unlike inspect(). */
@@ -181,7 +183,7 @@ export function createCompanion():Companion {
   const bend=(name:string,x:number,y:number,z:number):void=>{const part=importedParts.get(name);if(part)part.object.quaternion.multiply(turn.setFromEuler(euler.set(x,y,z,'YXZ')))}
 
   const api:Companion={
-    group,headGroup,torsoGroup,rightArmGroup,leftArmGroup,eyesMesh,
+    group,headGroup,torsoGroup,rightArmGroup,leftArmGroup,eyesMesh,fallback:figure,
     get ready(){return source!=='loading'},get source(){return source},get presence(){return Math.max(0,shown)},
     greet(time){
       if(!Number.isFinite(time))return
@@ -196,7 +198,9 @@ export function createCompanion():Companion {
 
       // Entrance: wait for the first drawn frame (compile), then fade in over ENTRANCE while a soft spring (ζ .7)
       // settles the figure from 96 % up to full size. Presence follows `goal` on its own critically damped spring.
-      if(source!=='loading'){
+      // The clock waits while the scene keeps the group hidden for its parallel compile (code-4): a compile longer than
+      // the .6 s fallback timer would otherwise play the whole fade unseen and pop the character in at full opacity.
+      if(source!=='loading'&&group.visible){
         if(loadedAt<0)loadedAt=time
         if(entryStart<0&&(drawn||time-loadedAt>.6)){entryStart=time;entryClock=0;grow.x=ENTRANCE_SCALE;grow.v=0}
       }

@@ -313,18 +313,19 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
    * would be built for the screen (tone mapped, sRGB) and built again on the first frame.
    */
   // The procedural fallback companion stays hidden unless the GLB fails, so it is left out of every compile (compile()
-  // walks hidden objects too). It is detached only for the synchronous part of compileAsync, when parameters are captured.
+  // walks hidden objects too). It is detached only for the synchronous part of compileAsync, when parameters are captured,
+  // and goes back to its own parent (the companion's body, which carries presence), not to the companion group.
   const precompile=(object:THREE.Object3D):Promise<unknown>=>{
-    const previous=renderer.getRenderTarget(),spare=companion.group.children.filter(child=>!child.visible)
-    spare.forEach(child=>child.removeFromParent());renderer.setRenderTarget(post.target())
-    try{return within(renderer.compileAsync(object,camera,scene),8000)}finally{renderer.setRenderTarget(previous);spare.forEach(child=>companion.group.add(child))}
+    const previous=renderer.getRenderTarget(),spare=companion.fallback.visible?undefined:companion.fallback,home=spare?.parent
+    spare?.removeFromParent();renderer.setRenderTarget(post.target())
+    try{return within(renderer.compileAsync(object,camera,scene),8000)}finally{renderer.setRenderTarget(previous);if(spare&&home)home.add(spare)}
   }
   performance.mark('sanctuary:compile-start')
   const compiled=Promise.all([precompile(scene),within(post.warmup(),8000)])
   // While the GPU process compiles, the main thread is free: upload the procedural textures now instead of in frame one.
   const textures=new Set<THREE.Texture>()
   const collect=(object:THREE.Object3D):void=>{
-    if(!object.visible&&object.parent===companion.group)return
+    if(object===companion.fallback&&!object.visible)return
     if(object instanceof THREE.Mesh||object instanceof THREE.Points||object instanceof THREE.Line||object instanceof THREE.Sprite)for(const mat of Array.isArray(object.material)?object.material:[object.material]){
       for(const value of Object.values(mat))if(value instanceof THREE.Texture)textures.add(value)
       if(mat instanceof THREE.ShaderMaterial)for(const uniform of Object.values(mat.uniforms))if(uniform.value instanceof THREE.Texture)textures.add(uniform.value)
