@@ -109,6 +109,10 @@ const tween=gsap.to(state,{p:1,ease:'none',duration:1,paused:true,onUpdate:()=>u
 // zone between two panels, and one wheel step reaches the next stop.
 const makeTrigger=():ScrollTrigger=>ScrollTrigger.create({trigger:'#scroll-wrapper',start:0,end:()=>Math.max(1,document.querySelector<HTMLElement>('#scroll-wrapper')!.offsetHeight-innerHeight),invalidateOnRefresh:true,animation:tween,scrub:reduced?.35:1.2,snap:{snapTo:stops,duration:reduced?{min:0,max:.01}:{min:.4,max:.85},delay:.05,ease:reduced?'none':'power2.inOut',inertia:false}})
 let trigger=makeTrigger()
+// A refresh (resize, fonts) reverts and re-renders the scrubbed tween: the revert runs onUpdate at p=0 and the restore to
+// the scroll's progress is silent, so the panels stayed on the hero while state.p was back at its stop. Re-present then.
+const refreshed=():void=>updatePresentation(state.p)
+ScrollTrigger.addEventListener('refresh',refreshed);cleanup.push(()=>ScrollTrigger.removeEventListener('refresh',refreshed))
 let layoutFrame=0
 // svh can settle a frame after the browser's resize event. Observe the actual scroll surface.
 const layoutObserver=new ResizeObserver(()=>{cancelAnimationFrame(layoutFrame);layoutFrame=requestAnimationFrame(()=>{reserveFaq();framePanels();lenis.resize();trigger.refresh()})})
