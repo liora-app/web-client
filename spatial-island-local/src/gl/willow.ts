@@ -11,9 +11,9 @@ import { applySurface,surfaceNoise } from './surface'
  * a few light filaments that only show beside a burning lantern, and three ribbed paper lanterns.
  * Branchlets, leaves and filaments share one sway function, so they move together in the same slow air.
  *
- * A lantern is lit by its FAQ question. Unlit, it is dim paper in moonlight with a faint ember low inside; lit, its
- * flame catches with a short overshoot (a damped spring), it blooms, and its warmth falls on the leaves, twigs and bark
- * around it as emission. The contract intensities (3.1 / .55, set by scene.ts) only report the state: the visible
+ * A lantern is lit by its FAQ question. Unlit, it is pale washi catching the night sky, with a faint ember low inside
+ * and its crest barely there; lit, its flame catches with a short overshoot (a damped spring), it blooms, its crest
+ * stands dark against the flame, and its warmth falls on the leaves, twigs and bark around it as emission. The contract intensities (3.1 / .55, set by scene.ts) only report the state: the visible
  * response is computed here.
  */
 export interface Willow {canopy:THREE.Group;lanterns:Lantern[];update:(time:number,reduced:boolean)=>void}
@@ -39,7 +39,7 @@ float lanternWarmth(vec3 p,float falloff){vec3 a=p-uLanternWorld[0],b=p-uLantern
  * fixed 1/240 s steps (frame-rate independent); the unlit ember is this fraction of the lit glow. LIT_GLOW is the
  * emission scale of a burning lantern: its waist sits just over the bloom threshold but low enough that the Neutral
  * tone map keeps it amber instead of washing it to a pale coral. */
-const FLASH_OMEGA=9,FLASH_ZETA=.45,FLASH_KICK=12,FLASH_STEP=1/240,EMBER=.025,LIT_GLOW=2.5,LIT_INTENSITY=3.1,REST_INTENSITY=.55
+const FLASH_OMEGA=9,FLASH_ZETA=.45,FLASH_KICK=12,FLASH_STEP=1/240,EMBER=.045,LIT_GLOW=2.5,LIT_INTENSITY=3.1,REST_INTENSITY=.55
 type Sway=(point:THREE.Vector3,t:number)=>[number,number]
 const still:Sway=()=>[0,0]
 
@@ -245,18 +245,21 @@ export function createWillow(kit:Kit):Willow {
     const anchor=new THREE.Vector3(x+.02,ANCHOR_Y[i],z-.03),local=anchor.clone().sub(TREE),start=BOUGH_ENDS[i]
     limb(taperedTube([v(start[0],start[1],start[2]),v((start[0]+local.x)*.5,anchor.y+.09,(start[2]+local.z)*.5),local.clone().add(v(0,.012,0))],.012,.005,12,4))
     const cord=mesh(new THREE.CylinderGeometry(.0025,.0025,1,5),cordMat,canopy);cord.castShadow=false
-    // Unlit: greyed washi in moonlight (dim albedo, weak sky), a faint ember low inside. Lit: a saturated amber flame
-    // behind the paper, ribs and crest as silhouettes (glow map), well over the bloom threshold at the waist.
+    // Unlit: pale, cool washi that catches the sky (light grey-green albedo, a stronger sky reflection), so it reads
+    // as paper in moonlight, not a brown barrel, and a faint ember low inside. Lit: a saturated amber flame behind the
+    // paper, ribs and crest as silhouettes (glow map), well over the bloom threshold at the waist.
     const paper=lanternPaperTextures(i,RIBS),response={value:new THREE.Vector2(0,1)};responses.push(response)
-    const lanternMaterial=kit.environment(new THREE.MeshStandardMaterial({color:'#8e8a80',map:paper.albedo,roughness:.9,emissive:'#ffa040',emissiveMap:paper.glow,emissiveIntensity:REST_INTENSITY}),.35)
+    const lanternMaterial=kit.environment(new THREE.MeshStandardMaterial({color:'#b3b5ae',map:paper.albedo,roughness:.9,emissive:'#ffa040',emissiveMap:paper.glow,emissiveIntensity:REST_INTENSITY}),.65)
     lanternMaterial.onBeforeCompile=shader=>{
       shader.uniforms.uLanternResponse=response
       shader.vertexShader='varying float vLanternV;\n'+shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvLanternV=uv.y;')
+      // Gaussian by multiplication: pow() of a negative base is undefined in GLSL, and the name is unique because this
+      // lands inside three's main(), next to the chunks' own locals.
       shader.fragmentShader='uniform vec2 uLanternResponse;varying float vLanternV;\n'+shader.fragmentShader.replace('#include <emissivemap_fragment>',`#include <emissivemap_fragment>
-        float lanternEmber=${EMBER.toFixed(3)}*exp(-pow((vLanternV-.32)/.2,2.));
+        float lanternD=(vLanternV-.32)/.2;float lanternEmber=${EMBER.toFixed(3)}*exp(-lanternD*lanternD);
         totalEmissiveRadiance*=uLanternResponse.y*max(mix(lanternEmber,1.,uLanternResponse.x),0.);`)
     }
-    lanternMaterial.customProgramCacheKey=()=>'willow-lantern-v2'
+    lanternMaterial.customProgramCacheKey=()=>'willow-lantern-v3'
     const body=mesh(bodyGeometry,lanternMaterial,root);body.name=`lantern-hit-${i}`;body.castShadow=false
     for(const capY of [-.19,.19]){const cap=mesh(new THREE.LatheGeometry(capProfile,16),kit.brass,root,0,capY,0);cap.castShadow=false}
     mesh(new THREE.LatheGeometry(tasselProfile,10),tasselMat,root).castShadow=false

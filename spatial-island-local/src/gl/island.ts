@@ -10,7 +10,7 @@ const SQUASH=.84
 const smooth=THREE.MathUtils.smoothstep,clamp=THREE.MathUtils.clamp
 /** Ground footprints: x, z, radius x, radius z. Grass stays out, soil darkens around them, the mounds flatten out before them. */
 type Footprint=[number,number,number,number]
-const stations:Footprint[]=[[-.25,-.55,.78,.78],[-1.55,.75,.56,.56],[-1.05,1.55,.46,.46],[1.85,-.85,.3,.3],[.8,-1.1,.47,.33]]
+const stations:Footprint[]=[[-.25,-.55,.78,.78],[-1.55,.75,.56,.56],[-1.2,1.8,.43,.43],[1.85,-.85,.3,.3],[.8,-1.1,.47,.33]]
 const inside=(x:number,z:number,[cx,cz,rx,rz]:Footprint,grow=1):number=>Math.hypot((x-cx)/(rx*grow),(z-cz)/(rz*grow))
 /** A few soft hillocks (x, z, radius, height) so the cap rolls like a diorama instead of lying flat. */
 const mounds=[[-2.3,-1.25,.85,.13],[1.55,1.5,.75,.09],[3.05,.15,.7,.12],[-2.85,1.15,.6,.08],[.35,-2.35,.8,.1]]
@@ -50,7 +50,7 @@ function inset([x,z]:[number,number],margin:number):[number,number] {
 function bareness(x:number,z:number):number {
   const patches=smooth(fractal(x*.8+3.3,5,z*.8-1.7),.26,.42)*.85
   let worn=0
-  for(const [cx,cz,r] of [[-1.55,.75,.52],[-1.05,1.55,.41]]){const d=Math.hypot(x-cx,z-cz)-r;worn=Math.max(worn,Math.exp(-Math.pow((d-.05)/.08,2))*.75)}
+  for(const [cx,cz,r] of [[-1.55,.75,.52],[-1.2,1.8,.38]]){const d=Math.hypot(x-cx,z-cz)-r;worn=Math.max(worn,Math.exp(-Math.pow((d-.05)/.08,2))*.75)}
   return clamp(Math.max(patches,worn),0,1)
 }
 

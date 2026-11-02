@@ -5,7 +5,7 @@
   },
   {
     "path": "index.html",
-    "sha256": "eaa8672ebd7e2a793ce38ba60a6c405fbeac0a4ac6d6a73d663e7b30c977583c"
+    "sha256": "d1593b239afbae3c0dba4c8bf0e218f49e79d19ee6fa23d67e807128c6a1485b"
   },
   {
     "path": "package-lock.json",
@@ -28,12 +28,20 @@
     "sha256": "7726a5cd6f3c0e876c028ea2a643d45f7aad4b0f164b70966c669f4a4668f4b9"
   },
   {
+    "path": "public/fonts/jost/jost-ukrainian-i.woff2",
+    "sha256": "c93ec43e833d37f4d468de85039b7a3b53cc40d6a2201810f4bcf6ec41e84196"
+  },
+  {
+    "path": "public/fonts/jost/jost-ukrainian-ye.woff2",
+    "sha256": "f65a6b305fbc29f21a71f63dbe27b6298e433d89f02294925ecf343e59cf3e3c"
+  },
+  {
     "path": "public/fonts/jost/OFL.txt",
-    "sha256": "1af3438a4d5f0ed2bdbc5751a5a67ebf6d537334161184b7fbb68503ef0ea0c5"
+    "sha256": "82b806b20fb9d8f2c64669c12a44efb87d27971e743f38a78365e83641626dd2"
   },
   {
     "path": "public/fonts/solitus/OFL.txt",
-    "sha256": "a02126f43a441ece0f7a70d57e426b38c7fafc25ad9ec76d0fedecded06f4b5d"
+    "sha256": "2bf209ae262bc674c2d5f11a49b4045b84e129f69b8728c656234e434dea8666"
   },
   {
     "path": "public/fonts/solitus/Solitus.ttf",
@@ -53,7 +61,11 @@
   },
   {
     "path": "README.md",
-    "sha256": "7d376f270c577c25143673fd3a03f0b206940bc9d9c4f939ba3aa3982608a471"
+    "sha256": "1cfe91c3b4d45df803c134898573b17c7971904bedb80082a879a44fc297fd7a"
+  },
+  {
+    "path": "scripts/jost-ukrainian.py",
+    "sha256": "560df249d9f183266e73b8d8d3b356b7fc1fcc440e041187209acc6e149a501e"
   },
   {
     "path": "scripts/optimize-model.mjs",
@@ -61,7 +73,7 @@
   },
   {
     "path": "scripts/shoot.mjs",
-    "sha256": "a2a7bfa8756be822766e9ede20e2d6b833a48907d46f07f18ef34549c48479e4"
+    "sha256": "d0a0ad5bad2b5a24c96b189a3d09797186a1af53c6e44237ddaa0aba493efdb2"
   },
   {
     "path": "scripts/verify-cinematic.mjs",
@@ -69,39 +81,39 @@
   },
   {
     "path": "scripts/verify-production.mjs",
-    "sha256": "a92ffd512ce3874483ce8e8153d5fba0dd7cdd534e75c92fe374c49c249ea30c"
+    "sha256": "c66be0cbbeb0275c1ecb7fe0e7f69ea1b0955d610cf1686f0ba5cd06b42e36cb"
   },
   {
     "path": "scripts/verify.mjs",
-    "sha256": "cd4daa6b8e496343f6606b51babfd95c4fd67688f1335b78b9eb49e5328bf758"
+    "sha256": "57383480a50f06e31eba3cacd5957d66323b3dad14af12022867a1cdeae7f1ae"
   },
   {
     "path": "SPECIFICATION-CINEMATIC.md",
-    "sha256": "edf6518153157c9f3c61c6c3762b3d41d836b1c3f010c24c27337aa0689ff08d"
+    "sha256": "41cd07b06ee72b30a4234a30a2c87ff0667e932872f20aa58ea4fb569eb1649b"
   },
   {
     "path": "SPECIFICATION-UI-FIX.md",
-    "sha256": "1af0f3f88919c1ccea224c5a2ad2724f283c790176d9a384ac99bae18db10f8a"
+    "sha256": "abe699947056508df34929f266106ec36e48a695305490d01c1f7ce933962644"
   },
   {
     "path": "SPECIFICATION.md",
-    "sha256": "ce67f01baa205c4fc35ab6cb03c949c5598895e3310d7e57169d3a18a7229515"
+    "sha256": "a93538d4c278a5defc1e37b4e95f36d0005776d44212d5f972fcca10a7b3cd8f"
   },
   {
     "path": "src/fonts.css",
-    "sha256": "27a07c5dc8662049afcee0e9e03d8fa39b077baaa4cce70772792edd939cef04"
+    "sha256": "922fe187451a784afe8807b53a35f72c51fa6a3796b132a5ddf65e018bcfa7ef"
   },
   {
     "path": "src/gl/artifacts.ts",
-    "sha256": "c3a78d6ba50501c5afe26f2ae6cb2fb79f888dbdd4d4caf0b546eee904179b88"
+    "sha256": "810d0660696e1986be3af1629e9c8e8b807379ffcaf206ca9208a0fa5413f190"
   },
   {
     "path": "src/gl/cocoon.ts",
-    "sha256": "41bf2ef752888ab9da921ffeb290d17ea143c65e3a8b3393d9fca56c2722e94d"
+    "sha256": "dcde654bfc2f0ce9fd74bdac2ee294d8625754c8318d11dcae5b16a6c7657904"
   },
   {
     "path": "src/gl/companion.ts",
-    "sha256": "c864c028020bd08702b6af61ae4f755d8cec9fcb349a6f75870f5b7e04cb46a5"
+    "sha256": "1f1026b2cf8e97eb84787bb7d6acd254fe4cc000a00ba1e5a5253f6117e02260"
   },
   {
     "path": "src/gl/craft.ts",
@@ -109,7 +121,7 @@
   },
   {
     "path": "src/gl/environment.ts",
-    "sha256": "bdf9e4ff41cf1ef828188a7509faa7266c50f2e58bfbae3883cf93851b635b66"
+    "sha256": "5b21de375a5c95cd9f1e2741bad4868f899ffb991e74f80976a24051189d8f30"
   },
   {
     "path": "src/gl/glow.ts",
@@ -117,15 +129,15 @@
   },
   {
     "path": "src/gl/island.ts",
-    "sha256": "099478851e6476456411a0e82c734ad5ac45b3569653b0c6c9793c28572b6001"
+    "sha256": "dd8049c4ca2246243f51b6c117848c8bc2c131c477ff967bee83784c9c855c55"
   },
   {
     "path": "src/gl/lighting.ts",
-    "sha256": "66e5ef240da5971dac162bb76566a7ca8e2a17165cbef76cebb9ab360bb551ab"
+    "sha256": "0f50a43eb56d6f1fa74e4a71f771885af2584744f007817348a3ebacc59ab2f5"
   },
   {
     "path": "src/gl/lotus.ts",
-    "sha256": "201e23a7fe802fc393948ceb0a6b20470d22dafb803ba6bc6ceb63deaa8d976c"
+    "sha256": "fe495ead5d4de499717cb536635f1858862a6f6cb82758103fae0455732bdd43"
   },
   {
     "path": "src/gl/noise.ts",
@@ -137,15 +149,15 @@
   },
   {
     "path": "src/gl/paper.ts",
-    "sha256": "148880f44906c319e3adc658a6536d997ef723e246811ca3a9e534b6c13530a9"
+    "sha256": "8365d17f128709d819674679210ef2568db5e8a98ae353c8949261779828c91e"
   },
   {
     "path": "src/gl/post.ts",
-    "sha256": "6e19619132490f50107d243123d9b476611049712c313737231fc79b2c3a6340"
+    "sha256": "c41bea89119562f17c4f180ff558b775eb26fa290237f94064b6d8e181e4c7e2"
   },
   {
     "path": "src/gl/scene.ts",
-    "sha256": "03f4cb7553d7f01aa70040cd58014fadd4a3e65cb9d47d0fccf492ee93a997c0"
+    "sha256": "be021094b372b123798fe03a78e57c84773a6680076ca2f51516f84b72736df5"
   },
   {
     "path": "src/gl/surface.ts",
@@ -153,27 +165,27 @@
   },
   {
     "path": "src/gl/vegetation.ts",
-    "sha256": "a67d08aeae6ea7f8aa2a6c6173e0bb5076c9b36c2e3d1f5662cfbe4e54a3568f"
+    "sha256": "405def3378d18fd6061f812f0e4c4c97e57b89704908131fe01dc529e51a9dd4"
   },
   {
     "path": "src/gl/willow.ts",
-    "sha256": "e7c71b048fb9d3b818c5365b136971e23aa21549bab5acc52924b651813cb929"
+    "sha256": "2564c9f212264c92f20bdee1b191a21dcbd6cc5811e1a42dc7d84260eb87ca3f"
   },
   {
     "path": "src/main.ts",
-    "sha256": "f9e4716238ce149b73712762720aa8efbadb0eae69dc83fdaa43782dbe1e41da"
+    "sha256": "67cac04da6e060a3d1b6c5da139947177b3e84ce8c22bfb32b14b7af25546dbe"
   },
   {
     "path": "src/style.css",
-    "sha256": "8821638b5ebc7f7f4545e7ba84b98ad12d5d774c04df9a44f403351b7e30e38b"
+    "sha256": "e2ac2ab0e07c1950d9d283d591d9d827db698eaa4cd015281d1e6cdd28f87add"
   },
   {
     "path": "src/ui/chat.ts",
-    "sha256": "79e028be6e221b43eb95965536f2a628c967a625b0e27544a55c645e58a434a4"
+    "sha256": "51a60e5310d47e50af0caac4aedfbdb766f688f11074abf7568806105ca221c8"
   },
   {
     "path": "src/ui/sound.ts",
-    "sha256": "3dccedf720a7b3fc36262c4227be2b56cb2c518114895479043bde3249d175c9"
+    "sha256": "11dcb956d1d24fe1a66a057adf75cc7d8ddc3d90309aa1e25f1a87f4a029eb7a"
   },
   {
     "path": "src/ui/voice.ts",
@@ -185,6 +197,6 @@
   },
   {
     "path": "vite.config.ts",
-    "sha256": "f06b7d7b26b40d9d9b2b64a7d902bcdce0f586e4be583fe9ce15ac063e611a49"
+    "sha256": "f1b650139a14a9e58d34f26654c262017de7c19d57646c446fd8e4dbe2ea4ef1"
   }
 ]

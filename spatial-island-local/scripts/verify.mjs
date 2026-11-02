@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 const base=process.env.CHECK_URL??'http://127.0.0.1:8083'
 await mkdir('.checks',{recursive:true})
 const browser=await chromium.launch({channel:'chromium',args:[...(process.platform==='win32'?['--use-angle=d3d11']:[]),'--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']})
-const report={url:base,checks:[],errors:[],networkFailures:[],screenshots:[]}
+const report={url:base,checks:[],skipped:[],errors:[],networkFailures:[],screenshots:[]}
 const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce',permissions:['microphone']})
 await context.addInitScript(()=>{
   class SpeechMock {
@@ -20,6 +20,8 @@ page.on('pageerror',e=>report.errors.push(e.message))
 page.on('console',m=>{if(m.type()==='error')report.errors.push(m.text())})
 page.on('response',r=>{if(r.status()>=400)report.networkFailures.push(`${r.status()} ${r.url()}`)})
 const pass=name=>{report.checks.push(name);console.log('PASS',name)}
+// Intersection over union of two screen boxes [left, top, right, bottom].
+const iou=(a,b)=>{const w=Math.max(0,Math.min(a[2],b[2])-Math.max(a[0],b[0])),h=Math.max(0,Math.min(a[3],b[3])-Math.max(a[1],b[1])),both=w*h;return both/((a[2]-a[0])*(a[3]-a[1])+(b[2]-b[0])*(b[3]-b[1])-both)}
 const wait=ms=>page.waitForTimeout(ms)
 async function at(p){await page.evaluate(value=>window.sanctuary.setProgress(value),p);await wait(700);await page.waitForFunction(value=>Math.abs(window.sanctuary.progress()-value)<.002,p);await wait(150)}
 async function screenshot(name){if(!['verified-desktop-4','verified-390-844-4','verified-320-568-4'].includes(name))return;await page.screenshot({path:`.checks/${name}.png`,timeout:20000});report.screenshots.push(name)}
@@ -34,6 +36,9 @@ try{
   for(let i=0;i<5;i++){
     await at(i/4);const state=await page.evaluate(()=>window.sanctuary.inspect())
     expected[i].forEach((value,k)=>assert.ok(Math.abs(state.camera[k]-value)<.025,`Waypoint ${i}, axis ${k}: ${state.camera}`))
+    // Hero (art-5): the three stations read apart. Lotus and folios keep their spots, so that pair only must not grow
+    // (it measures ≈.07 offline: the folios' right edge meets the lotus' outer petals); the cocoon must clear both.
+    if(i===0){const boxes=state.screenBoxes;for(const [a,b,limit] of [['cocoon','lotus',.05],['cocoon','sheets',.05],['lotus','sheets',.1]])assert.ok(iou(boxes[a],boxes[b])<limit,`Hero ${a}/${b} overlap ${iou(boxes[a],boxes[b]).toFixed(3)}: ${JSON.stringify(boxes)}`)}
     assert.equal(state.coreScale[0],state.coreScale[1]);assert.equal(state.coreScale[1],state.coreScale[2]);assert.equal(await page.locator('.stage.is-active').getAttribute('data-stage'),String(i))
     await screenshot(`verified-desktop-${i}`)
   }
@@ -55,6 +60,17 @@ try{
     const composer=await page.locator('.composer').boundingBox();assert.ok(composer.y>=0&&composer.y+composer.height<height-55);pass(`Safe panels, no inner scroll, hero gap and visible avatar/lotus on ${width}x${height}`)
   }
   pass('All process copy remains available through native accessible disclosure steps')
+  // ux-7: every lantern the FAQ answers light stays in view, clear of the FAQ panel (desktop framing from panel rects).
+  // 1000x600 depends on the FAQ panel's rect (main.ts framePanels): with the old constants lantern 0 sat under its edge.
+  const lanternSizes=[]
+  for(const [width,height] of [[1000,600],[1440,900]]){
+    await page.setViewportSize({width,height});await page.waitForFunction(()=>document.querySelector('#scroll-wrapper').offsetHeight===innerHeight*5);await wait(300);await at(.75)
+    const faq=await page.locator('.faq-panel').boundingBox(),state=await page.evaluate(()=>window.sanctuary.inspect()),screens=state.lanternScreens
+    assert.ok(state.panelRects[3],`The scene holds no rect for the FAQ panel on ${width}x${height}`)
+    lanternSizes.push(`${width}x${height}`)
+    screens.forEach(([x,y],i)=>assert.ok(Math.max(faq.x-x,x-faq.x-faq.width,faq.y-y,y-faq.y-faq.height)>=12,`Lantern ${i} at ${Math.round(x)},${Math.round(y)} within 12 px of the FAQ panel ${JSON.stringify(faq)} on ${width}x${height}`))
+  }
+  pass(`All three lanterns stay clear of the FAQ panel on ${lanternSizes.join(' and ')}`)
   await page.setViewportSize({width:1440,height:1000});await page.waitForFunction(()=>document.querySelector('#scroll-wrapper').offsetHeight===innerHeight*5);await wait(350);await at(.75);const oldGeometry=(await page.evaluate(()=>window.sanctuary.inspect())).resources.geometries
   for(let i=0;i<4;i++)await page.locator('[data-lantern="0"]').click()
   await wait(200);assert.equal((await page.evaluate(()=>window.sanctuary.inspect())).resources.geometries,oldGeometry);pass('Repeated interactions do not grow GPU geometry count')
@@ -65,4 +81,4 @@ try{
 }finally{
   await writeFile('.checks/verification.json',JSON.stringify(report,null,2));await browser.close()
 }
-console.log(JSON.stringify({passed:report.checks.length,errors:report.errors,readyMs:report.readyMs}))
+console.log(JSON.stringify({passed:report.checks.length,skipped:report.skipped,errors:report.errors,readyMs:report.readyMs}))

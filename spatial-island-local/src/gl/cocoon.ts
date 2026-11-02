@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { Kit } from './artifacts'
+import { skyFillPosition } from './lighting'
 import { fractal,noise3,random } from './noise'
 
 /**
@@ -14,7 +15,7 @@ export interface Cocoon {
   update:(time:number,closure:number,reduced:boolean)=>void
 }
 
-const SHARDS=6,ROWS=24,COLUMNS=8,RADIUS=.316,HALF=.34,INNER=.955,HAIRLINE=.0026,CENTER_Y=.59
+const SHARDS=6,ROWS=24,COLUMNS=8,RADIUS=.316,HALF=.34,INNER=.955,HAIRLINE=.0055,BEAD=1.004,CENTER_Y=.59
 /** The glaze map is centred on .5 so it can both darken and lift the vertex colour. */
 const MAP_BASE=.5
 
@@ -29,6 +30,9 @@ function seam(k:number,theta:number):number {
   const id=k%SHARDS,wrap=Math.floor(k/SHARDS)*Math.PI*2
   return wrap+id*Math.PI/3+Math.sin(theta)*(noise3(theta*1.9,id*3.7+.31,.53)*.24+noise3(theta*7.3,id*1.9+.17,2.3)*.06)
 }
+/** Gold on the glaze either side of break line k at height θ (arc length): lacquer laid by hand swells and thins
+ * (.5–1.6×) along the line. A function of the line, not the shard, so both halves of one seam agree. */
+const seamWidth=(k:number,theta:number):number=>HAIRLINE*THREE.MathUtils.clamp(1.05+noise3(theta*2.4,(k%SHARDS)*4.1+.6,5.3)*1.1,.5,1.6)
 
 const glazeDeep=new THREE.Color(.024,.05,.04),glazeBlue=new THREE.Color(.018,.042,.05),kaki=new THREE.Color(.21,.085,.03),glazePool=new THREE.Color(.012,.036,.04),clay=new THREE.Color(.2,.11,.055)
 /** Broad glaze tone baked into vertex colours (object space, so it travels with the shard): a slow teal-black drift,
@@ -59,10 +63,14 @@ function glazeMaps():{color:THREE.DataTexture;rough:THREE.DataTexture} {
   }
   for(let y=0;y<size;y++)for(let x=0;x<size;x++){
     const u=(x+.5)/size,v=(y+.5)/size,i=(y*size+x)*4
+    // Fine silvery-russet fur under the glaze: twice the old streak count at under half the strength (broad strands read
+    // as hair). 97 cycles is ~2.6 texels each and the cube adds harmonics past Nyquist, so each texel averages four
+    // samples across u, or the baked map would fold them back into a coarse moiré. Integer cycles keep the tile seamless.
     const warp=Math.sin(tau*(v+u*2))*.35+Math.sin(tau*v*2+1.7)*.2
-    const fur=Math.pow(Math.max(0,Math.sin(tau*(u*29+warp))*.55+Math.sin(tau*(u*47-warp*.6+v))*.45),3)*(.55+.45*Math.sin(tau*(u*5+v*3)))
+    let fur=0;for(let s=-1.5;s<2;s++){const su=u+s/(size*4);fur+=Math.pow(Math.max(0,Math.sin(tau*(su*61+warp))*.55+Math.sin(tau*(su*97-warp*.6+v))*.45),3)*.25}
+    fur*=.55+.45*Math.sin(tau*(u*5+v*3))
     const line=Math.max(1-THREE.MathUtils.smoothstep(edge(coarse,26,u,v),.12,.95),(1-THREE.MathUtils.smoothstep(edge(fine,34,u,v),.08,.6))*.45),lift=1+line*.12
-    color[i]=Math.round(Math.min(1,MAP_BASE*(1+fur*1.4)*lift)*255);color[i+1]=Math.round(Math.min(1,MAP_BASE*(1+fur*.6)*lift)*255);color[i+2]=Math.round(Math.min(1,MAP_BASE*(1-fur*.2)*lift)*255);color[i+3]=255
+    color[i]=Math.round(Math.min(1,MAP_BASE*(1+fur*.6)*lift)*255);color[i+1]=Math.round(Math.min(1,MAP_BASE*(1+fur*.32)*lift)*255);color[i+2]=Math.round(Math.min(1,MAP_BASE*(1+fur*.04)*lift)*255);color[i+3]=255
     rough[i]=rough[i+2]=0;rough[i+1]=Math.round(Math.min(1,.8+.14*line+.06*fur)*255);rough[i+3]=255
   }
   const texture=(data:Uint8Array):THREE.DataTexture=>{const t=new THREE.DataTexture(data,size,size,THREE.RGBAFormat);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.magFilter=THREE.LinearFilter;t.minFilter=THREE.LinearMipmapLinearFilter;t.generateMipmaps=true;t.anisotropy=8;t.colorSpace=THREE.NoColorSpace;t.needsUpdate=true;return t}
@@ -84,12 +92,15 @@ function shardGeometry(k:number):THREE.BufferGeometry {
   const thetas:number[]=[];for(let i=0;i<=ROWS;i++)thetas.push(.02+(Math.PI-.04)*i/ROWS)
   const outerGrid:number[][]=[],innerGrid:number[][]=[],phis:number[][]=[]
   for(const theta of thetas){
-    const start=seam(k,theta),span=seam(k+1,theta)-start,band=Math.min(.28,HAIRLINE/Math.max(1e-4,ringRadius(theta)*span))
-    const fractions=[0,band];for(let m=1;m<COLUMNS;m++)fractions.push(band+(1-band*2)*m/COLUMNS);fractions.push(1-band,1)
+    const start=seam(k,theta),span=seam(k+1,theta)-start,arc=Math.max(1e-4,ringRadius(theta)*span)
+    const lead=Math.min(.28,seamWidth(k,theta)/arc),trail=Math.min(.28,seamWidth(k+1,theta)/arc)
+    const fractions=[0,lead];for(let m=1;m<COLUMNS;m++)fractions.push(lead+(1-lead-trail)*m/COLUMNS);fractions.push(1-trail,1)
     const outerRow:number[]=[],innerRow:number[]=[],phiRow:number[]=[]
     for(const f of fractions){
       const phi=start+span*f,u=phi*ringRadius(theta)/RADIUS*1.3,w=theta/Math.PI*4.25;phiRow.push(phi)
-      egg(theta,phi,1,p);outerRow.push(vertex(p,glaze(p,theta,color),u,w,0))
+      // The break line itself stands a little proud (BEAD): the gold band rises to it from both shards like a bead of
+      // urushi. Both neighbours lift the same line, so the closed shell has no gap; the break faces copy this position.
+      egg(theta,phi,f===0||f===1?BEAD:1,p);outerRow.push(vertex(p,glaze(p,theta,color),u,w,0))
       egg(theta,phi,INNER,p);const n=fractal(p.x*7,p.y*7+3,p.z*7);innerRow.push(vertex(p,color.copy(clay).multiplyScalar((1+n*.3)/MAP_BASE),u,w,1))
     }
     outerGrid.push(outerRow);innerGrid.push(innerRow);phis.push(phiRow)
@@ -111,17 +122,18 @@ function shardGeometry(k:number):THREE.BufferGeometry {
   }
   // Pole caps close the wall at the foot and the crown.
   for(const [r,sign] of [[0,-1],[ROWS,1]] as const)for(let j=0;j<last;j++)quad(gold,outerGrid[r][j],outerGrid[r][j+1],innerGrid[r][j+1],innerGrid[r][j],facing.set(0,sign,0))
-  // A branching gold vein on two shards, lying on the glaze like repaired hairline cracks.
+  // A branching gold vein on two shards, lying on the glaze like repaired hairline cracks: a ridge, not a flat ribbon,
+  // its crest at the bead height of the seams and its edges settled down near the glaze.
   if(k===1||k===4){
-    const start=k===1?1.25:1.85,steps=16,path:THREE.Vector3[]=[]
-    for(let s=0;s<=steps;s++){const t=s/steps,theta=start+Math.sin(t*2.6+k)*.22+(random(k*40+s)-.5)*.04,from=seam(k,theta),span=seam(k+1,theta)-from;path.push(egg(theta,from+span*(t*.58+(random(k*70+s)-.5)*.015),1.0025,new THREE.Vector3()))}
-    const tangent=new THREE.Vector3(),side=new THREE.Vector3(),up=new THREE.Vector3(),pairs:number[][]=[]
+    const start=k===1?1.25:1.85,steps=16,path:THREE.Vector3[]=[],settle=1.0018/BEAD
+    for(let s=0;s<=steps;s++){const t=s/steps,theta=start+Math.sin(t*2.6+k)*.22+(random(k*40+s)-.5)*.04,from=seam(k,theta),span=seam(k+1,theta)-from;path.push(egg(theta,from+span*(t*.58+(random(k*70+s)-.5)*.015),BEAD,new THREE.Vector3()))}
+    const tangent=new THREE.Vector3(),side=new THREE.Vector3(),up=new THREE.Vector3(),ridge:number[][]=[]
     path.forEach((point,s)=>{
       tangent.subVectors(path[Math.min(steps,s+1)],path[Math.max(0,s-1)]).normalize();up.copy(point).normalize();side.crossVectors(up,tangent).normalize()
       const width=.0042*(1-Math.pow(s/steps,1.4))+.0004
-      pairs.push([vertex(p.copy(point).addScaledVector(side,width*.5),white,0,0,0),vertex(p.copy(point).addScaledVector(side,-width*.5),white,0,0,0)])
+      ridge.push([vertex(p.copy(point).addScaledVector(side,width*.5).multiplyScalar(settle),white,0,0,0),vertex(point,white,0,0,0),vertex(p.copy(point).addScaledVector(side,-width*.5).multiplyScalar(settle),white,0,0,0)])
     })
-    for(let s=0;s<steps;s++)quad(gold,pairs[s][0],pairs[s+1][0],pairs[s+1][1],pairs[s][1],facing.copy(path[s]))
+    for(let s=0;s<steps;s++)for(let e=0;e<2;e++)quad(gold,ridge[s][e],ridge[s+1][e],ridge[s+1][e+1],ridge[s][e+1],facing.copy(path[s]))
   }
   const geometry=new THREE.BufferGeometry()
   geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3))
@@ -130,37 +142,52 @@ function shardGeometry(k:number):THREE.BufferGeometry {
   geometry.computeVertexNormals();return geometry
 }
 
+/**
+ * Direct light on the glaze's coat: every source but the camera-side sky fill, told apart by its world direction so
+ * neither the light order nor the shadow setup matters (directLight.direction is in view space; v*M undoes the view
+ * rotation). Point lights only match it from that exact direction, which they never sit in.
+ */
+const fillDirection={value:skyFillPosition.clone().normalize()},coatIrradiance='vec3 ccIrradiance = dotNLcc * directLight.color;'
+const glazeCoatLight='float glazeCoatLight(vec3 l){return 1.-smoothstep(.99,.999,dot(normalize((vec4(l,0.)*viewMatrix).xyz),uFillDir));}\n'
+const glazeLightsChunk=THREE.ShaderChunk.lights_physical_pars_fragment.replace(coatIrradiance,coatIrradiance.replace(';',' * glazeCoatLight( directLight.direction );'))
+if(import.meta.env.DEV&&glazeLightsChunk===THREE.ShaderChunk.lights_physical_pars_fragment)console.warn('kintsugi glaze: three changed the clearcoat chunk; the sky fill glints on the coat again')
+
 /** How far the shell parts at rest (closure 0): the shards hold the core loosely and its light shows through the gaps. */
 const REST_OPEN=.6
 /** Seal flare when the shell closes: attack and decay (s) of the gold's emission, and its peak. */
 const SEAL_ATTACK=.12,SEAL_DECAY=.22,SEAL_PEAK=3.4
 
 export function createCocoon(kit:Kit):Cocoon {
-  // A little smaller than the cradle was carved for: from the hero camera the crown now sits under the lotus.
-  const group=new THREE.Group();group.name='Kintsugi privacy cocoon';group.position.set(-1.05,0,1.55);group.scale.setScalar(.82)
+  // A little smaller than the cradle was carved for, and off the lotus' bearing from the hero camera (art-5).
+  const group=new THREE.Group();group.name='Kintsugi privacy cocoon';group.position.set(-1.2,0,1.8);group.scale.setScalar(.76) // art-5: off the lotus' bearing from the hero camera
   // Carved cradle: foot, inlaid waist, scalloped rim with one lobe under each shard, a shallow bowl for the egg.
-  const wobble=(angle:number,y:number):number=>1+fractal(Math.sin(angle)*1.4+7,y*2.6,Math.cos(angle)*1.4)*.035
+  // Its wobble is a hand-carver's (.06), not a lathe's: at .035 the stone read as a turned, machined cylinder.
+  const wobble=(angle:number,y:number):number=>1+fractal(Math.sin(angle)*1.4+7,y*2.6,Math.cos(angle)*1.4)*.06
   const cradle=[[0,-.06],[.37,-.06],[.4,-.025],[.414,.025],[.418,.068],[.404,.093],[.374,.104],[.336,.11],[.312,.124],[.302,.148],[.298,.163],[.287,.166],[.287,.184],[.298,.187],[.302,.205],[.306,.226],[.297,.246],[.276,.258],[.25,.261],[.233,.255],[.19,.239],[.12,.229],[0,.225]]
   const pedestal=new THREE.Mesh(kit.lathe(cradle,64,(angle,y,r)=>r*wobble(angle,y)+(y>.2&&r>.2?.006*Math.cos(angle*6):0)),kit.stone);pedestal.castShadow=pedestal.receiveShadow=true;pedestal.name='Carved cocoon cradle';group.add(pedestal)
   const band=new THREE.Mesh(kit.ring(.2925,.175,.008,wobble),kit.inlay);band.castShadow=false;band.receiveShadow=true;band.name='Brass cradle inlay';group.add(band)
 
   // Glaze: a glossy coat with one small crisp window of the moon, reflecting the night sky at its own, weak strength
   // (the scene's 2.4 turned the crown into a blooming white halo and the brown-black tenmoku into navy plastic).
+  // One window, not two hot spots: the sky's moon spot now lies on the direct moon (lighting.ts), and the coat ignores
+  // the camera-side fill, which put a second glint in the middle of the egg from every stop. The fill still lights the
+  // glaze diffusely, and the face and the paper as before; a fill that broad has no business making a point glint.
   const textures=glazeMaps(),coreGlow={value:0}
-  const glazeMat=kit.environment(new THREE.MeshPhysicalMaterial({color:'#ffffff',vertexColors:true,map:textures.color,roughness:.46,metalness:0,clearcoat:1,clearcoatRoughness:.26,clearcoatRoughnessMap:textures.rough,specularIntensity:.6}),.55)
+  const glazeMat=kit.environment(new THREE.MeshPhysicalMaterial({color:'#ffffff',vertexColors:true,map:textures.color,roughness:.46,metalness:0,clearcoat:1,clearcoatRoughness:.14,clearcoatRoughnessMap:textures.rough,specularIntensity:.35}),.55)
   glazeMat.onBeforeCompile=shader=>{
-    shader.uniforms.uCoreGlow=coreGlow
+    shader.uniforms.uCoreGlow=coreGlow;shader.uniforms.uFillDir=fillDirection
     shader.vertexShader='attribute float aInner;varying float vInner;varying float vShellY;\n'+shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvInner=aInner;vShellY=position.y;')
     // The inner wall is plain fired clay (no glaze map). When the shell is open it is lit by the core it holds:
     // that is the core's light falling on it, kept well under the bloom threshold.
     // The coat's highlight keeps its small crisp shape but rolls off softly towards .7 (linear), under the bloom
     // threshold: a glint on glaze, not a light source.
-    shader.fragmentShader='uniform float uCoreGlow;varying float vInner;varying float vShellY;\nvec3 glazeHighlight(vec3 s){float peak=max(s.r,max(s.g,s.b));return peak>.4?s*(.4+.3*(1.-exp(-(peak-.4)/.3)))/peak:s;}\n'+shader.fragmentShader
+    shader.fragmentShader='uniform float uCoreGlow;uniform vec3 uFillDir;varying float vInner;varying float vShellY;\nvec3 glazeHighlight(vec3 s){float peak=max(s.r,max(s.g,s.b));return peak>.4?s*(.4+.3*(1.-exp(-(peak-.4)/.3)))/peak:s;}\n'+glazeCoatLight+shader.fragmentShader
+      .replace('#include <lights_physical_pars_fragment>',glazeLightsChunk)
       .replace('#include <map_fragment>',`#include <map_fragment>\ndiffuseColor.rgb=mix(diffuseColor.rgb,vec3(${MAP_BASE.toFixed(2)}),vInner);`)
       .replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(1.,.6,.3)*vInner*uCoreGlow*exp(-abs(vShellY)*4.5)*.6;')
       .replace('( clearcoatSpecularDirect + clearcoatSpecularIndirect ) * material.clearcoat','glazeHighlight( clearcoatSpecularDirect + clearcoatSpecularIndirect ) * material.clearcoat')
   }
-  glazeMat.customProgramCacheKey=()=>'kintsugi-glaze-v5'
+  glazeMat.customProgramCacheKey=()=>'kintsugi-glaze-v6'
   // Gold leaf is a metal: all of its colour is reflection, so it gets a stronger sky than the glaze.
   const goldMat=kit.environment(new THREE.MeshStandardMaterial({color:'#d2a04e',metalness:1,roughness:.32,emissive:'#ff9a3c',emissiveIntensity:0}),1.5)
   const pivots:THREE.Group[]=[]
