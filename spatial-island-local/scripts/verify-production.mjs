@@ -103,4 +103,3 @@ try {
   await browser.close()
 }
 console.log(JSON.stringify({ passed: report.checks.length, errors: report.errors }))
-

@@ -29,11 +29,11 @@
   },
   {
     "path": "public/fonts/jost/OFL.txt",
-    "sha256": "1af3438a4d5f0ed2bdbc5751a5a67ebf6d537334161184b7fbb68503ef0ea0c5"
+    "sha256": "82b806b20fb9d8f2c64669c12a44efb87d27971e743f38a78365e83641626dd2"
   },
   {
     "path": "public/fonts/solitus/OFL.txt",
-    "sha256": "a02126f43a441ece0f7a70d57e426b38c7fafc25ad9ec76d0fedecded06f4b5d"
+    "sha256": "2bf209ae262bc674c2d5f11a49b4045b84e129f69b8728c656234e434dea8666"
   },
   {
     "path": "public/fonts/solitus/Solitus.ttf",
@@ -69,7 +69,7 @@
   },
   {
     "path": "scripts/verify-production.mjs",
-    "sha256": "a92ffd512ce3874483ce8e8153d5fba0dd7cdd534e75c92fe374c49c249ea30c"
+    "sha256": "c66be0cbbeb0275c1ecb7fe0e7f69ea1b0955d610cf1686f0ba5cd06b42e36cb"
   },
   {
     "path": "scripts/verify.mjs",
@@ -77,19 +77,19 @@
   },
   {
     "path": "SPECIFICATION-CINEMATIC.md",
-    "sha256": "edf6518153157c9f3c61c6c3762b3d41d836b1c3f010c24c27337aa0689ff08d"
+    "sha256": "41cd07b06ee72b30a4234a30a2c87ff0667e932872f20aa58ea4fb569eb1649b"
   },
   {
     "path": "SPECIFICATION-UI-FIX.md",
-    "sha256": "1af0f3f88919c1ccea224c5a2ad2724f283c790176d9a384ac99bae18db10f8a"
+    "sha256": "abe699947056508df34929f266106ec36e48a695305490d01c1f7ce933962644"
   },
   {
     "path": "SPECIFICATION.md",
-    "sha256": "ce67f01baa205c4fc35ab6cb03c949c5598895e3310d7e57169d3a18a7229515"
+    "sha256": "a93538d4c278a5defc1e37b4e95f36d0005776d44212d5f972fcca10a7b3cd8f"
   },
   {
     "path": "src/fonts.css",
-    "sha256": "27a07c5dc8662049afcee0e9e03d8fa39b077baaa4cce70772792edd939cef04"
+    "sha256": "9ee8d9892612cf32c0fac896bf1a7f3c7efc3893a9c6ed0282ceba98bff49b60"
   },
   {
     "path": "src/gl/artifacts.ts",
