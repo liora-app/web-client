@@ -190,13 +190,15 @@ export function paperSheetTexture(index:number):THREE.DataTexture {
   const texture=deckled(c,width,height,index*5+1);sheets.set(index,texture);return texture
 }
 
-/** Lantern crest (mon), ~10 cm across on the body, in the current fill: a brushed ring round three leaves, a crescent
- * moon or a willow sprig. Drawn in a frame squashed to the lathe's texel aspect, so it stays round on the paper. */
+/** Lantern crest (mon), ~10 cm across on the body, in the current fill and globalAlpha: three leaves, a crescent moon
+ * or a willow sprig inside one dry ensō stroke (not an even ring, which made the crest read as an app icon). Drawn in a
+ * frame squashed to the lathe's texel aspect, so it stays round on the paper. Both lantern maps reseed it and draw the
+ * same code, so the albedo and glow silhouettes line up. */
 function crest(c:CanvasRenderingContext2D,rand:Rand,index:number,cx:number,cy:number):void {
   c.save();c.translate(cx,cy);c.scale(1,.89)
-  const ring=(r:number,w:number):void=>{const points:Stroke=[],from=rand()*Math.PI*2;for(let i=0;i<=80;i++){const t=i/80,a=from+t*Math.PI*2.03;points.push([Math.cos(a)*r,Math.sin(a)*r,w*(.75+.45*Math.sin(t*Math.PI))])}brush(c,points)}
   const leaf=(x:number,y:number,a:number,length:number,w:number):void=>{const points:Stroke=[];for(let i=0;i<=18;i++){const t=i/18,bend=Math.sin(t*Math.PI)*length*.06;points.push([x+Math.cos(a)*t*length-Math.sin(a)*bend,y+Math.sin(a)*t*length+Math.cos(a)*bend,w*Math.pow(Math.sin(Math.PI*Math.min(1,.08+t*.95)),.7)])}brush(c,points)}
-  ring(31,4.2)
+  // 7.5 px so each of the 22 bristles still reaches about a pixel under pressure; thinner, they dissolve into a haze.
+  enso(c,rand,0,0,32,7.5)
   if(index===0)for(let k=0;k<3;k++){const a=-Math.PI/2+k*Math.PI*2/3+(rand()-.5)*.08;leaf(Math.cos(a)*3,Math.sin(a)*3,a,21,10.5)}
   else if(index===1){c.save();c.beginPath();c.arc(0,0,20,0,Math.PI*2);c.clip();c.beginPath();c.arc(0,0,20,0,Math.PI*2);c.arc(8,-5,17.5,0,Math.PI*2);c.fill('evenodd');c.restore()}
   else{
@@ -211,17 +213,19 @@ const lanterns=new Map<number,LanternPaper>()
 /**
  * Paper for lantern i as two maps of the same sheet, 512×256 so a texel is close to square on the lathe (u runs ~.8 m
  * round the waist, v ~.45 m along the profile): the crest is no longer smeared 3.6:1 round the body.
- * - albedo: the sheet seen from outside at night: even washi, a hairline at each bamboo rib, the crest at half ink.
+ * - albedo: the sheet seen from outside at night: even, near-neutral washi (the cool pale tone comes from the material
+ *   colour and the sky), a hairline at each bamboo rib, the crest only a faint trace.
  * - glow: the same sheet lit from within: brightest at the waist, cloudy where the fibres bunch, and every rib, glued
- *   panel seam and the crest standing dark against the flame, so they only read while the lantern burns.
+ *   panel seam and the crest standing dark against the flame, so they only read while the lantern burns: the question
+ *   lights its own sign.
  * Canvas top = lantern top; the crest faces -Z (u = .5).
  */
 export function lanternPaperTextures(index:number,ribs:number):LanternPaper {
   const cached=lanterns.get(index);if(cached)return cached
   const width=512,height=256
   const paint=(lit:boolean):THREE.CanvasTexture=>{
-    const rand=seeded(9100+index*131),[canvas,c]=context(width,height)
-    for(let y=0;y<height;y++){const s=Math.sin(Math.PI*(1-y/height)),v=Math.round(255*(lit?.24+.76*Math.pow(s,2.2):.8+.2*Math.pow(s,.8)));c.fillStyle=`rgb(${v},${Math.round(v*.97)},${Math.round(v*.9)})`;c.fillRect(0,y,width,1)}
+    const rand=seeded(9100+index*131),[canvas,c]=context(width,height),[green,blue]=lit?[.97,.9]:[.99,.97]
+    for(let y=0;y<height;y++){const s=Math.sin(Math.PI*(1-y/height)),v=Math.round(255*(lit?.24+.76*Math.pow(s,2.2):.8+.2*Math.pow(s,.8)));c.fillStyle=`rgb(${v},${Math.round(v*green)},${Math.round(v*blue)})`;c.fillRect(0,y,width,1)}
     // Thickness clouds of hand-made paper: faint in reflected light, plain against the flame.
     for(let i=0;i<40;i++){const x=rand()*width,y=rand()*height,r=12+rand()*40,dark=rand()<.5,g=c.createRadialGradient(x,y,0,x,y,r),rgb=dark?'90,60,30':'255,246,226',a=(lit?.12:.03)*(.5+rand());g.addColorStop(0,`rgba(${rgb},${a})`);g.addColorStop(1,`rgba(${rgb},0)`);c.fillStyle=g;c.fillRect(x-r,y-r,r*2,r*2)}
     c.lineCap='round'
@@ -232,7 +236,9 @@ export function lanternPaperTextures(index:number,ribs:number):LanternPaper {
     for(let k=1;k<ribs;k++){const y=k/ribs*height;for(const [w,a] of lit?[[5.5,.3],[2.5,.75]]:[[1.2,.22]]){c.fillStyle=`rgba(40,26,14,${a})`;c.fillRect(0,y-w/2,width,w)}}
     // Glued panel seams: the overlap is double paper, darker in transmitted light.
     for(let k=0;k<8;k++){const x=(k+.5)/8*width;c.fillStyle=`rgba(90,66,40,${lit?.2:.05})`;c.fillRect(x-1.5,0,3,height)}
-    c.fillStyle=`rgba(46,30,18,${lit?.9:.5})`;crest(c,seeded(9300+index*17),index,width*.5,height*.5)
+    // The crest's strength is globalAlpha, which also scales the ensō's own ink: nearly gone on the albedo (.12), a
+    // dark silhouette against the flame (.9).
+    c.fillStyle='rgb(46,30,18)';c.globalAlpha=lit?.9:.12;crest(c,seeded(9300+index*17),index,width*.5,height*.5);c.globalAlpha=1
     const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;texture.wrapS=THREE.RepeatWrapping;texture.anisotropy=4
     return texture
   }
