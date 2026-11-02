@@ -1,41 +1,155 @@
 import * as THREE from 'three'
-import { grainTexture,mesh } from './craft'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { breathe,mesh } from './craft'
+import { random } from './noise'
+import { applySurface } from './surface'
 
-function petal(length:number,width:number):THREE.BufferGeometry {
-  const rows=32,columns=20,positions:number[]=[],colors:number[]=[],uvs:number[]=[],indices:number[]=[]
-  const ivory=new THREE.Color('#FFFDF9'),ruby=new THREE.Color('#B83A32'),color=new THREE.Color()
+/** Where glow.ts hangs the core, in lotus space: island (-.25,.53,-.55) minus the lotus origin (-.25,.15,-.55), over the .78 scale. */
+const CORE=new THREE.Vector3(0,(.53-.15)/.78,0)
+
+/**
+ * One petal: a thin lens-section shell, cupped, widest a little past the middle, with a soft point.
+ * uv.x runs once around the section (sin(2πu) is the across-petal coordinate, cos(2πu)>0 the outer face), uv.y base → tip.
+ */
+function petalShell(length:number,width:number,seed:number,rows:number,columns:number):THREE.BufferGeometry {
+  const positions:number[]=[],uvs:number[]=[],indices:number[]=[]
+  const cupping=.9+random(seed)*.22,flutter=random(seed+1)*6.28,ripple=.003+random(seed+2)*.005
   for(let i=0;i<=rows;i++)for(let j=0;j<=columns;j++){
-    const t=i/rows,a=j/columns*Math.PI*2,s=Math.sin(Math.PI*t),v=Math.sin(a)
-    const breadth=width*Math.pow(s,.62),thickness=.027*Math.pow(s,.5)
-    const cup=.15*Math.pow(s,.8)*(1-v*v)+.17*t*t-.095*Math.pow(t,7)
+    const t=i/rows,a=j/columns*Math.PI*2,v=Math.sin(a),swell=Math.sin(Math.PI*Math.pow(t,1.15))
+    const breadth=width*Math.pow(swell,.55+.4*t),thickness=.024*Math.pow(Math.sin(Math.PI*t),.5)*(1-.3*t)
+    const cup=(.15*Math.pow(swell,.8)*(1-v*v)+.17*t*t-.1*Math.pow(t,6))*cupping+ripple*Math.sin(t*11+flutter+v*2)*v*v*t
     positions.push(breadth*v,length*t,cup+thickness*Math.cos(a));uvs.push(j/columns,t)
-    const pigment=THREE.MathUtils.smoothstep(t+.018*Math.sin(v*9),.66,.99)
-    color.copy(ivory).lerp(ruby,pigment*.94);colors.push(color.r,color.g,color.b)
   }
   for(let i=0;i<rows;i++)for(let j=0;j<columns;j++){const a=i*(columns+1)+j,b=a+1,c=a+columns+1;indices.push(a,b,c,b,c+1,c)}
-  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals()
+  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geometry.setIndex(indices);geometry.computeVertexNormals()
   const normals=geometry.getAttribute('normal'),normal=new THREE.Vector3(),other=new THREE.Vector3()
   for(let row=1;row<rows;row++){const a=row*(columns+1),b=a+columns;normal.fromBufferAttribute(normals,a).add(other.fromBufferAttribute(normals,b)).normalize();normals.setXYZ(a,normal.x,normal.y,normal.z);normals.setXYZ(b,normal.x,normal.y,normal.z)}
   for(const row of [0,rows])for(let j=0;j<=columns;j++)normals.setXYZ(row*(columns+1)+j,0,row===0?-1:1,0)
   return geometry
 }
 
-export function createLotus():{group:THREE.Group;petalCount:number;material:THREE.MeshPhysicalMaterial;update:(time:number,reduced:boolean)=>void} {
-  const group=new THREE.Group();group.name='Porcelain Lotus — 36 petals';group.position.set(-.25,.15,-.55);group.scale.setScalar(.78)
-  const material=new THREE.MeshPhysicalMaterial({color:'#ffffff',vertexColors:true,transmission:.35,thickness:.6,roughness:.45,metalness:0,ior:1.38,specularIntensity:.36,bumpMap:grainTexture('clay'),bumpScale:.008})
-  const petals:{pivot:THREE.Group;tilt:number;layer:number;phase:number}[]=[]
-  const rings=[{length:.81,width:.29,radius:.17,y:-.08,tilt:1.27,count:11},{length:.87,width:.285,radius:.12,y:.035,tilt:1.04,count:10},{length:.83,width:.26,radius:.075,y:.15,tilt:.79,count:8},{length:.68,width:.23,radius:.035,y:.245,tilt:.53,count:7}]
-  rings.forEach((ring,layer)=>{
-    const geometry=petal(ring.length,ring.width)
-    for(let i=0;i<ring.count;i++){
-      const angle=i/ring.count*Math.PI*2+layer*.37,root=new THREE.Group(),pivot=new THREE.Group()
-      root.position.set(Math.sin(angle)*ring.radius,ring.y,Math.cos(angle)*ring.radius);root.rotation.y=angle
-      const tilt=ring.tilt+Math.max(0,Math.cos(angle))*(layer===3?.42:layer===2?.28:.035)
-      pivot.rotation.x=tilt;const object=mesh(geometry,material,pivot);object.name=`Porcelain petal ${petals.length+1}`
-      root.add(pivot);group.add(root);petals.push({pivot,tilt,layer,phase:i*.29})
-    }
-  })
-  const base=mesh(new THREE.SphereGeometry(.19,24,16),new THREE.MeshStandardMaterial({color:'#b7aa83',roughness:.9}),group,0,-.05,0);base.scale.y=.7
-  return {group,material,petalCount:petals.length,update(time,reduced){for(const p of petals)p.pivot.rotation.x=p.tilt+(reduced?0:Math.sin(time*.72+p.layer*.12)*.028+Math.sin(time*.29+p.phase)*.006)}}
+const petalVertexPars=`
+attribute vec3 aPivot;attribute vec4 aPetal;
+uniform float uTime,uSway,uOpen;uniform vec3 uCore;
+varying vec2 vPetalUv;varying float vPetalRand;varying vec3 vCoreView;
+vec3 petalRotate(vec3 v,vec3 k,float a){float c=cos(a),s=sin(a);return v*c+cross(k,v)*s+k*dot(k,v)*(1.-c);}
+`
+// Each petal swings about its own root (the old per-petal pivot), so 36 petals stay one draw call.
+const petalNormal=`
+float petalAngle=uSway*(sin(uTime*.72+aPetal.y*.12)*.028+sin(uTime*.29+aPetal.z)*.006)+uOpen*(.012+aPetal.y*.01);
+vec3 petalAxis=vec3(cos(aPetal.x),0.,-sin(aPetal.x));
+objectNormal=petalRotate(objectNormal,petalAxis,petalAngle);
+`
+const petalBegin=`
+transformed=aPivot+petalRotate(transformed-aPivot,petalAxis,petalAngle);
+vPetalUv=uv;vPetalRand=aPetal.w;vCoreView=(modelViewMatrix*vec4(uCore,1.)).xyz;
+`
+const petalFragmentPars=`
+uniform float uGlow,uRelief;uniform vec3 uGlowColor,uBase,uIvory,uBlush,uRose;
+varying vec2 vPetalUv;varying float vPetalRand;varying vec3 vCoreView;
+float petalVein,petalEdge,petalThin;vec3 petalTint;
+vec3 petalPerturb(vec3 p,vec3 n,float h,float faceDir){
+  vec3 sx=dFdx(p),sy=dFdy(p),r1=cross(sy,n),r2=cross(n,sx);float det=dot(sx,r1)*faceDir;
+  vec3 grad=sign(det)*(dFdx(h)*r1+dFdy(h)*r2)*uRelief;return normalize(abs(det)*n-grad);}
+`
+// Ivory body, a creamy-green heart at the base, a dusty blush gathering at the tip and along the rim; fine veins
+// fan out from the base (iso-lines of the across coordinate) and fade before they alias.
+const petalColor=`
+float petalA=vPetalUv.x*6.28318530718,petalAcross=sin(petalA),petalSide=cos(petalA),petalT=vPetalUv.y;
+petalEdge=smoothstep(.6,1.,abs(petalAcross));
+float petalQ=petalAcross*(6.5+vPetalRand*1.5)+sin(petalT*4.+petalAcross*2.5)*.18*petalT,petalQw=fwidth(petalQ);
+float petalFine=(1.-smoothstep(.02,.07+petalQw,abs(fract(petalQ+.5)-.5)))*(1.-smoothstep(.12,.32,petalQw));
+petalFine*=smoothstep(.02,.14,petalT)*(1.-smoothstep(.78,.97,petalT))*(1.-petalEdge*.7);
+float petalMid=(1.-smoothstep(0.,.045+fwidth(petalAcross)*1.5,abs(petalAcross)))*smoothstep(0.,.1,petalT)*(1.-smoothstep(.55,.9,petalT));
+petalVein=max(petalFine*.7,petalMid*.8);
+float petalBlush=smoothstep(.4,.95,petalT*.9+petalEdge*.25+(vPetalRand-.5)*.2)*mix(.7,1.,step(0.,petalSide));
+vec3 petalPigment=mix(uBase,uIvory,smoothstep(.02,.3,petalT));
+petalPigment=mix(petalPigment,uBlush,petalBlush*.85);
+petalPigment=mix(petalPigment,uRose,smoothstep(.74,1.02,petalT+petalEdge*.12)*petalBlush*.8);
+petalPigment*=1.-petalVein*mix(.012,.045,petalBlush);
+petalTint=petalPigment;
+petalThin=max(1.-abs(petalSide)*.65,smoothstep(.72,1.,petalT));
+diffuseColor.rgb*=petalPigment;
+`
+const petalRoughness=`
+roughnessFactor=clamp(roughnessFactor+petalVein*.07-petalEdge*.06,.05,1.);
+`
+const petalNormalMap=`
+normal=petalPerturb(-vViewPosition,normal,petalVein,faceDirection);
+`
+// Thin porcelain lets the core through: strongest where the core sits behind the petal, at thin rims and tips,
+// dimmer along the veins. Emitted, so the reflected-light calibration in optics.ts does not flatten it.
+const petalEmissive=`
+vec3 petalToCore=vCoreView+vViewPosition;float petalDist=max(length(petalToCore),1e-4);petalToCore/=petalDist;
+float petalNear=exp(-petalDist*petalDist*6.5);
+float petalBack=clamp(dot(petalToCore,normalize(-vViewPosition)),0.,1.);
+float petalLit=clamp(dot(normal,petalToCore),0.,1.);
+float petalSss=petalNear*(.16+.84*petalBack*petalBack)*petalThin*(1.-petalVein*.4);
+totalEmissiveRadiance+=uGlowColor*uGlow*(mix(vec3(1.),petalTint,.6)*petalSss+petalTint*petalNear*petalLit*.3);
+`
+
+/** Calyx cup, five sepals and the seed head, one low-poly batch tucked under the petals (within the old base footprint). */
+function lotusBase():THREE.BufferGeometry {
+  const parts:THREE.BufferGeometry[]=[],olive=new THREE.Color('#4a5730'),pod=new THREE.Color('#9d9a52'),color=new THREE.Color()
+  const paint=(geometry:THREE.BufferGeometry,from:THREE.Color,to:THREE.Color,low:number,high:number):THREE.BufferGeometry=>{
+    const positions=geometry.getAttribute('position'),colors:number[]=[]
+    for(let i=0;i<positions.count;i++){color.copy(from).lerp(to,THREE.MathUtils.smoothstep(positions.getY(i),low,high));colors.push(color.r,color.g,color.b)}
+    geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));return geometry
+  }
+  const calyx=new THREE.LatheGeometry([[0,-.19],[.05,-.186],[.1,-.17],[.14,-.14],[.163,-.1],[.168,-.07],[.15,-.046],[.1,-.032],[0,-.026]].map(([x,y])=>new THREE.Vector2(x,y)),18)
+  const positions=calyx.getAttribute('position')
+  for(let i=0;i<positions.count;i++){const x=positions.getX(i),z=positions.getZ(i),rib=1+.06*Math.sin(Math.atan2(z,x)*5)*THREE.MathUtils.smoothstep(positions.getY(i),-.19,-.08);positions.setXYZ(i,x*rib,positions.getY(i),z*rib)}
+  calyx.computeVertexNormals();parts.push(paint(calyx,new THREE.Color('#2f3a22'),olive,-.19,-.06))
+  const head=new THREE.LatheGeometry([[0,-.03],[.04,-.03],[.06,.06],[.082,.16],[.088,.19],[.07,.2],[0,.205]].map(([x,y])=>new THREE.Vector2(x,y)),14)
+  parts.push(paint(head,olive,pod,.0,.19))
+  const helper=new THREE.Object3D()
+  for(let i=0;i<5;i++){
+    const sepal=petalShell(.3,.12,900+i*7,10,8),angle=i/5*Math.PI*2+.31
+    helper.position.set(Math.sin(angle)*.11,-.13,Math.cos(angle)*.11);helper.rotation.set(1.36+random(940+i)*.12,angle,0,'YXZ');helper.scale.setScalar(.92+random(950+i)*.12);helper.updateMatrix()
+    sepal.applyMatrix4(helper.matrix);parts.push(paint(sepal,new THREE.Color('#38452a'),new THREE.Color('#6b5a3a'),-.14,-.11))
+  }
+  const merged=mergeGeometries(parts,false);parts.forEach(g=>g.dispose());if(!merged)throw new Error('Lotus base merge failed')
+  return merged
 }
 
+export function createLotus():{group:THREE.Group;petalCount:number;material:THREE.MeshPhysicalMaterial;update:(time:number,reduced:boolean)=>void} {
+  const group=new THREE.Group();group.name='Porcelain Lotus — 36 petals';group.position.set(-.25,.15,-.55);group.scale.setScalar(.78)
+  const material=new THREE.MeshPhysicalMaterial({color:'#ffffff',transmission:.35,thickness:.2,roughness:.46,metalness:0,ior:1.42,specularIntensity:.42,
+    sheen:.55,sheenRoughness:.55,sheenColor:new THREE.Color('#ffd6c8'),clearcoat:.2,clearcoatRoughness:.32,attenuationColor:new THREE.Color('#f5c4ae'),attenuationDistance:.45})
+  const uniforms={uTime:{value:0},uSway:{value:1},uOpen:{value:0},uCore:{value:CORE},uGlow:{value:.2},uRelief:{value:.0012},
+    uGlowColor:{value:new THREE.Color('#ffc58a')},uBase:{value:new THREE.Color('#e6e0bb')},uIvory:{value:new THREE.Color('#fbf4ea')},uBlush:{value:new THREE.Color('#eeb3bb')},uRose:{value:new THREE.Color('#c27183')}}
+  material.onBeforeCompile=shader=>{
+    Object.assign(shader.uniforms,uniforms)
+    shader.vertexShader=petalVertexPars+shader.vertexShader.replace('#include <beginnormal_vertex>','#include <beginnormal_vertex>'+petalNormal).replace('#include <begin_vertex>','#include <begin_vertex>'+petalBegin)
+    shader.fragmentShader=petalFragmentPars+shader.fragmentShader
+      .replace('#include <color_fragment>','#include <color_fragment>'+petalColor)
+      .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>'+petalRoughness)
+      .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>'+petalNormalMap)
+      .replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>'+petalEmissive)
+  }
+  material.customProgramCacheKey=()=>'liora-porcelain-petal-v2'
+  const rings=[{length:.81,width:.29,radius:.17,y:-.08,tilt:1.27,count:11},{length:.87,width:.285,radius:.12,y:.035,tilt:1.04,count:10},{length:.83,width:.26,radius:.075,y:.15,tilt:.79,count:8},{length:.68,width:.23,radius:.035,y:.245,tilt:.53,count:7}]
+  const shells:THREE.BufferGeometry[]=[],helper=new THREE.Object3D()
+  let index=0
+  rings.forEach((ring,layer)=>{
+    for(let i=0;i<ring.count;i++,index++){
+      // Hand-made spread: a little angle, tilt, twist and size jitter per petal, never larger than the original petal.
+      const seed=index*31+7,angle=i/ring.count*Math.PI*2+layer*.37+(random(seed)-.5)*.1
+      const tilt=ring.tilt+Math.max(0,Math.cos(angle))*(layer===3?.42:layer===2?.28:.035)+(random(seed+1)-.5)*.07
+      const geometry=petalShell(ring.length,ring.width,seed,28,16),count=geometry.getAttribute('position').count
+      helper.position.set(Math.sin(angle)*ring.radius,ring.y,Math.cos(angle)*ring.radius);helper.rotation.set(tilt,angle,(random(seed+2)-.5)*.12,'YXZ');helper.scale.setScalar(.93+random(seed+3)*.07);helper.updateMatrix()
+      geometry.applyMatrix4(helper.matrix)
+      const pivot=new Float32Array(count*3),petal=new Float32Array(count*4)
+      for(let k=0;k<count;k++){pivot.set([helper.position.x,helper.position.y,helper.position.z],k*3);petal.set([angle,layer,i*.29,random(seed+4)],k*4)}
+      geometry.setAttribute('aPivot',new THREE.BufferAttribute(pivot,3));geometry.setAttribute('aPetal',new THREE.BufferAttribute(petal,4));shells.push(geometry)
+    }
+  })
+  const merged=mergeGeometries(shells,false);shells.forEach(g=>g.dispose());if(!merged)throw new Error('Lotus petal merge failed')
+  const petals=mesh(merged,material,group);petals.name='Porcelain petals (36, one batch)'
+  const baseMaterial=applySurface(new THREE.MeshStandardMaterial({color:'#ffffff',vertexColors:true,roughness:.82,metalness:0}),{scale:7,bump:.005,fine:.5,variation:.2,tint:'#8a7448',cavity:.3,roughnessVariation:.1})
+  const base=mesh(lotusBase(),baseMaterial,group);base.name='Lotus calyx, sepals and seed head';base.castShadow=false
+  return {group,material,petalCount:index,update(time,reduced){
+    uniforms.uTime.value=reduced?0:time;uniforms.uSway.value=reduced?0:1
+    const breath=reduced?.5:breathe(time);uniforms.uOpen.value=reduced?0:breath;uniforms.uGlow.value=.16+.04*breath
+  }}
+}
