@@ -1,7 +1,9 @@
 export function setupSound(button:HTMLButtonElement,notify:(text:string)=>void):()=>void {
   let context:AudioContext|undefined,gain:GainNode|undefined,playing=false,disposed=false,frame=0,time=0
-  const oscillators:OscillatorNode[]=[],path=button.querySelector('path')!
-  const update=():void=>{time+=.04;const amount=playing?3.2:0;let d='M2 12';for(let x=3;x<=70;x+=2)d+=` L${x} ${12+Math.sin(x*.11+time)*Math.sin(x/72*Math.PI)*amount}`;path.setAttribute('d',d);if(playing)frame=requestAnimationFrame(update)}
+  const oscillators:OscillatorNode[]=[],path=button.querySelector('path')!,still=matchMedia('(prefers-reduced-motion: reduce)')
+  // With reduced motion the wave is drawn once, in its playing shape, instead of rolling on every frame.
+  const update=():void=>{if(!still.matches)time+=.04;const amount=playing?3.2:0;let d='M2 12';for(let x=3;x<=70;x+=2)d+=` L${x} ${12+Math.sin(x*.11+time)*Math.sin(x/72*Math.PI)*amount}`;path.setAttribute('d',d);if(playing&&!still.matches)frame=requestAnimationFrame(update)}
+  const motion=():void=>{cancelAnimationFrame(frame);update()};still.addEventListener('change',motion)
   const click=async():Promise<void>=>{
     try{
       if(!context){context=new AudioContext();gain=context.createGain();gain.gain.value=0;const filter=context.createBiquadFilter();filter.type='lowpass';filter.frequency.value=700;filter.connect(gain).connect(context.destination)
@@ -11,6 +13,6 @@ export function setupSound(button:HTMLButtonElement,notify:(text:string)=>void):
     }catch{notify('Звук зараз недоступний. Простір працює без аудіо.')}
   }
   const handler=():void=>{void click()};button.addEventListener('click',handler)
-  const visibility=():void=>{if(document.hidden){cancelAnimationFrame(frame);void context?.suspend()}else if(playing){void context?.resume();update()}};document.addEventListener('visibilitychange',visibility)
-  return ()=>{disposed=true;cancelAnimationFrame(frame);button.removeEventListener('click',handler);document.removeEventListener('visibilitychange',visibility);oscillators.forEach(o=>{o.stop();o.disconnect()});gain?.disconnect();void context?.close().catch(()=>undefined)}
+  const visibility=():void=>{if(document.hidden){cancelAnimationFrame(frame);void context?.suspend()}else if(playing){void context?.resume();cancelAnimationFrame(frame);update()}};document.addEventListener('visibilitychange',visibility)
+  return ()=>{disposed=true;cancelAnimationFrame(frame);button.removeEventListener('click',handler);document.removeEventListener('visibilitychange',visibility);still.removeEventListener('change',motion);oscillators.forEach(o=>{o.stop();o.disconnect()});gain?.disconnect();void context?.close().catch(()=>undefined)}
 }

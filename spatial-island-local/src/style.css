@@ -148,7 +148,9 @@ html:has(.help-dialog[open]) :is(#webgl-container, .atmosphere) { opacity: 0; vi
 .primary:hover { background: #f5eee0; box-shadow: inset 0 1px 0 #fffaf0, 0 18px 38px -16px #e3c79b66; }
 .primary:hover svg, .primary:focus-visible svg { translate: 2px -2px; }
 .primary:active { scale: .975; }
-.fine-print { font-size: 11px; line-height: 1.7; color: var(--muted); }
+/* 12px floor for words people rely on (AI disclosure, privacy, hints): Jost's small x-height reads 11px as ~9-10px.
+   Eyebrows and the footer's spaced capitals stay at 10px as decorative labels. */
+.fine-print { font-size: 12px; line-height: 1.7; color: var(--muted); }
 .hero > .fine-print { margin-top: 13px; }
 .scene-caption { position: fixed; right: 7%; bottom: 85px; font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-size: 13px; letter-spacing: .01em; line-height: 1.6; color: #b1bfae; text-align: right; opacity: 0; visibility: hidden; }
 .scene-caption::before { content: ''; display: block; width: 28px; height: 1px; margin: 0 0 10px auto; background: #b1bfae66; }
@@ -171,19 +173,21 @@ html:has(.help-dialog[open]) :is(#webgl-container, .atmosphere) { opacity: 0; vi
 .journal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
 .journal-choice, .process { min-width: 0; }
 .directions { display: grid; border-top: 1px solid var(--hair); }
-.direction { position: relative; background: transparent; border-bottom: 1px solid var(--hair); text-align: left; padding: 14px 30px 14px 16px; transition: background-color .3s var(--ease-soft); }
+/* Tabs switch in place, so they carry no link arrow: the sand bar marks the chosen one. */
+.direction { position: relative; background: transparent; border-bottom: 1px solid var(--hair); text-align: left; padding: 14px 16px; transition: background-color .3s var(--ease-soft); }
 .direction::before { content: ''; position: absolute; left: 0; top: 14px; bottom: 14px; width: 2px; border-radius: 2px; background: var(--sand); scale: 1 0; transition: scale .45s var(--ease-out); }
 .direction > span { display: block; text-transform: uppercase; font-size: 10px; letter-spacing: .14em; color: #a9b6a2; margin-bottom: 6px; transition: color .3s; }
 .direction strong { display: block; font-size: 15px; font-weight: 500; line-height: 1.3; }
-.direction small { display: block; color: var(--muted); font-size: 11px; line-height: 1.5; margin-top: 4px; }
-.direction b { position: absolute; right: 8px; top: 15px; font-weight: 400; color: #a7b09a; transition: translate .4s var(--ease-out), color .3s; }
+/* One line on every tab, chosen or not: choosing one never changes its height under the finger. Inline-size
+   containment keeps the unbroken line out of the tab's min-content: otherwise the grid track (and the button's own
+   inner box) widens to the whole subtitle, the tabs spill over the process column and the ellipsis never shows. */
+.direction small { display: block; contain: inline-size; color: var(--muted); font-size: 11px; line-height: 1.5; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .direction:hover { background: rgba(236, 230, 218, .035); }
-.direction:hover b { translate: 2px -2px; }
 .direction:active { background: rgba(236, 230, 218, .06); }
 .direction.is-selected { background: rgba(227, 199, 155, .05); }
 .direction.is-selected::before { scale: 1 1; }
-.direction.is-selected > span, .direction.is-selected b { color: var(--sand); }
-.direction-status { font-size: 11px; line-height: 1.55; color: var(--muted); margin-top: 14px; }
+.direction.is-selected > span { color: var(--sand); }
+.direction-status { font-size: 12px; line-height: 1.55; color: var(--muted); margin-top: 14px; }
 .text-link { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--sand); padding: 11px 0 0; }
 .text-link span { transition: translate .4s var(--ease-out); }
 .text-link:hover span { translate: 2px -2px; }
@@ -206,7 +210,7 @@ html:has(.help-dialog[open]) :is(#webgl-container, .atmosphere) { opacity: 0; vi
 .privacy-points { display: flex; gap: 8px 22px; flex-wrap: wrap; padding: 22px 0; }
 .privacy-points span { position: relative; font-size: 11px; line-height: 1.5; padding-left: 13px; color: #c3cfc0; }
 .privacy-points span::before { content: ''; position: absolute; left: 0; top: calc(50% - 2px); width: 4px; height: 4px; border-radius: 50%; background: var(--sand); }
-.disclaimer { font-size: 11px; line-height: 1.8; color: var(--muted); border-top: 1px solid var(--hair); padding-top: 17px; }
+.disclaimer { font-size: 12px; line-height: 1.8; color: var(--muted); border-top: 1px solid var(--hair); padding-top: 17px; }
 /* The FAQ sheet hangs from a fixed top, so an opening answer only grows downwards and the question
    that was clicked stays under the pointer. */
 .faq-panel { left: 6%; width: 42%; max-width: 590px; top: clamp(96px, calc(50svh - 200px), 240px); bottom: auto; margin-block: 0; }
@@ -247,19 +251,20 @@ html[data-stage='0'] .footer-arrow { animation: nudge 2.8s var(--ease-soft) infi
 html[data-stage='4'] .footer-arrow { rotate: 180deg; }
 [data-stage-label] { display: inline-block; }
 .stage-steps { display: flex; gap: 7px; flex: 1; }
-.stage-steps button { --track: #a9bc9e38; height: 19px; flex: 1; padding: 0; position: relative; background: linear-gradient(var(--track), var(--track)) 0 9px / 100% 1px no-repeat; }
+/* A 32px target whose line sits in its middle; the negative margins keep the footer as tall as with the 19px line box. */
+.stage-steps button { --track: #a9bc9e38; height: 32px; margin-block: -6.5px; flex: 1; padding: 0; position: relative; background: linear-gradient(var(--track), var(--track)) 0 50% / 100% 1px no-repeat; }
 .stage-steps button:nth-child(2) { --i: 1; }
 .stage-steps button:nth-child(3) { --i: 2; }
 .stage-steps button:nth-child(4) { --i: 3; }
 .stage-steps button:nth-child(5) { --i: 4; }
 /* The fill follows the scroll continuously: past legs dim sand, the current leg bright. */
-.stage-steps button::after { content: ''; position: absolute; left: 0; right: 0; top: 9px; height: 1px; border-radius: 1px; background: var(--sand-dim); transform-origin: left; scale: clamp(0, var(--journey, 0) * 4 - var(--i, 0) + 1, 1) 1; transition: background-color .4s, height .3s, top .3s; }
-.stage-steps button.is-current::after { background: var(--sand); height: 2px; top: 8.5px; }
+.stage-steps button::after { content: ''; position: absolute; left: 0; right: 0; top: calc(50% - .5px); height: 1px; border-radius: 1px; background: var(--sand-dim); transform-origin: left; scale: clamp(0, var(--journey, 0) * 4 - var(--i, 0) + 1, 1) 1; transition: background-color .4s, height .3s, top .3s; }
+.stage-steps button.is-current::after { background: var(--sand); height: 2px; top: calc(50% - 1px); }
 .stage-steps button:hover { --track: #a9bc9e80; }
 .stage-steps button:focus-visible { outline-offset: 2px; border-radius: 3px; }
 /* Where each leg leads, on hover or keyboard focus. The words are the button's own aria-label. */
 @media (hover: hover) and (min-width: 761px) {
-  .stage-steps button::before { content: attr(aria-label); position: absolute; left: 0; bottom: calc(100% + 4px); white-space: nowrap; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #d8dfd2; opacity: 0; translate: 0 4px; pointer-events: none; transition: opacity .3s var(--ease-soft), translate .4s var(--ease-out); }
+  .stage-steps button::before { content: attr(aria-label); position: absolute; left: 0; bottom: calc(100% - 2.5px); white-space: nowrap; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #d8dfd2; opacity: 0; translate: 0 4px; pointer-events: none; transition: opacity .3s var(--ease-soft), translate .4s var(--ease-out); }
   .stage-steps button:nth-child(n+4)::before { left: auto; right: 0; }
   .stage-steps button:is(:hover, :focus-visible)::before { opacity: 1; translate: none; }
 }
@@ -276,16 +281,29 @@ html[data-stage='4'] .footer-arrow { rotate: 180deg; }
 .scenario-chips button { display: inline-flex; align-items: center; min-height: 32px; flex-shrink: 0; white-space: nowrap; background: transparent; border: 1px solid var(--hair-strong); border-radius: 25px; font-size: 11px; padding: 0 12px; color: #d1d9cb; transition: border-color .3s var(--ease-soft), background-color .3s var(--ease-soft), color .3s, scale .2s var(--ease-out); }
 .scenario-chips button:hover { border-color: #e3c79b88; background: #e3c79b12; color: #f3ead8; }
 .scenario-chips button:active { scale: .96; }
-#chat-messages { max-height: min(13svh, 120px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: #71816a transparent; overscroll-behavior: contain; padding: 10px 13px; background: rgba(4, 12, 8, .42); box-shadow: inset 0 0 0 1px var(--hair); border-radius: 10px; display: flex; flex-direction: column; gap: 9px; }
-.chat-welcome { font-size: 11px; color: #bcc6b6; }
-.message { max-width: 92%; font-size: 12px; line-height: 1.6; animation: answer-in .45s var(--ease-out); }
+/* The sheet is a column in which only the log gives way: whatever the cap below, the content never spills out of it. */
+.conversation-panel { display: flex; flex-direction: column; }
+.conversation-panel > * { flex-shrink: 0; }
+/* position: the sr-only full replies (chat.ts) stay inside the scrolling log instead of hanging off the sheet. */
+#chat-messages { position: relative; flex-shrink: 1; min-height: 0; max-height: min(13svh, 120px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: #71816a transparent; overscroll-behavior: contain; padding: 10px 13px; background: rgba(4, 12, 8, .42); box-shadow: inset 0 0 0 1px var(--hair); border-radius: 10px; display: flex; flex-direction: column; gap: 9px; }
+/* Once the conversation has started it is the point of the sheet: the starter chips leave and the log takes their row
+   and more. The sheet's top rises with it; the scene re-frames from the measured panel tops (main.ts framePanels). */
+.conversation-panel:has(.message) { max-height: 50svh; }
+.conversation-panel:has(.message) .scenario-chips { display: none; }
+.conversation-panel:has(.message) #chat-messages { max-height: min(30svh, 260px); }
+.chat-welcome { font-size: 12px; color: #bcc6b6; }
+.message { max-width: 92%; font-size: 14px; line-height: 1.6; animation: answer-in .45s var(--ease-out); }
 .message--user { align-self: flex-end; background: #4a5d405e; border-radius: 10px 10px 2px 10px; padding: 7px 11px; }
 .message--assistant { align-self: flex-start; padding: 2px; }
-.message__author { display: block; font-size: 11px; color: #cdb98e; margin-bottom: 3px; letter-spacing: .05em; }
+.message__author { display: block; font-size: 12px; color: #cdb98e; margin-bottom: 3px; letter-spacing: .05em; }
 .message__text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.save-note { display: flex; align-items: center; min-height: 32px; background: transparent; font-size: 11px; color: #d6c198; padding: 0; margin-top: 1px; transition: color .3s; }
+.save-note { display: flex; align-items: center; min-height: 32px; background: transparent; font-size: 12px; color: #d6c198; padding: 0; margin-top: 1px; transition: color .3s; }
 .save-note:hover:not(:disabled) { color: #f1dfbd; }
-.chat-options { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 3px; color: #c3cebd; font-size: 11px; }
+/* Private mode (the default) keeps nothing, so no reply offers to keep a point; the latest one says how instead. */
+.save-hint { display: none; font-size: 12px; line-height: 1.5; color: var(--muted); margin-top: 6px; }
+.conversation-panel:has(#private-mode:checked) .save-note { display: none; }
+.conversation-panel:has(#private-mode:checked) .message:last-child .save-hint { display: block; }
+.chat-options { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 3px; color: #c3cebd; font-size: 12px; }
 .toggle { display: flex; align-items: center; gap: 9px; cursor: pointer; }
 .toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .toggle > span { display: block; position: relative; width: 28px; height: 16px; border: 1px solid #94a18b77; border-radius: 12px; background: #233629; transition: background-color .3s, border-color .3s; }
@@ -294,7 +312,7 @@ html[data-stage='4'] .footer-arrow { rotate: 180deg; }
 .toggle input:checked + span::after { translate: 12px 0; background: #e4c995; }
 .toggle input:focus-visible + span { outline: 2px solid #f5d08a; outline-offset: 4px; }
 /* A 32px target that borrows its height from the row padding instead of adding to it. */
-.notes-toggle { display: inline-flex; align-items: center; min-height: 32px; margin-block: -8px; white-space: nowrap; background: transparent; font-size: 11px; padding: 0 4px; color: #d8c69c; transition: color .3s; }
+.notes-toggle { display: inline-flex; align-items: center; min-height: 32px; margin-block: -8px; white-space: nowrap; background: transparent; font-size: 12px; padding: 0 4px; color: #d8c69c; transition: color .3s; }
 .notes-toggle:hover { color: #f1dfbd; }
 .notes-toggle > span { border: 1px solid var(--hair-strong); border-radius: 20px; padding: 0 5px; margin-left: 4px; font-variant-numeric: tabular-nums; }
 .composer { display: flex; gap: 7px; align-items: center; padding: 6px 7px 6px 19px; background: #ebe4d3; border-radius: 50px; color: #14241b; box-shadow: inset 0 1px 0 #fffaf0b3, 0 10px 26px -18px #000; transition: box-shadow .35s var(--ease-soft); }
@@ -330,7 +348,7 @@ html[data-stage='4'] .footer-arrow { rotate: 180deg; }
 .help-dialog a:hover span { color: #f1dfbd; }
 .help-dialog a strong { font-size: 32px; font-weight: 400; color: var(--sand); font-variant-numeric: tabular-nums; }
 .help-dialog a span { font-size: 12px; transition: color .3s; }
-.help-dialog > .fine-print { margin-top: 20px; font-size: 11px !important; }
+.help-dialog > .fine-print { margin-top: 20px; font-size: 12px !important; }
 .dialog-close { position: absolute; right: 16px; top: 12px; background: transparent; font-size: 28px; line-height: 1; color: var(--muted); padding: 5px 9px; border-radius: 50%; transition: color .3s, rotate .45s var(--ease-out); }
 .dialog-close:hover { color: var(--linen); rotate: 90deg; }
 .toast { position: fixed; z-index: 30; top: 96px; left: 50%; transform: translateX(-50%); background: #15291ff7; border-radius: 12px; box-shadow: inset 0 0 0 1px #d1bb8540, 0 20px 50px -20px #020805; padding: 14px 20px; width: max-content; max-width: min(90%, 580px); font-size: 13px; line-height: 1.6; pointer-events: none; }
@@ -395,7 +413,14 @@ html[data-revealed] .scene-caption { animation: rise-in 1.2s var(--ease-out) 1s 
   .header { padding-inline: 3%; }
   .nav { gap: 22px; font-size: 12px; }
   .brand { font-size: 26px; }
-  .sound-label { display: none; }
+  /* Once the "Звук" label no longer fits, the flat wave alone read as a slider or a "minimise" bar: a drawn speaker
+     instead. Off = the speaker crossed out; on = the speaker with one sound arc, in sand. */
+  .sound-button { position: relative; width: 42px; padding: 0; gap: 0; justify-content: center; }
+  .sound-button > span:first-child, .sound-button svg, .sound-label { display: none; }
+  .sound-button::before { content: ''; width: 14px; height: 14px; translate: -3px 0; background: #cdd7c5; clip-path: polygon(0 32%, 30% 32%, 66% 4%, 66% 96%, 30% 68%, 0 68%); transition: background-color .3s; }
+  .sound-button::after { content: ''; position: absolute; left: 50%; top: 50%; width: 22px; height: 1.5px; border-radius: 1px; background: #cdd7c5; translate: -50% -50%; rotate: -45deg; }
+  .sound-button[aria-pressed=true]::before { background: var(--sand); }
+  .sound-button[aria-pressed=true]::after { width: 6px; height: 12px; background: none; border: 1.5px solid var(--sand); border-left: 0; border-radius: 0 12px 12px 0; rotate: none; translate: 5px -50%; }
   .help-button { padding-inline: 16px; }
   .glass { padding: 26px; }
   .journal-panel { right: 4%; width: 55%; }
@@ -408,15 +433,6 @@ html[data-revealed] .scene-caption { animation: rise-in 1.2s var(--ease-out) 1s 
   .header { height: 80px; padding: 16px 22px; }
   .brand { font-size: 27px; }
   .nav { display: none; }
-  .sound-button { width: 42px; padding: 0; justify-content: center; }
-  /* Phones: a drawn speaker instead of the flat wave, which read as a "minimise" bar.
-     Off = the speaker crossed out; on = the speaker with one sound arc, in sand. */
-  .sound-button { position: relative; gap: 0; }
-  .sound-button > span:first-child, .sound-button svg { display: none; }
-  .sound-button::before { content: ''; width: 14px; height: 14px; translate: -3px 0; background: #cdd7c5; clip-path: polygon(0 32%, 30% 32%, 66% 4%, 66% 96%, 30% 68%, 0 68%); transition: background-color .3s; }
-  .sound-button::after { content: ''; position: absolute; left: 50%; top: 50%; width: 22px; height: 1.5px; border-radius: 1px; background: #cdd7c5; translate: -50% -50%; rotate: -45deg; }
-  .sound-button[aria-pressed=true]::before { background: var(--sand); }
-  .sound-button[aria-pressed=true]::after { width: 6px; height: 12px; background: none; border: 1.5px solid var(--sand); border-left: 0; border-radius: 0 12px 12px 0; rotate: none; translate: 5px -50%; }
   .help-button { font-size: 11px; padding: 0 12px; white-space: nowrap; }
   .menu-toggle { display: flex; }
   .header__actions { gap: 7px; }
@@ -427,9 +443,9 @@ html[data-revealed] .scene-caption { animation: rise-in 1.2s var(--ease-out) 1s 
   .hero__description { font-size: 13px; line-height: 1.7; max-width: 240px; }
   .desktop-break { display: none; }
   .primary { margin-top: 20px; min-height: 50px; font-size: 13px; gap: 18px; padding: 0 20px 0 23px; }
-  .hero > .fine-print { margin-top: 12px; font-size: 11px; }
-  .scene-caption { right: 7%; bottom: 85px; font-size: 11px; max-width: 150px; }
-  .scene-caption::before { margin-bottom: 7px; width: 20px; }
+  .hero > .fine-print { margin-top: 12px; font-size: 12px; }
+  /* Low on a phone the caption lay on the island's grass, like a label stuck to the scene. */
+  .scene-caption { display: none; }
   .glass { padding: 19px; border-radius: 12px; }
   .glass .eyebrow { font-size: 10px; letter-spacing: .14em; }
   .glass .eyebrow::before { width: 16px; }
@@ -438,35 +454,31 @@ html[data-revealed] .scene-caption { animation: rise-in 1.2s var(--ease-out) 1s 
      The 72px floor keeps them clear of the footer (verify: bottom <= height - 71). */
   .journal-panel, .privacy-panel, .faq-panel { top: auto; bottom: 72px; left: 4%; right: 4%; width: auto; margin-block: 0; max-height: calc(100svh - 167px); }
   .journal-grid { grid-template-columns: 1fr 1fr; gap: 14px; }
-  .direction { padding: 9px 19px 9px 10px; }
+  .direction { padding: 9px 10px; }
   .direction::before { top: 9px; bottom: 9px; }
   .direction > span { font-size: 10px; letter-spacing: .12em; margin-bottom: 4px; }
   .direction strong { font-size: 13px; line-height: 1.35; }
   .direction small { font-size: 11px; line-height: 1.45; }
-  .direction:not(.is-selected) small { display: none; }
-  .direction b { right: 4px; top: 11px; font-size: 11px; }
-  .direction-status { font-size: 11px; line-height: 1.5; margin-top: 9px; }
+  .direction-status { font-size: 12px; line-height: 1.5; margin-top: 9px; }
   .text-link { font-size: 11px; padding-top: 9px; }
   .process { padding-left: 12px; }
   .process h3 { font-size: 15px; line-height: 1.4; margin-bottom: 14px; }
   .process-step summary { gap: 6px; padding: 12px 0; align-items: flex-start; }
   .process-step summary > span { font-size: 10px; padding-top: 1px; }
-  .process-step summary strong { font-size: 11px; line-height: 1.4; }
-  .process-step summary::after { display: none; }
+  .process-step summary strong { font-size: 12px; line-height: 1.4; }
+  /* A small +/× still says the steps unfold; its line box is lower than the title's, so no row grows. */
+  .process-step summary::after { font-size: 11px; line-height: 1.5; }
   .process-step p { font-size: 11px; line-height: 1.6; padding: 0 0 12px; }
   .quiet-label { font-size: 11px; }
   .body-copy { font-size: 14px; line-height: 1.7; }
   .privacy-points { gap: 6px 16px; padding: 17px 0; }
   .privacy-points span { font-size: 11px; padding-left: 11px; }
-  .disclaimer { font-size: 11px; line-height: 1.7; padding-top: 15px; }
+  .disclaimer { font-size: 12px; line-height: 1.7; padding-top: 15px; }
   .faq-item h3 { font-size: 13px; }
   .faq-item button { padding: 14px 0; gap: 11px; }
   .faq-item [role=region] p { font-size: 12px; line-height: 1.7; padding: 0 0 16px 23px; }
-  /* The FAQ sheet reserves room for its tallest answer (main.ts). */
-  .faq-panel { display: flex; flex-direction: column; }
-  /* Until an answer opens, the reserved room holds the hint as its quiet placeholder; an opening
-     answer takes the room and eases the hint down to the sheet's foot. */
-  .lantern-hint { margin-block: auto; padding-block: 10px; font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-size: 13px; text-align: center; color: #b1bfae; }
+  /* The hint sits right under the questions; the room an answer needs is kept below the sheet (main.ts reserveFaq). */
+  .lantern-hint { margin-top: 12px; font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-size: 13px; text-align: center; color: #b1bfae; }
   .journey-footer { bottom: 19px; left: 6%; right: 6%; gap: 14px; font-size: 10px; letter-spacing: .1em; }
   .journey-footer > button { font-size: 10px; letter-spacing: .12em; gap: 6px; }
   .stage-steps { gap: 4px; }
@@ -479,11 +491,17 @@ html[data-revealed] .scene-caption { animation: rise-in 1.2s var(--ease-out) 1s 
   .scenario-chips::-webkit-scrollbar { display: none; }
   .scenario-chips button { font-size: 11px; padding: 0 11px; }
   #chat-messages { max-height: 11svh; padding: 8px 10px; }
-  .chat-welcome { font-size: 11px; }
-  .chat-options { font-size: 11px; padding-block: 8px; }
-  .message { font-size: 12px; }
+  /* Started: the log takes the chips' row and ~35px more. The scene does not yet re-frame the last stop from the sheet's
+     top on phones, so the growth stays inside the grass below the lotus and the companion. */
+  .conversation-panel:has(.message) { max-height: 43svh; }
+  .conversation-panel:has(.message) #chat-messages { max-height: min(20svh, 170px); }
+  .chat-welcome { font-size: 12px; }
+  .chat-options { font-size: 12px; padding-block: 8px; }
+  .message { font-size: 14px; }
   .composer { padding-left: 15px; }
-  .composer input { font-size: 12px; height: 31px; }
+  /* 16px: iOS Safari zooms the whole fixed layout into any field set smaller. */
+  .composer input { font-size: 16px; height: 31px; }
+  .note textarea { font-size: 16px; }
   .send, .microphone { width: 32px; height: 32px; }
   .chat-disclaimer { font-size: 12px; line-height: 1.4; margin-top: 8px; }
   .chat-disclaimer span { font-size: 11px; line-height: 1.4; }
@@ -505,6 +523,11 @@ html[data-revealed] .scene-caption { animation: rise-in 1.2s var(--ease-out) 1s 
   .header__actions { gap: 6px; }
   .help-button { padding: 0 11px; }
 }
+/* Tall phones: the FAQ sheet hangs from the top that its tallest open answer needs (--faq-open, main.ts reserveFaq).
+   100% is the viewport, as for the 72px floor, so an open sheet ends on that floor (verify: bottom <= height - 71). */
+@media (max-width: 760px) and (min-height: 701px) {
+  .faq-panel.is-reserved { top: max(96px, calc(100% - 72px - var(--faq-open))); bottom: auto; }
+}
 @media (max-height: 740px) and (min-width: 761px) {
   .hero { padding-bottom: 55px; }
   .hero h1 { font-size: 78px; margin: 18px 0; }
@@ -521,35 +544,37 @@ html[data-revealed] .scene-caption { animation: rise-in 1.2s var(--ease-out) 1s 
   .hero h1 { font-size: 52px; margin: 16px 0 14px; }
   .hero__description { font-size: 12px; }
   .primary { min-height: 46px; margin-top: 16px; }
-  .hero > .fine-print { font-size: 11px; }
-  .scene-caption { display: none; }
+  .hero > .fine-print { font-size: 12px; }
   .glass { padding: 16px; }
   .glass h2 { font-size: 28px; margin: 10px 0 16px; }
   .journal-panel { padding: 14px 16px 15px; }
   .journal-panel h2 { margin: 8px 0 11px; }
   .glass .eyebrow { letter-spacing: .12em; }
   .journal-grid { gap: 11px; }
-  .direction { padding: 8px 17px 8px 9px; }
+  .direction { padding: 8px 9px; }
   .direction::before { top: 8px; bottom: 8px; }
   .direction strong { font-size: 12px; }
   .direction > span { margin-bottom: 3px; }
-  .direction small { font-size: 11px; }
-  .direction-status { font-size: 11px; line-height: 1.4; margin-top: 7px; }
+  /* No room for the subtitles here: none of the tabs shows one (the status line under them says it), so none shifts. */
+  .direction small { display: none; }
+  .direction-status { font-size: 12px; line-height: 1.35; margin-top: 7px; }
   .text-link { font-size: 11px; padding-top: 6px; }
   .process { padding-left: 10px; }
   .process h3 { font-size: 13.5px; margin-bottom: 8px; }
-  .process-step summary { padding-block: 8px; }
-  .process-step summary strong { font-size: 11px; line-height: 1.35; }
-  .process-step p { font-size: 11px; line-height: 1.5; padding-bottom: 8px; }
+  /* The 12px titles cost height; tighter rows and no +/× (the first step stands open) give it back. */
+  .process-step summary { padding-block: 7px; }
+  .process-step summary strong { font-size: 12px; line-height: 1.3; }
+  .process-step summary::after { display: none; }
+  .process-step p { font-size: 11px; line-height: 1.45; padding-bottom: 8px; }
   .quiet-label { font-size: 11px; }
   .body-copy { font-size: 12px; line-height: 1.7; }
   .privacy-points { padding-block: 13px; }
   .privacy-points span { font-size: 11px; }
-  .disclaimer { font-size: 11px; line-height: 1.55; padding-top: 12px; }
+  .disclaimer { font-size: 12px; line-height: 1.5; padding-top: 12px; }
   .faq-item button { padding-block: 11px; }
   .faq-item h3 { font-size: 12px; }
   .faq-item [role=region] p { font-size: 11px; line-height: 1.65; padding-bottom: 12px; }
-  .lantern-hint { font-size: 12px; padding-top: 10px; }
+  .lantern-hint { font-size: 12px; margin-top: 10px; }
   /* Short phones: the readable type costs height, so the sheet gives back padding, and the log has
      a fixed height. A first reply then cannot lift the sheet into the lotus and the companion. */
   .conversation-panel { padding: 9px 14px 8px; max-height: 46svh; }
@@ -558,20 +583,28 @@ html[data-revealed] .scene-caption { animation: rise-in 1.2s var(--ease-out) 1s 
   .conversation-heading { margin-bottom: 5px; }
   .scenario-chips { margin: 0 -14px 5px; padding-inline: 14px; }
   #chat-messages { height: 7.5svh; max-height: none; padding-block: 6px; }
-  .chat-welcome { font-size: 11px; }
-  .chat-options { font-size: 11px; padding-block: 2px; }
+  /* Started: the log takes exactly the chips' row (80px ~ 7.5svh + chips), so the sheet's top stays where it was. */
+  .conversation-panel:has(.message) { max-height: 46svh; }
+  .conversation-panel:has(.message) #chat-messages { height: 80px; max-height: none; }
+  .chat-welcome { font-size: 12px; }
+  .chat-options { font-size: 12px; padding-block: 2px; }
+  .message { font-size: 13px; }
   .composer { padding-block: 5px; }
   .chat-disclaimer { font-size: 12px; line-height: 1.3; margin-top: 4px; }
   .chat-disclaimer span { font-size: 11px; line-height: 1.3; }
 }
 
+/* Short desktops (most 1366x768 / 1280x720 laptops with browser chrome): the panels stay narrow enough to leave each
+   station's subject in view (the first lantern beside the FAQ, the front folio beside the journal). */
 @media (max-height: 650px) and (min-width: 761px) {
-  .journal-panel { width: 63%; max-width: 780px; padding: 17px 20px; }
+  .journal-panel { width: 54%; max-width: 780px; padding: 17px 20px; }
   .journal-panel h2 { font-size: 29px; margin: 10px 0 15px; }
   .direction { padding-block: 8px; }
   .direction::before { top: 8px; bottom: 8px; }
   .direction strong { font-size: 13px; }
-  .direction small, .direction-status { font-size: 11px; }
+  .direction small { font-size: 11px; }
+  .direction-status { font-size: 12px; line-height: 1.45; margin-top: 10px; }
+  .text-link { padding-top: 8px; }
   .process h3 { font-size: 16px; margin-bottom: 10px; }
   .process-step summary { padding-block: 10px; }
   .process-step p { font-size: 11px; line-height: 1.6; padding-bottom: 12px; }
@@ -579,25 +612,28 @@ html[data-revealed] .scene-caption { animation: rise-in 1.2s var(--ease-out) 1s 
   .privacy-panel h2 { font-size: 30px; margin: 10px 0 15px; }
   .body-copy { font-size: 13px; line-height: 1.6; }
   .privacy-points { padding-block: 12px; }
-  .disclaimer { font-size: 11px; line-height: 1.55; padding-top: 12px; }
-  .faq-panel { width: 57%; max-width: 680px; padding: 18px 22px; }
+  .disclaimer { font-size: 12px; line-height: 1.55; padding-top: 12px; }
+  .faq-panel { width: 44%; max-width: 680px; padding: 18px 22px; }
   .faq-panel h2 { font-size: 30px; margin: 10px 0 15px; }
   .faq-item h3 { font-size: 13px; }
   .faq-item button { padding-block: 10px; }
   .faq-item [role=region] p { font-size: 12px; line-height: 1.6; padding-bottom: 12px; }
-  .hero { width: 66%; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; align-content: center; justify-content: start; padding-bottom: 36px; }
-  .hero > .eyebrow { grid-column: 1; grid-row: 1; }
-  .hero h1 { grid-column: 1; grid-row: 2 / 5; font-size: 64px; margin: 0; }
-  .hero__description { grid-column: 2; grid-row: 1 / 3; font-size: 13px; align-self: end; }
-  .hero .primary { grid-column: 2; grid-row: 3; justify-self: start; margin: 0; }
-  .hero > .fine-print { grid-column: 2; grid-row: 4; margin: 0; font-size: 11px; }
+  /* One column (art-1): two columns spread the words across the folios and the lotus in the middle of the frame. */
+  .hero { width: 38%; padding-bottom: 36px; }
+  .hero h1 { font-size: 56px; margin: 14px 0 12px; }
+  .hero__description { font-size: 13px; line-height: 1.65; }
+  .hero .primary { margin-top: 16px; }
+  .hero > .fine-print { margin-top: 10px; }
   .conversation-panel { max-height: 46svh; padding: 10px 16px; }
   .conversation-heading { margin-bottom: 6px; }
   .conversation-heading h2 { font-size: 18px; }
   .scenario-chips { margin-bottom: 8px; }
   #chat-messages { max-height: 8svh; padding: 7px 10px; }
-  .chat-welcome { font-size: 11px; }
-  .chat-options { padding-block: 4px; font-size: 11px; }
+  /* Started: the log takes about the chips' row, so the sheet's top stays where it was. */
+  .conversation-panel:has(.message) { max-height: 46svh; }
+  .conversation-panel:has(.message) #chat-messages { max-height: max(80px, 14svh); }
+  .chat-welcome { font-size: 12px; }
+  .chat-options { padding-block: 4px; font-size: 12px; }
   .composer input { height: 31px; }
   .send, .microphone { width: 32px; height: 32px; }
   .chat-disclaimer { font-size: 12px; line-height: 1.35; margin-top: 7px; }
@@ -626,6 +662,10 @@ html[data-revealed] .scene-caption { animation: rise-in 1.2s var(--ease-out) 1s 
 @media (forced-colors: active) {
   .glass, .conversation-panel, .help-dialog, .mobile-nav, .toast { border: 1px solid CanvasText; }
   .stage-steps button::after { background: Highlight; }
+  /* The drawn speaker (<=1100px) is painted with background-color, which forced colours would blank out: keep it in
+     the button's text colour. No `content` here, so wider screens, which keep the text glyph, get no extra boxes. */
+  .sound-button::before, .sound-button[aria-pressed=true]::before, .sound-button::after { forced-color-adjust: none; background: ButtonText; }
+  .sound-button[aria-pressed=true]::after { background: none; border-color: ButtonText; }
 }
 
 .composer input { transform: translateZ(0); }
