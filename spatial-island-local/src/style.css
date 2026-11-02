@@ -178,8 +178,10 @@ html:has(.help-dialog[open]) :is(#webgl-container, .atmosphere) { opacity: 0; vi
 .direction::before { content: ''; position: absolute; left: 0; top: 14px; bottom: 14px; width: 2px; border-radius: 2px; background: var(--sand); scale: 1 0; transition: scale .45s var(--ease-out); }
 .direction > span { display: block; text-transform: uppercase; font-size: 10px; letter-spacing: .14em; color: #a9b6a2; margin-bottom: 6px; transition: color .3s; }
 .direction strong { display: block; font-size: 15px; font-weight: 500; line-height: 1.3; }
-/* One line on every tab, chosen or not: choosing one never changes its height under the finger. */
-.direction small { display: block; color: var(--muted); font-size: 11px; line-height: 1.5; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* One line on every tab, chosen or not: choosing one never changes its height under the finger. Inline-size
+   containment keeps the unbroken line out of the tab's min-content: otherwise the grid track (and the button's own
+   inner box) widens to the whole subtitle, the tabs spill over the process column and the ellipsis never shows. */
+.direction small { display: block; contain: inline-size; color: var(--muted); font-size: 11px; line-height: 1.5; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .direction:hover { background: rgba(236, 230, 218, .035); }
 .direction:active { background: rgba(236, 230, 218, .06); }
 .direction.is-selected { background: rgba(227, 199, 155, .05); }
@@ -660,6 +662,10 @@ html[data-revealed] .scene-caption { animation: rise-in 1.2s var(--ease-out) 1s 
 @media (forced-colors: active) {
   .glass, .conversation-panel, .help-dialog, .mobile-nav, .toast { border: 1px solid CanvasText; }
   .stage-steps button::after { background: Highlight; }
+  /* The drawn speaker (<=1100px) is painted with background-color, which forced colours would blank out: keep it in
+     the button's text colour. No `content` here, so wider screens, which keep the text glyph, get no extra boxes. */
+  .sound-button::before, .sound-button[aria-pressed=true]::before, .sound-button::after { forced-color-adjust: none; background: ButtonText; }
+  .sound-button[aria-pressed=true]::after { background: none; border-color: ButtonText; }
 }
 
 .composer input { transform: translateZ(0); }

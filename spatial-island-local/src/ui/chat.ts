@@ -28,15 +28,15 @@ export function setupChat(onTalking:(value:boolean)=>void,onVoice:(value:number)
   const narrow=matchMedia('(max-width: 400px)'),placeholder=():void=>{input.placeholder=narrow.matches?'Напишіть думку…':'Пишіть так, як думаєте…'}
   placeholder();narrow.addEventListener('change',placeholder)
   const scroll=():void=>{messages.scrollTop=messages.scrollHeight}
-  // `spoken`: a reply that types itself in. Screen readers get the whole reply in the same addition to the log (sr-only),
-  // while the typed copy, rewritten on every step, stays out of the accessibility tree.
-  const add=(role:'user'|'assistant',text:string,spoken?:string):{article:HTMLElement;body:HTMLElement}=>{
+  // `typed`: a reply that types itself in. The typed copy, rewritten on every step, stays out of the accessibility tree;
+  // the whole reply joins the log as one sr-only addition once typing ends (type(), below).
+  const add=(role:'user'|'assistant',text:string,typed=false):{article:HTMLElement;body:HTMLElement}=>{
     messages.querySelector('.chat-welcome')?.remove()
     // All content, including adversarial input and generated replies, enters as text nodes.
     const article=document.createElement('article');article.className=`message message--${role}`
     const author=document.createElement('span');author.className='message__author';author.textContent=role==='user'?'Ви':'Liora · демовідповідь'
     const body=document.createElement('p');body.className='message__text';body.textContent=text;article.append(author,body)
-    if(spoken!==undefined){body.setAttribute('aria-hidden','true');const full=document.createElement('span');full.className='sr-only';full.textContent=spoken;article.append(full)}
+    if(typed)body.setAttribute('aria-hidden','true')
     messages.append(article)
     while(messages.children.length>60)messages.firstElementChild?.remove()
     scroll();return {article,body}
@@ -51,7 +51,7 @@ export function setupChat(onTalking:(value:boolean)=>void,onVoice:(value:number)
     event.preventDefault();const text=input.value.trim().slice(0,500)
     if(!text||busy||disposed)return
     busy=true;input.value='';sync();add('user',text);onTalking(true)
-    const reply=answer(text,turn++),{article,body}=add('assistant','…',reply);messages.setAttribute('aria-busy','true')
+    const reply=answer(text,turn++),{article,body}=add('assistant','…',true);messages.setAttribute('aria-busy','true')
     const began=performance.now()+350
     let offset=0
     const type=():void=>{
@@ -59,11 +59,14 @@ export function setupChat(onTalking:(value:boolean)=>void,onVoice:(value:number)
       offset=matchMedia('(prefers-reduced-motion: reduce)').matches?reply.length:Math.min(reply.length,Math.max(1,Math.floor((performance.now()-began)*.07)));body.textContent=reply.slice(0,offset);scroll()
       if(offset<reply.length){timer=window.setTimeout(type,20);return}
       busy=false;onTalking(false);messages.removeAttribute('aria-busy');sync()
+      // The full reply is added only now, in the task that clears aria-busy: a node added while the log is busy raises no
+      // live-region event (Chromium), and clearing the flag does not replay it, so an earlier copy would go unspoken.
+      const full=document.createElement('span');full.className='sr-only';full.textContent=reply
       // In private mode (the default) the button is hidden (style.css) and the last reply says how to keep a point instead;
       // the hint is visual only: the switch itself carries the same fact for screen readers (aria-describedby).
       const button=document.createElement('button');button.className='save-note';button.textContent='Залишити важливе +';button.type='button';button.addEventListener('click',()=>save(reply,button))
       const hint=document.createElement('p');hint.className='save-hint';hint.setAttribute('aria-hidden','true');hint.textContent='Щоб залишити тезу, вимкніть «Не зберігати цю розмову».'
-      article.append(button,hint);scroll()
+      article.append(full,button,hint);scroll()
     }
     timer=window.setTimeout(type,350)
   }
