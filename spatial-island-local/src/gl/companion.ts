@@ -11,6 +11,8 @@ export interface Companion {
   rightArmGroup:THREE.Group
   leftArmGroup:THREE.Group
   eyesMesh:THREE.Group
+  /** Procedural stand-in (child of the presence-carrying body); hidden unless the GLB fails. */
+  fallback:THREE.Object3D
   readonly ready:boolean
   readonly source:'loading'|'glb'|'fallback'
   /** How much of the character is drawn right now, 0…1 (entrance × presence spring); cheap, unlike inspect(). */
@@ -32,7 +34,8 @@ export interface Companion {
   setPresence?:(value:number)=>void
   loadModel:(url:string)=>Promise<boolean>
   pose:()=>{source:string;bones:string[];rightHand:number[];leftHand:number[]}
-  inspect:()=>{source:string;bones:string[];rightHand:number[];leftHand:number[];bounds:number[][];presence:number}
+  /** Pose and world box as drawn; `settled` measures the figure at full size, as it stands once the entrance is over. */
+  inspect:(settled?:boolean)=>{source:string;bones:string[];rightHand:number[];leftHand:number[];bounds:number[][];presence:number}
   dispose:()=>void
 }
 
@@ -181,7 +184,7 @@ export function createCompanion():Companion {
   const bend=(name:string,x:number,y:number,z:number):void=>{const part=importedParts.get(name);if(part)part.object.quaternion.multiply(turn.setFromEuler(euler.set(x,y,z,'YXZ')))}
 
   const api:Companion={
-    group,headGroup,torsoGroup,rightArmGroup,leftArmGroup,eyesMesh,
+    group,headGroup,torsoGroup,rightArmGroup,leftArmGroup,eyesMesh,fallback:figure,
     get ready(){return source!=='loading'},get source(){return source},get presence(){return Math.max(0,shown)},
     greet(time){
       if(!Number.isFinite(time))return
@@ -196,7 +199,9 @@ export function createCompanion():Companion {
 
       // Entrance: wait for the first drawn frame (compile), then fade in over ENTRANCE while a soft spring (ζ .7)
       // settles the figure from 96 % up to full size. Presence follows `goal` on its own critically damped spring.
-      if(source!=='loading'){
+      // The clock waits while the scene keeps the group hidden for its parallel compile (code-4): a compile longer than
+      // the .6 s fallback timer would otherwise play the whole fade unseen and pop the character in at full opacity.
+      if(source!=='loading'&&group.visible){
         if(loadedAt<0)loadedAt=time
         if(entryStart<0&&(drawn||time-loadedAt>.6)){entryStart=time;entryClock=0;grow.x=ENTRANCE_SCALE;grow.v=0}
       }
@@ -343,7 +348,15 @@ export function createCompanion():Companion {
       }catch(error){if(!disposed){figure.visible=true;group.add(budLight);source='fallback';settle=true;restartEntrance();console.warn('Liora: using the procedural companion.',error instanceof Error?error.message:'Model unavailable')}return false}
     },
     pose(){return {source,bones:[...importedParts.keys()],rightHand:(importedParts.get('hand.R')?.object??rightArmGroup).getWorldPosition(new THREE.Vector3()).toArray(),leftHand:(importedParts.get('hand.L')?.object??leftArmGroup).getWorldPosition(new THREE.Vector3()).toArray()}},
-    inspect(){if(imported)imported.traverse(object=>{if(object instanceof THREE.SkinnedMesh){object.skeleton.update();object.computeBoundingBox()}});const bounds=imported?new THREE.Box3().setFromObject(imported):new THREE.Box3().setFromObject(figure);return {...api.pose(),bounds:[bounds.min.toArray(),bounds.max.toArray()],presence:Math.max(0,shown)}},
+    inspect(settled=false){
+      // Until the entrance runs the body holds ENTRANCE_SCALE (pivot at the cushion); a settled box is taken at full size.
+      const size=body.scale.x,unscale=settled&&size!==1
+      if(unscale){body.scale.setScalar(1);body.updateWorldMatrix(true,true)}
+      if(imported)imported.traverse(object=>{if(object instanceof THREE.SkinnedMesh){object.skeleton.update();object.computeBoundingBox()}})
+      const bounds=imported?new THREE.Box3().setFromObject(imported):new THREE.Box3().setFromObject(figure)
+      if(unscale){body.scale.setScalar(size);body.updateWorldMatrix(false,true)}
+      return {...api.pose(),bounds:[bounds.min.toArray(),bounds.max.toArray()],presence:Math.max(0,shown)}
+    },
     dispose(){disposed=true;viewer=undefined;importedParts.clear();fallbackDepth.dispose();modelDepth.dispose()},
   }
   return api
