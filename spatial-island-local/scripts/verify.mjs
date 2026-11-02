@@ -78,6 +78,16 @@ try{
   await page.evaluate(()=>document.querySelector('canvas').dispatchEvent(new Event('webglcontextlost',{cancelable:true})));assert.equal(await page.locator('.webgl-notice').isVisible(),true);await page.locator('[data-retry]').click();await page.waitForFunction(()=>document.querySelector('#webgl-container canvas')&&document.querySelector('.webgl-notice').hidden);assert.equal(await page.locator('#webgl-container canvas').count(),1);pass('WebGL context loss is recoverable with one replacement canvas')
   assert.equal(report.errors.length,0,report.errors.join('\n'));assert.equal(report.networkFailures.length,0,report.networkFailures.join('\n'))
   const fallback=await browser.newPage({viewport:{width:390,height:844}});await fallback.addInitScript(()=>{const get=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(type,...args){if(String(type).startsWith('webgl'))return null;return get.call(this,type,...args)}});await fallback.goto(base);await fallback.locator('.entry').waitFor({state:'detached'});assert.equal(await fallback.locator('.webgl-notice').isVisible(),true);await fallback.locator('.primary').click();await fallback.waitForFunction(()=>document.documentElement.dataset.stage==='4');await fallback.locator('#chat-input').fill('Тест без WebGL');await fallback.locator('.send').click();await fallback.waitForFunction(()=>document.querySelector('.message--assistant')?.textContent.includes('демовідповідь'));await fallback.close();pass('No-WebGL CSS fallback retains navigation and working chat')
+  // #54: on a phone the snap follows the whole swipe. A finger relaxing a few px back as it lifts (or iOS rubber-banding)
+  // used to read as an upward swipe and send the page back to the stop it had just left.
+  const touch=await browser.newContext({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true}),phone=await touch.newPage()
+  phone.on('pageerror',e=>report.errors.push(e.message))
+  await phone.goto(base);await phone.waitForFunction(()=>document.documentElement.dataset.webgl==='ready',null,{timeout:30000});await phone.locator('.entry').waitFor({state:'detached'});await phone.waitForTimeout(800)
+  const cdp=await touch.newCDPSession(phone),finger=(type,y)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints:type==='touchEnd'?[]:[{x:195,y}]})
+  const swipe=async(from,to,back)=>{await finger('touchStart',from);for(let i=1;i<=12;i++){await finger('touchMove',from+(to-from)*i/12);await phone.waitForTimeout(20)}await phone.waitForTimeout(120);for(let i=1;i<=3;i++){await finger('touchMove',to+back*i/3);await phone.waitForTimeout(25)}await finger('touchEnd');await phone.waitForTimeout(2600);return phone.evaluate(()=>Math.round(window.sanctuary.progress()*4))}
+  for(const stop of [1,2])assert.equal(await swipe(650,450,6),stop,`A downward swipe that relaxes 6 px at the lift lands on stop ${stop}`)
+  assert.equal(await swipe(300,500,-6),1,'An upward swipe that relaxes 6 px at the lift lands on the previous stop')
+  await touch.close();pass('Phone swipes snap with the gesture, not with the finger relaxing as it lifts')
 }finally{
   await writeFile('.checks/verification.json',JSON.stringify(report,null,2));await browser.close()
 }
