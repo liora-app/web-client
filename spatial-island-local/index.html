@@ -68,7 +68,7 @@
         <h2 id="privacy-title" tabindex="-1">Ви вирішуєте,<br /><em>чим ділитися.</em></h2>
         <p class="body-copy">Зберігайте лише обрані тези, змінюйте їх або видаляйте. Розмову можна завершити будь-якої миті.</p>
         <div class="privacy-points"><span>Тільки ваш вибір</span><span>Без акаунта</span><span>У пам’яті цієї вкладки</span></div>
-        <p class="disclaimer">Ця локальна демоверсія відповідає демонстраційно, а записи зникають після оновлення. Liora — AI, не людина, це не терапія й не медична допомога.</p>
+        <p class="disclaimer">Ця демоверсія ще не відповідає на повідомлення, а записи зникають після оновлення. Liora — AI, не людина, це не терапія й не медична допомога.</p>
       </div>
     </section>
     <section class="stage" data-stage="3" id="questions" aria-labelledby="faq-title" inert>
@@ -76,8 +76,8 @@
         <p class="eyebrow">04 / Якщо хочеться знати більше</p>
         <h2 id="faq-title" tabindex="-1">Кілька <em>відповідей.</em></h2>
         <div class="accordion">
-          <div class="faq-item"><h3><button aria-expanded="false" aria-controls="answer-0" id="question-0" data-lantern="0"><span>А якщо я не знаю, що написати?</span><b aria-hidden="true">+</b></button></h3><div id="answer-0" role="region" aria-labelledby="question-0" hidden><p>Це цілком природно. Ви можете обрати готовий сценарій або просто написати одне слово про свій стан — Liora м’яко допоможе розплутати думки без поспіху.</p></div></div>
-          <div class="faq-item"><h3><button aria-expanded="false" aria-controls="answer-1" id="question-1" data-lantern="1"><span>Хто зі мною розмовлятиме?</span><b aria-hidden="true">+</b></button></h3><div id="answer-1" role="region" aria-labelledby="question-1" hidden><p>З вами спілкується алгоритмічний AI-компаньйон, налаштований на емпатичне слухання та спокійні запитання для саморефлексії. Тут немає оцінок чи критики.</p></div></div>
+          <div class="faq-item"><h3><button aria-expanded="false" aria-controls="answer-0" id="question-0" data-lantern="0"><span>А якщо я не знаю, що написати?</span><b aria-hidden="true">+</b></button></h3><div id="answer-0" role="region" aria-labelledby="question-0" hidden><p>Це цілком природно. Ви можете обрати готовий сценарій або просто написати одне слово про свій стан. У справжньому чаті Liora допомагатиме розплутати думки без поспіху.</p></div></div>
+          <div class="faq-item"><h3><button aria-expanded="false" aria-controls="answer-1" id="question-1" data-lantern="1"><span>Хто зі мною розмовлятиме?</span><b aria-hidden="true">+</b></button></h3><div id="answer-1" role="region" aria-labelledby="question-1" hidden><p>AI-компаньйон, а не людина: він ставитиме спокійні запитання для саморефлексії. У цій демоверсії відповідей ще немає.</p></div></div>
           <div class="faq-item"><h3><button aria-expanded="false" aria-controls="answer-2" id="question-2" data-lantern="2"><span>Чи потрібно зберігати розмову?</span><b aria-hidden="true">+</b></button></h3><div id="answer-2" role="region" aria-labelledby="question-2" hidden><p>Ні, за замовчуванням у деморежимі нічого не зберігається після закриття вкладки. Ви самі обираєте, які важливі інсайти зафіксувати для себе.</p></div></div>
         </div>
         <p class="fine-print lantern-hint">Кожне запитання запалює своє світло.</p>
@@ -85,13 +85,13 @@
     </section>
     <section class="stage" data-stage="4" id="conversation" aria-labelledby="chat-title" inert>
       <div class="stage-content conversation-panel">
-        <div class="conversation-heading"><span class="live-dot"></span><h2 id="chat-title" tabindex="-1">Я поруч. <em>Слухаю вас.</em></h2><span class="demo-label">Локальна демоверсія</span></div>
+        <div class="conversation-heading"><h2 id="chat-title" tabindex="-1">Місце для <em>ваших думок.</em></h2><span class="demo-label">Демо без відповідей</span></div>
         <div class="scenario-chips" aria-label="Почніть із готової фрази"><button data-scenario="0">+ Вільна розмова</button><button data-scenario="1">Розбір ситуації</button><button data-scenario="2">Відновити спокій</button></div>
-        <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions" tabindex="0" aria-label="Повідомлення розмови"><p class="chat-welcome">Можна почати з одного слова. Поспішати нікуди.</p></div>
+        <div id="chat-messages" role="log" aria-live="polite" aria-relevant="additions" tabindex="0" aria-label="Повідомлення розмови"><p class="chat-welcome">Демо: відповідей тут поки немає. Думку можна записати для себе — вона лишиться лише в цій вкладці.</p></div>
         <div class="chat-options"><label class="toggle"><input type="checkbox" id="private-mode" checked aria-describedby="private-mode-note" /><span aria-hidden="true"></span>Не зберігати цю розмову</label><span id="private-mode-note" class="sr-only">Поки перемикач увімкнено, тези розмови не зберігаються і кнопок «Залишити важливе» немає.</span><button class="notes-toggle" aria-expanded="false" aria-controls="notes-panel">Важливе <span data-note-count>0</span></button></div>
         <div id="notes-panel" class="notes-panel" hidden><p>Обрані тези залишаються лише до оновлення цієї вкладки.</p><div data-notes></div></div>
-        <form class="composer" autocomplete="off"><label class="sr-only" for="chat-input">Ваше повідомлення</label><input id="chat-input" type="text" maxlength="500" placeholder="Пишіть так, як думаєте…" /><button class="microphone" type="button" aria-pressed="false" aria-label="Увімкнути голосове введення"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/></svg></button><button class="send" type="submit" aria-label="Надіслати повідомлення" disabled>↑</button></form>
-        <p class="chat-disclaimer">AI, не людина · може помилятися · не терапія<br /><span>Текст розмови не надсилається серверу. Після оновлення зникнуть розмова й обрані тези.</span></p>
+        <form class="composer" autocomplete="off"><label class="sr-only" for="chat-input">Ваше повідомлення</label><input id="chat-input" type="text" maxlength="500" placeholder="Пишіть так, як думаєте…" /><button class="send" type="submit" aria-label="Надіслати повідомлення" disabled>↑</button></form>
+        <p class="chat-disclaimer">Демо без відповідей · Liora — AI, не людина · не терапія<br /><span>Текст розмови не надсилається серверу. Після оновлення зникнуть розмова й обрані тези.</span></p>
       </div>
     </section>
   </main>

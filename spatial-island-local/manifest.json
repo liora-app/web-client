@@ -5,7 +5,7 @@
   },
   {
     "path": "index.html",
-    "sha256": "d1593b239afbae3c0dba4c8bf0e218f49e79d19ee6fa23d67e807128c6a1485b"
+    "sha256": "6e94d2b42a3ce51a53f06f87f4d4d1ad94566b216bc9fc76cc4272bf5f6cfbca"
   },
   {
     "path": "package-lock.json",
@@ -61,7 +61,7 @@
   },
   {
     "path": "README.md",
-    "sha256": "1cfe91c3b4d45df803c134898573b17c7971904bedb80082a879a44fc297fd7a"
+    "sha256": "9b971e3e95dea136055207d5ce036dc1249d75c0209e7abb8d0e753b44771004"
   },
   {
     "path": "scripts/jost-ukrainian.py",
@@ -81,11 +81,11 @@
   },
   {
     "path": "scripts/verify-production.mjs",
-    "sha256": "c66be0cbbeb0275c1ecb7fe0e7f69ea1b0955d610cf1686f0ba5cd06b42e36cb"
+    "sha256": "4440b7f6dec57947c99bb515c1f7620ac56dbf17d5b294658bdafb6ddba80d88"
   },
   {
     "path": "scripts/verify.mjs",
-    "sha256": "c2a4355b4c355f6030ec343fecdcd3ca20c6e322ae937ec8481ff1c2e23745fe"
+    "sha256": "27d5395fb43ce42914b840abbdd53064c38f48a8626ae085b68344e14e736409"
   },
   {
     "path": "SPECIFICATION-CINEMATIC.md",
@@ -97,7 +97,7 @@
   },
   {
     "path": "SPECIFICATION.md",
-    "sha256": "a93538d4c278a5defc1e37b4e95f36d0005776d44212d5f972fcca10a7b3cd8f"
+    "sha256": "4c918ae73abfc7b0317660816eb01ce1e1c5f7feb0f422b1f4c50fbdb82765fb"
   },
   {
     "path": "src/fonts.css",
@@ -173,23 +173,19 @@
   },
   {
     "path": "src/main.ts",
-    "sha256": "73b5afe00af802dc6d6ddb2eaa7609b2ec53ca7901c6631f13e5e90210756768"
+    "sha256": "38aaee31f7bee3f23e10a55e5825da094611ac8f441fd68605398626034ceff7"
   },
   {
     "path": "src/style.css",
-    "sha256": "e2ac2ab0e07c1950d9d283d591d9d827db698eaa4cd015281d1e6cdd28f87add"
+    "sha256": "474f18cfaf3449634a61e6d6a033242739e8dd97c4e12fe8573bd1923a9cee52"
   },
   {
     "path": "src/ui/chat.ts",
-    "sha256": "51a60e5310d47e50af0caac4aedfbdb766f688f11074abf7568806105ca221c8"
+    "sha256": "2ee44bc0546573e6cc9bb90ef5e4388f30bcde41e034118d242500e51cab3f10"
   },
   {
     "path": "src/ui/sound.ts",
     "sha256": "11dcb956d1d24fe1a66a057adf75cc7d8ddc3d90309aa1e25f1a87f4a029eb7a"
-  },
-  {
-    "path": "src/ui/voice.ts",
-    "sha256": "5f8072b77ef22493ed1116d46fc87646943dccfd422c2696582d881298f9ca58"
   },
   {
     "path": "tsconfig.json",
@@ -197,6 +193,6 @@
   },
   {
     "path": "vite.config.ts",
-    "sha256": "f1b650139a14a9e58d34f26654c262017de7c19d57646c446fd8e4dbe2ea4ef1"
+    "sha256": "8d6a5c06005fa91085abb72e9c7be16558ef18ebb04b6a4e7ce4bf7a303ff4dc"
   }
 ]
