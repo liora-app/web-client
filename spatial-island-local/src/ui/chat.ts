@@ -26,16 +26,17 @@ export function setupChat(notify:(text:string)=>void,onHelp:()=>void):ChatContro
     const body=document.createElement('p');body.className='message__text';body.textContent=text;article.append(author,body)
     messages.append(article);trim();scroll();return article
   }
-  // One notice, always last: moved to the end on every message, so the log announces it again each time.
+  // One notice, always last. A new node on every message: Chromium does not announce a node that only moves within the
+  // same live region, while a new one is an addition; removing the old one is not announced (aria-relevant=additions).
   const showNotice=():void=>{
-    if(!notice){
-      notice=document.createElement('article');notice.className='message message--notice'
-      const author=document.createElement('span');author.className='message__author';author.textContent='Демо · не AI'
-      const body=document.createElement('p');body.className='message__text';body.textContent='Тут поки ніхто не відповідає й не читає повідомлень. Якщо зараз важко, не лишайтеся з цим наодинці.'
-      const help=document.createElement('button');help.className='notice-help';help.type='button';help.textContent='Куди звернутися →';help.addEventListener('click',onHelp)
-      notice.append(author,body,help)
-    }
-    messages.append(notice);trim();scroll()
+    notice?.remove()
+    notice=document.createElement('article');notice.className='message message--notice'
+    const author=document.createElement('span');author.className='message__author';author.textContent='Демо · не AI'
+    const body=document.createElement('p');body.className='message__text';body.textContent='Тут поки ніхто не відповідає й не читає повідомлень. Якщо зараз важко, не лишайтеся з цим наодинці.'
+    const help=document.createElement('button');help.className='notice-help';help.type='button';help.textContent='Куди звернутися →';help.addEventListener('click',onHelp)
+    notice.append(author,body,help);messages.append(notice);trim();scroll()
+    // A log shorter than the notice (80px on short phones, style.css) shows its start, not just the button.
+    if(notice.offsetHeight>messages.clientHeight)messages.scrollTop+=notice.getBoundingClientRect().top-messages.getBoundingClientRect().top
   }
   const updateNotes=():void=>{noteCount.textContent=String(notesHost.children.length)}
   const save=(text:string,button:HTMLButtonElement):void=>{

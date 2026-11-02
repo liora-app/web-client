@@ -5,7 +5,7 @@
   },
   {
     "path": "index.html",
-    "sha256": "cdf6b594e82edaf81e43367eb48f8be2ff8f274a8cc32d423d61f6ec056bc91a"
+    "sha256": "6e94d2b42a3ce51a53f06f87f4d4d1ad94566b216bc9fc76cc4272bf5f6cfbca"
   },
   {
     "path": "package-lock.json",
@@ -61,7 +61,7 @@
   },
   {
     "path": "README.md",
-    "sha256": "1cfe91c3b4d45df803c134898573b17c7971904bedb80082a879a44fc297fd7a"
+    "sha256": "9b971e3e95dea136055207d5ce036dc1249d75c0209e7abb8d0e753b44771004"
   },
   {
     "path": "scripts/jost-ukrainian.py",
@@ -81,11 +81,11 @@
   },
   {
     "path": "scripts/verify-production.mjs",
-    "sha256": "1d130adac816af3e05305a8f3df444d349555757203ccffc874c6274fe2d7a1d"
+    "sha256": "4440b7f6dec57947c99bb515c1f7620ac56dbf17d5b294658bdafb6ddba80d88"
   },
   {
     "path": "scripts/verify.mjs",
-    "sha256": "2a577fb6f6cb626a2393503f2f33ab1b1d04fbea5ed47b3a72b668b1f23d2467"
+    "sha256": "27d5395fb43ce42914b840abbdd53064c38f48a8626ae085b68344e14e736409"
   },
   {
     "path": "SPECIFICATION-CINEMATIC.md",
@@ -97,7 +97,7 @@
   },
   {
     "path": "SPECIFICATION.md",
-    "sha256": "588e068ef277a74c03a2aa71212e40627f887257e3a2d9e81a6f0923e86a3841"
+    "sha256": "4c918ae73abfc7b0317660816eb01ce1e1c5f7feb0f422b1f4c50fbdb82765fb"
   },
   {
     "path": "src/fonts.css",
@@ -181,7 +181,7 @@
   },
   {
     "path": "src/ui/chat.ts",
-    "sha256": "5183e02a2e5b4438a44263d8663f48e9fc0b6c76d37b390996ab0d0423972502"
+    "sha256": "2ee44bc0546573e6cc9bb90ef5e4388f30bcde41e034118d242500e51cab3f10"
   },
   {
     "path": "src/ui/sound.ts",
@@ -193,6 +193,6 @@
   },
   {
     "path": "vite.config.ts",
-    "sha256": "f2ec0f7a8bc45cc95f3a08b63dded221bf29f8e36cdc9e4d88408bc595842ecc"
+    "sha256": "8d6a5c06005fa91085abb72e9c7be16558ef18ebb04b6a4e7ce4bf7a303ff4dc"
   }
 ]
