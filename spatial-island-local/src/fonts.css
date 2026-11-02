@@ -1,4 +1,5 @@
-/* Original Solitus for Latin display lettering; Jost supplies Ukrainian glyphs. */
+/* Original Solitus for Latin display lettering; Jost supplies the Cyrillic. Jost has no і ї є (І Ї Є): the two
+   jost-ukrainian-* files (scripts/jost-ukrainian.py) give them from Jost's own i ï I Ï and mirrored э Э. ґ Ґ fall back. */
 @font-face {
   font-family: 'Solitus';
   font-style: normal;
@@ -14,7 +15,25 @@
   font-weight: 100 900;
   font-display: swap;
   src: url(/fonts/jost/jost-cyrillic.woff2) format('woff2');
-  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+  unicode-range: U+0301, U+0400-0403, U+0405, U+0408-0453, U+0455, U+0458-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+/* Ukrainian і І ї Ї */
+@font-face {
+  font-family: 'Jost';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url(/fonts/jost/jost-ukrainian-i.woff2) format('woff2');
+  unicode-range: U+0406-0407, U+0456-0457;
+}
+/* Ukrainian є Є */
+@font-face {
+  font-family: 'Jost';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url(/fonts/jost/jost-ukrainian-ye.woff2) format('woff2');
+  unicode-range: U+0404, U+0454;
 }
 /* latin-ext */
 @font-face {
