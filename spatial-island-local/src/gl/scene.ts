@@ -230,7 +230,7 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
   // The companion's box (companion.inspect: the posed GLB, or the stand-in before it arrives); measured again once the GLB shows.
   let avatarCorners:THREE.Vector3[]|undefined,refit=false
   const avatarPoints=():THREE.Vector3[]=>{
-    if(!avatarCorners){companion.group.updateWorldMatrix(true,true);const [min,max]=companion.inspect().bounds;avatarCorners=[];for(const x of [min[0],max[0]])for(const y of [min[1],max[1]])for(const z of [min[2],max[2]])avatarCorners.push(new THREE.Vector3(x,y,z))}
+    if(!avatarCorners){companion.group.updateWorldMatrix(true,true);const [min,max]=companion.inspect(true).bounds;avatarCorners=[];for(const x of [min[0],max[0]])for(const y of [min[1],max[1]])for(const z of [min[2],max[2]])avatarCorners.push(new THREE.Vector3(x,y,z))}
     return avatarCorners
   }
   /** Aim the probe camera like stop k's camera, through `fov` and without any view offset. */
@@ -375,7 +375,8 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
     camera.setViewOffset(innerWidth,innerHeight,blend(framing.x,OFFSET_LEGS,progress)*innerWidth,blend(framing.y,OFFSET_LEGS,progress)*innerHeight,innerWidth,innerHeight)
     companion.setPresence?.(1-THREE.MathUtils.smoothstep(progress,PRESENCE_OUT[0],PRESENCE_OUT[1])+THREE.MathUtils.smoothstep(progress,PRESENCE_IN[0],PRESENCE_IN[1]))
     lotus.update(elapsed,reduced);island.update(elapsed,reduced);companion.update(elapsed,breath,pointer,talking,reduced)
-    // A new model is measured for the final framing once it holds its seated pose (after an update, not in its bind pose).
+    // A new model is measured for the final framing once it holds its seated pose (after an update, not in its bind pose),
+    // at full size: the entrance has not started yet and still holds the body at 96 %.
     if(refit){refit=false;avatarCorners=undefined;reframe(false)}
     // The wave waits for the character to be there and the camera to rest at the final stop (motion-14e), so its peak no
     // longer lands mid-flight; a flight bound elsewhere never greets on the way.

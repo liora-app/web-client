@@ -34,7 +34,8 @@ export interface Companion {
   setPresence?:(value:number)=>void
   loadModel:(url:string)=>Promise<boolean>
   pose:()=>{source:string;bones:string[];rightHand:number[];leftHand:number[]}
-  inspect:()=>{source:string;bones:string[];rightHand:number[];leftHand:number[];bounds:number[][];presence:number}
+  /** Pose and world box as drawn; `settled` measures the figure at full size, as it stands once the entrance is over. */
+  inspect:(settled?:boolean)=>{source:string;bones:string[];rightHand:number[];leftHand:number[];bounds:number[][];presence:number}
   dispose:()=>void
 }
 
@@ -347,7 +348,15 @@ export function createCompanion():Companion {
       }catch(error){if(!disposed){figure.visible=true;group.add(budLight);source='fallback';settle=true;restartEntrance();console.warn('Liora: using the procedural companion.',error instanceof Error?error.message:'Model unavailable')}return false}
     },
     pose(){return {source,bones:[...importedParts.keys()],rightHand:(importedParts.get('hand.R')?.object??rightArmGroup).getWorldPosition(new THREE.Vector3()).toArray(),leftHand:(importedParts.get('hand.L')?.object??leftArmGroup).getWorldPosition(new THREE.Vector3()).toArray()}},
-    inspect(){if(imported)imported.traverse(object=>{if(object instanceof THREE.SkinnedMesh){object.skeleton.update();object.computeBoundingBox()}});const bounds=imported?new THREE.Box3().setFromObject(imported):new THREE.Box3().setFromObject(figure);return {...api.pose(),bounds:[bounds.min.toArray(),bounds.max.toArray()],presence:Math.max(0,shown)}},
+    inspect(settled=false){
+      // Until the entrance runs the body holds ENTRANCE_SCALE (pivot at the cushion); a settled box is taken at full size.
+      const size=body.scale.x,unscale=settled&&size!==1
+      if(unscale){body.scale.setScalar(1);body.updateWorldMatrix(true,true)}
+      if(imported)imported.traverse(object=>{if(object instanceof THREE.SkinnedMesh){object.skeleton.update();object.computeBoundingBox()}})
+      const bounds=imported?new THREE.Box3().setFromObject(imported):new THREE.Box3().setFromObject(figure)
+      if(unscale){body.scale.setScalar(size);body.updateWorldMatrix(false,true)}
+      return {...api.pose(),bounds:[bounds.min.toArray(),bounds.max.toArray()],presence:Math.max(0,shown)}
+    },
     dispose(){disposed=true;viewer=undefined;importedParts.clear();fallbackDepth.dispose();modelDepth.dispose()},
   }
   return api
