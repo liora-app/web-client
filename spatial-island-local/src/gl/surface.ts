@@ -16,7 +16,8 @@ export interface SurfaceOptions {
   fine?:number
   /** Albedo variation, 0..1. Default .16. */
   variation?:number
-  /** Colour the variation drifts towards in patches. Default white (no tint). */
+  /** Colour the variation drifts towards in patches. It MULTIPLIES the albedo: a dark tint (#8a8a62 ≈ .25 linear) makes
+   *  patches four times darker, so keep it light (≥ ~#c8c8c8). Default white (no tint). */
   tint?:THREE.ColorRepresentation
   /** Darkening in noise valleys, 0..1. Default .22. */
   cavity?:number
@@ -48,13 +49,15 @@ export function surfaceNoise():THREE.DataTexture {
   return noiseTexture
 }
 
-const vertexPars='varying vec3 vSurfWorld;varying vec3 vSurfNormal;\n'
+/** World offset subtracted before sampling: scene.ts copies the island's bob here each frame, so relief does not crawl. */
+export const surfaceOrigin={value:new THREE.Vector3()}
+const vertexPars='uniform vec3 uSurfOrigin;varying vec3 vSurfWorld;varying vec3 vSurfNormal;\n'
 const vertexMain=`
   vec4 surfWorld=vec4(transformed,1.);vec3 surfNormal=objectNormal;
   #ifdef USE_INSTANCING
     surfWorld=instanceMatrix*surfWorld;surfNormal=mat3(instanceMatrix)*surfNormal;
   #endif
-  surfWorld=modelMatrix*surfWorld;vSurfWorld=surfWorld.xyz;vSurfNormal=normalize(mat3(modelMatrix)*surfNormal);`
+  surfWorld=modelMatrix*surfWorld;vSurfWorld=surfWorld.xyz-uSurfOrigin;vSurfNormal=normalize(mat3(modelMatrix)*surfNormal);`
 const fragmentPars=`
   uniform sampler2D uSurfNoise;uniform float uSurfScale,uSurfBump,uSurfFine,uSurfVariation,uSurfCavity,uSurfRoughness;
   uniform vec3 uSurfTint,uSurfMossColor,uSurfMoss;varying vec3 vSurfWorld;varying vec3 vSurfNormal;
@@ -80,7 +83,7 @@ const normalMain=`
 export function applySurface<T extends THREE.MeshStandardMaterial>(material:T,options:SurfaceOptions={}):T {
   const moss=options.moss
   const uniforms={
-    uSurfNoise:{value:surfaceNoise()},uSurfScale:{value:options.scale??1.2},uSurfBump:{value:options.bump??.018},uSurfFine:{value:options.fine??.35},
+    uSurfOrigin:surfaceOrigin,uSurfNoise:{value:surfaceNoise()},uSurfScale:{value:options.scale??1.2},uSurfBump:{value:options.bump??.018},uSurfFine:{value:options.fine??.35},
     uSurfVariation:{value:options.variation??.16},uSurfTint:{value:new THREE.Color(options.tint??'#ffffff')},uSurfCavity:{value:options.cavity??.22},
     uSurfRoughness:{value:options.roughnessVariation??.12},uSurfMossColor:{value:new THREE.Color(moss?.color??'#3d5a3a')},
     uSurfMoss:{value:new THREE.Vector3(moss?.amount??0,moss?.low??.35,moss?.high??.8)},
@@ -97,7 +100,7 @@ export function applySurface<T extends THREE.MeshStandardMaterial>(material:T,op
       .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>'+roughnessMain)
       .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>'+normalMain)
   }
-  material.customProgramCacheKey=()=>key+'|surface-v1'
+  material.customProgramCacheKey=()=>key+'|surface-v2'
   material.needsUpdate=true
   return material
 }

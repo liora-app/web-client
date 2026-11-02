@@ -15,6 +15,8 @@ export interface Lighting {
   /** Re-render the soft shadow map now (e.g. after the GLB arrives). */
   refreshShadow:()=>void
   update:(frameIndex:number)=>void
+  /** Free the prefiltered sky environment and the shadow map. */
+  dispose:()=>void
 }
 
 function skyEnvironment(renderer:THREE.WebGLRenderer):THREE.Texture {
@@ -33,7 +35,7 @@ function skyEnvironment(renderer:THREE.WebGLRenderer):THREE.Texture {
 }
 
 export function createLighting(scene:THREE.Scene,renderer:THREE.WebGLRenderer):Lighting {
-  scene.environment=skyEnvironment(renderer);scene.environmentIntensity=2.4
+  const environment=skyEnvironment(renderer);scene.environment=environment;scene.environmentIntensity=2.4
   // Light comes from the moon's side of the sky but higher than the disc drawn low over the water, so tops and faces read.
   const azimuth=Math.atan2(moonDirection.z,moonDirection.x)+.35,elevation=.72
   const moon=new THREE.DirectionalLight('#b9cfe0',3.2);moon.position.set(Math.cos(elevation)*Math.cos(azimuth),Math.sin(elevation),Math.cos(elevation)*Math.sin(azimuth)).multiplyScalar(10)
@@ -49,5 +51,6 @@ export function createLighting(scene:THREE.Scene,renderer:THREE.WebGLRenderer):L
     refreshShadow(){moon.shadow.needsUpdate=true},
     // The soft shadow map refreshes every third frame; lights and animation update every frame.
     update(frameIndex){if(frameIndex%3===0)moon.shadow.needsUpdate=true},
+    dispose(){environment.dispose();moon.shadow.map?.dispose()},
   }
 }

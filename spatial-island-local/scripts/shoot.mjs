@@ -3,6 +3,7 @@
 // Usage: node scripts/shoot.mjs --tag before [--url http://127.0.0.1:8083/] [--out .checks/shots]
 //        [--size 1440x900] [--dpr 1.25] [--stops 0,.25,.5,.75,1] [--settle 2600]
 //        [--eval "window.sanctuary.selectLantern(1)"]  (runs once after boot, before the stops)
+//        [--reduced]  (emulates prefers-reduced-motion: reduce)
 //        [--clip 600,250,500,400]  (also saves <tag>-<i>-clip.png of that CSS-pixel rect at each stop)
 // --perf turns vsync and the frame-rate limit off, so fps/p95 reflect GPU time, not the display cap.
 // Without it the page runs at the display rate (gentler on a shared GPU); use that for look checks.
@@ -19,7 +20,7 @@ const out = arg('out', '.checks/shots'), tag = arg('tag', 'shot')
 const [width, height] = arg('size', '1440x900').split('x').map(Number)
 const dpr = Number(arg('dpr', '1.25')), settle = Number(arg('settle', '2600'))
 const stops = arg('stops', '0,.25,.5,.75,1').split(',').map(Number)
-const noAvatar = process.argv.includes('--no-avatar'), perf = process.argv.includes('--perf')
+const noAvatar = process.argv.includes('--no-avatar'), perf = process.argv.includes('--perf'), reduced = process.argv.includes('--reduced')
 const evalCode = arg('eval', ''), clipArg = arg('clip', '')
 const clip = clipArg ? (([x, y, w, h]) => ({ x, y, width: w, height: h }))(clipArg.split(',').map(Number)) : null
 await mkdir(out, { recursive: true })
@@ -42,7 +43,7 @@ const browser = await chromium.launch({
 }).catch(async e => { await release(); throw e })
 const report = { url, tag, viewport: `${width}x${height}@${dpr}`, noAvatar, perf, renderer: '', load: {}, stops: [], errors: [] }
 try {
-  const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: dpr, reducedMotion: 'no-preference' })
+  const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: dpr, reducedMotion: reduced ? 'reduce' : 'no-preference' })
   if (noAvatar) await page.route('**/*.glb', r => r.abort())
   page.on('pageerror', e => report.errors.push(e.message))
   page.on('console', m => { if (m.type() === 'error') report.errors.push(m.text()) })

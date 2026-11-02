@@ -8,6 +8,7 @@ import { createEnvironment } from './environment'
 import { createLighting } from './lighting'
 import { createGlow } from './glow'
 import { configureRenderer,createPost } from './post'
+import { surfaceOrigin } from './surface'
 
 export interface SanctuaryScene {
   setProgress:(progress:number,velocity:number)=>void;setPointer:(x:number,y:number)=>void
@@ -67,7 +68,7 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
     if(disposed||contextLost)return
     const rawDelta=lastStamp?Math.max(0,(stamp-lastStamp)/1000):1/60,delta=Math.min(.25,rawDelta);lastStamp=stamp;elapsed+=rawDelta
     if(rawDelta>0&&rawDelta<.5){frameTimes.push(rawDelta*1000);if(frameTimes.length>120)frameTimes.shift()}
-    const breath=breathe(elapsed);lastBreath=breath;island.group.position.y=reduced?0:Math.sin(elapsed*.6)*.045
+    const breath=breathe(elapsed);lastBreath=breath;island.group.position.y=reduced?0:Math.sin(elapsed*.6)*.045;surfaceOrigin.value.copy(island.group.position)
     cameraRig.sample(progress,position);targetRig.sample(progress,target)
     const calm=progress>.85?.3:1
     parallaxX=THREE.MathUtils.lerp(parallaxX,reduced?0:pointer.x*.2*calm,1-Math.exp(-3.08*delta));parallaxY=THREE.MathUtils.lerp(parallaxY,reduced?0:pointer.y*.12*calm,1-Math.exp(-3.08*delta))
@@ -109,6 +110,6 @@ export async function createSanctuary(host:HTMLElement,onLantern:(index:number)=
       const look=post.inspect()
       return {progress,camera:camera.position.toArray(),target:target.toArray(),coreScale:glow.core.scale.toArray(),breath:lastBreath,avatar,framing:{avatar:projectBox(new THREE.Box3(new THREE.Vector3().fromArray(avatar.bounds[0]),new THREE.Vector3().fromArray(avatar.bounds[1]))),lotus:lotusBounds},lanterns:island.lanterns.map(l=>l.material.emissiveIntensity),lanternScreens:island.lanterns.map(l=>{const p=l.body.getWorldPosition(new THREE.Vector3()).project(camera);return [(p.x*.5+.5)*innerWidth,(.5-p.y*.5)*innerHeight]}),privacyClosure:island.privacyState.closure,paperOrbit:island.paperState.orbit,resources:{...renderer.info.memory},calls:renderer.info.render.calls,cinematic:{grass:island.grass.count,petals:lotus.petalCount,particles:glow.particleCount,mistLayers:environment.mists.length,silhouettes:6,bloom:look.bloom,exposure:look.exposure,transmission:lotus.material.transmission,grain:look.grain,fps:1000/median,frameP95:sorted[Math.floor(sorted.length*.95)]??median,triangles:renderer.info.render.triangles,cameraClearance:clearance}}
     },
-    dispose(){if(disposed)return;disposed=true;cancelAnimationFrame(frame);privacyTween?.kill();paperTween?.kill();window.removeEventListener('resize',resize);window.removeEventListener('pointerup',onClick);window.removeEventListener('pointermove',onMove);document.removeEventListener('visibilitychange',visibility);renderer.domElement.removeEventListener('webglcontextlost',lost);document.body.classList.remove('lantern-hover');companion.dispose();disposeObject(scene);lighting.moon.shadow.map?.dispose();post.dispose();renderer.dispose();renderer.domElement.remove()},
+    dispose(){if(disposed)return;disposed=true;cancelAnimationFrame(frame);privacyTween?.kill();paperTween?.kill();window.removeEventListener('resize',resize);window.removeEventListener('pointerup',onClick);window.removeEventListener('pointermove',onMove);document.removeEventListener('visibilitychange',visibility);renderer.domElement.removeEventListener('webglcontextlost',lost);document.body.classList.remove('lantern-hover');companion.dispose();disposeObject(scene);lighting.dispose();post.dispose();renderer.dispose();renderer.domElement.remove()},
   }
 }
