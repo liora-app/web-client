@@ -104,14 +104,40 @@ makeGrain()
 updatePresentation(0)
 const tween=gsap.to(state,{p:1,ease:'none',duration:1,paused:true,onUpdate:()=>updatePresentation(state.p)})
 // Numeric document bounds avoid an early body-margin measurement before the font/CSS paint.
+// The stops are 100svh tall, but the scroll range is the wrapper minus the layout viewport, which grows when a phone's
+// toolbar hides, with no refresh (ScrollTrigger ignores those resizes): the last stop fell past the end of the page.
+// Measured against the largest viewport (lvh, 100vh where lvh is unknown) every stop stays reachable either way (#54).
+const scrollWrapper=document.querySelector<HTMLElement>('#scroll-wrapper')!,lvhProbe=document.createElement('div')
+lvhProbe.setAttribute('aria-hidden','true');Object.assign(lvhProbe.style,{position:'fixed',top:'0',left:'0',width:'0',height:'100vh',visibility:'hidden',pointerEvents:'none'});lvhProbe.style.height='100lvh'
+document.body.append(lvhProbe);cleanup.push(()=>lvhProbe.remove())
+const scrollRange=():number=>Math.max(1,scrollWrapper.offsetHeight-Math.max(innerHeight,lvhProbe.offsetHeight))
+// Snapping follows the whole gesture from the stop the page last rested on, not the last frame's direction: a finger
+// relaxing a few px back as it lifts (or iOS rubber-banding at the end of a glide) read as an upward swipe and the
+// directional snap sent the page back to the stop it had just left (#54). A nudge under NUDGE returns to that stop.
+const NUDGE=.006,SETTLED=.02
+let restStop=0
+const nearestStop=(p:number):number=>stops.reduce((best,stop)=>Math.abs(stop-p)<Math.abs(best-p)?stop:best)
+// Should the page still stop short of the trigger's end (a viewport the range above did not foresee), its bottom counts as
+// the last stop: otherwise the snap aims at 1, lands at the bottom, reads that as having left 1, and sends the page back.
+const reachable=():number=>{const range=trigger.end-trigger.start;return range>0?Math.min(1,Math.max(.5,(document.documentElement.scrollHeight-innerHeight-trigger.start)/range)):1}
+const resting=(p:number):number=>Math.min(1,p/reachable())
+const snapStop=(value:number):number=>{
+  const at=resting(value),moved=at-restStop;if(Math.abs(moved)<NUDGE)return restStop
+  const ahead=stops.filter(stop=>moved>0?stop>restStop:stop<restStop)
+  return ahead.length?ahead.reduce((best,stop)=>Math.abs(stop-at)<Math.abs(best-at)?stop:best):restStop
+}
 // ScrollTrigger (3.15) reads scrub and snap only when it is created, so motion() rebuilds the trigger instead of editing
 // its vars. With reduced motion the snap is an instant cut (directional, like the eased one): nobody is left in a dead
 // zone between two panels, and one wheel step reaches the next stop.
-const makeTrigger=():ScrollTrigger=>ScrollTrigger.create({trigger:'#scroll-wrapper',start:0,end:()=>Math.max(1,document.querySelector<HTMLElement>('#scroll-wrapper')!.offsetHeight-innerHeight),invalidateOnRefresh:true,animation:tween,scrub:reduced?.35:1.2,snap:{snapTo:stops,duration:reduced?{min:0,max:.01}:{min:.4,max:.85},delay:.05,ease:reduced?'none':'power2.inOut',inertia:false}})
+const makeTrigger=():ScrollTrigger=>ScrollTrigger.create({trigger:'#scroll-wrapper',start:0,end:scrollRange,invalidateOnRefresh:true,animation:tween,scrub:reduced?.35:1.2,snap:{snapTo:snapStop,duration:reduced?{min:0,max:.01}:{min:.4,max:.85},delay:.05,ease:reduced?'none':'power2.inOut',inertia:false}})
 let trigger=makeTrigger()
+// Each rest re-anchors the snap (a snap's end, a jump's arrival, a stop reached by hand); a refresh re-anchors to the nearest.
+const settle=():void=>{const p=resting(trigger.progress),near=nearestStop(p);if(Math.abs(near-p)<SETTLED)restStop=near}
+const reanchor=():void=>{restStop=nearestStop(resting(trigger.progress))}
+reanchor();ScrollTrigger.addEventListener('scrollEnd',settle);cleanup.push(()=>ScrollTrigger.removeEventListener('scrollEnd',settle))
 // A refresh (resize, fonts) reverts and re-renders the scrubbed tween: the revert runs onUpdate at p=0 and the restore to
 // the scroll's progress is silent, so the panels stayed on the hero while state.p was back at its stop. Re-present then.
-const refreshed=():void=>updatePresentation(state.p)
+const refreshed=():void=>{updatePresentation(state.p);reanchor()}
 ScrollTrigger.addEventListener('refresh',refreshed);cleanup.push(()=>ScrollTrigger.removeEventListener('refresh',refreshed))
 let layoutFrame=0
 // svh can settle a frame after the browser's resize event. Observe the actual scroll surface.
@@ -154,7 +180,7 @@ const stopFlight=():void=>{if(!flight)return;flight.kill();flight=undefined;stea
 const go=(index:number):void=>{
   const target=Math.max(0,Math.min(4,index));setMenu(false)
   if(target===4)chat.prefill(selectedDirection===0?0:selectedDirection===1?2:0)
-  const max=document.documentElement.scrollHeight-innerHeight,from=max>0?Math.max(0,Math.min(1,lenis.scroll/max)):state.p
+  const max=scrollRange(),from=max>0?Math.max(0,Math.min(1,lenis.scroll/max)):state.p
   // More than one leg away means the camera crosses other stops on the way.
   const origin=visibleStage;clearArrival();stopFlight();arrival={target,origin,transit:Math.abs(target-state.p*4)>1.02}
   const knots=scene?.arcKnots??linearKnots,arc=Math.abs(toArc(target/4,knots)-toArc(from,knots))
@@ -308,7 +334,7 @@ const retry=():void=>{void startScene()};document.querySelector('[data-retry]')!
 void startScene()
 void document.fonts.ready.then(()=>{if(disposed)return;playIntro();reserveFaq();framePanels();ScrollTrigger.refresh()})
 if(import.meta.env.DEV){
-  Object.defineProperty(window,'sanctuary',{configurable:true,value:{go,progress:()=>state.p,inspect:()=>scene?.inspect(),motion:()=>scene?.motion(),scrollInfo:()=>({start:trigger.start,end:trigger.end,y:scrollY,top:document.querySelector('#scroll-wrapper')!.getBoundingClientRect().top+scrollY,margin:getComputedStyle(document.body).margin}),selectDirection,selectLantern,lenis,setProgress:(value:number)=>{exactProgress=true;cutStop=-1;clearArrival();lenis.scrollTo((document.documentElement.scrollHeight-innerHeight)*value,{immediate:true,force:true});state.p=value;scene?.setProgress(value,0);updatePresentation(value)}}})
+  Object.defineProperty(window,'sanctuary',{configurable:true,value:{go,progress:()=>state.p,inspect:()=>scene?.inspect(),motion:()=>scene?.motion(),scrollInfo:()=>({start:trigger.start,end:trigger.end,y:scrollY,top:document.querySelector('#scroll-wrapper')!.getBoundingClientRect().top+scrollY,margin:getComputedStyle(document.body).margin}),selectDirection,selectLantern,lenis,setProgress:(value:number)=>{exactProgress=true;cutStop=-1;clearArrival();lenis.scrollTo(scrollRange()*value,{immediate:true,force:true});state.p=value;scene?.setProgress(value,0);updatePresentation(value)}}})
 }
 const dispose=():void=>{
   if(disposed)return;disposed=true;sceneGeneration++;clearTimeout(toastTimer);clearArrival();stopFlight();scrubReset?.kill();clearTimeout(introTimer);answerTimers.forEach(timer=>clearTimeout(timer));window.removeEventListener('wheel',interrupt);window.removeEventListener('touchstart',interrupt);if(grainUrl){URL.revokeObjectURL(grainUrl);root.style.removeProperty('--grain')};cancelAnimationFrame(layoutFrame);layoutObserver.disconnect();cancelAnimationFrame(panelFrame);panelObserver.disconnect();scene?.dispose();chat.dispose();soundDispose();gsap.ticker.remove(tick);trigger.kill();tween.kill();lenis.off('scroll',lenisScroll);lenis.destroy();cleanup.forEach(remove=>remove());document.removeEventListener('click',navigate);document.querySelector('[data-next]')!.removeEventListener('click',next);menu.removeEventListener('click',toggleMenu);window.removeEventListener('pointermove',pointer);window.removeEventListener('keydown',keyboard);reducedQuery.removeEventListener('change',motion);document.querySelector('[data-help]')!.removeEventListener('click',openHelp);dialog.querySelector('.dialog-close')!.removeEventListener('click',closeHelp);dialog.removeEventListener('close',onClose);dialog.removeEventListener('click',backdrop);document.querySelector('[data-retry]')!.removeEventListener('click',retry)

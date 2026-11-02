@@ -85,7 +85,7 @@
   },
   {
     "path": "scripts/verify.mjs",
-    "sha256": "57383480a50f06e31eba3cacd5957d66323b3dad14af12022867a1cdeae7f1ae"
+    "sha256": "c2a4355b4c355f6030ec343fecdcd3ca20c6e322ae937ec8481ff1c2e23745fe"
   },
   {
     "path": "SPECIFICATION-CINEMATIC.md",
@@ -173,7 +173,7 @@
   },
   {
     "path": "src/main.ts",
-    "sha256": "67cac04da6e060a3d1b6c5da139947177b3e84ce8c22bfb32b14b7af25546dbe"
+    "sha256": "73b5afe00af802dc6d6ddb2eaa7609b2ec53ca7901c6631f13e5e90210756768"
   },
   {
     "path": "src/style.css",
