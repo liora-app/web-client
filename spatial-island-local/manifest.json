@@ -28,6 +28,14 @@
     "sha256": "7726a5cd6f3c0e876c028ea2a643d45f7aad4b0f164b70966c669f4a4668f4b9"
   },
   {
+    "path": "public/fonts/jost/jost-ukrainian-i.woff2",
+    "sha256": "c93ec43e833d37f4d468de85039b7a3b53cc40d6a2201810f4bcf6ec41e84196"
+  },
+  {
+    "path": "public/fonts/jost/jost-ukrainian-ye.woff2",
+    "sha256": "f65a6b305fbc29f21a71f63dbe27b6298e433d89f02294925ecf343e59cf3e3c"
+  },
+  {
     "path": "public/fonts/jost/OFL.txt",
     "sha256": "82b806b20fb9d8f2c64669c12a44efb87d27971e743f38a78365e83641626dd2"
   },
@@ -53,7 +61,11 @@
   },
   {
     "path": "README.md",
-    "sha256": "7d376f270c577c25143673fd3a03f0b206940bc9d9c4f939ba3aa3982608a471"
+    "sha256": "1cfe91c3b4d45df803c134898573b17c7971904bedb80082a879a44fc297fd7a"
+  },
+  {
+    "path": "scripts/jost-ukrainian.py",
+    "sha256": "560df249d9f183266e73b8d8d3b356b7fc1fcc440e041187209acc6e149a501e"
   },
   {
     "path": "scripts/optimize-model.mjs",
@@ -93,7 +105,7 @@
   },
   {
     "path": "src/gl/artifacts.ts",
-    "sha256": "c62441a359acf6cc811c7a31a32b08e5df5558b9fec175f239145911f6a08f3c"
+    "sha256": "810d0660696e1986be3af1629e9c8e8b807379ffcaf206ca9208a0fa5413f190"
   },
   {
     "path": "src/gl/cocoon.ts",
@@ -145,7 +157,7 @@
   },
   {
     "path": "src/gl/scene.ts",
-    "sha256": "7a21766c408d7af90fe94f288c40572a0135ef267ceec3bbd58ec5292581c2da"
+    "sha256": "be021094b372b123798fe03a78e57c84773a6680076ca2f51516f84b72736df5"
   },
   {
     "path": "src/gl/surface.ts",
@@ -161,7 +173,7 @@
   },
   {
     "path": "src/main.ts",
-    "sha256": "e263984ad1a7c0d6e995bb5e8fa36afe46ba601559b75377d1300859bf20865a"
+    "sha256": "67cac04da6e060a3d1b6c5da139947177b3e84ce8c22bfb32b14b7af25546dbe"
   },
   {
     "path": "src/style.css",
