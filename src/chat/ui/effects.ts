@@ -23,6 +23,7 @@ export type EffectDeps = Readonly<{
   model: () => Model
   announcer: Announcer
   leave: LeaveGuard
+  homeHref: string
   /** Puts text back into the message field (after «Змінити»). */
   composer: (text: string) => void
   /** Empties the message field without focusing it (a conversation replaced from the diary). */
@@ -411,7 +412,7 @@ export function createEffects(deps: EffectDeps): Effects {
         return
       case 'navigate':
         deps.leave.drop()
-        window.location.assign(effect.href)
+        window.location.assign(effect.href === '/' ? deps.homeHref : effect.href)
         return
       case 'reload':
         deps.leave.drop()

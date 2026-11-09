@@ -100,16 +100,15 @@ export function chatScreen(
   const session = el('session')
   const head = el('compose-head')
   const list = el('scenario-list')
+  const picker = el<HTMLButtonElement>('scenario-picker')
+  const alternatives = el('scenario-options')
   const nosave = el('nosave')
   const line = el('chat-line')
   const block = el('chat-block')
   const status = el('composer-status')
   const talk = el<HTMLOListElement>('talk')
   const starterBox = el('starters')
-  /** The starters' row: their visible label «Почати зі слів» (the group's name) and the group. */
   const starterRow = el('starters-row')
-  /** «Як ви зараз?» (§3.13): after the starters, in the same row; it opens the check-in. */
-  const checkin = el('checkin')
   let scenarioKey = ''
   /** The scenario the row last showed as chosen (see renderScenarios). */
   let scenarioShown = ''
@@ -181,21 +180,44 @@ export function chatScreen(
     const key = items.map((s) => `${s.id}:${s.title}`).join('|')
     if (key !== scenarioKey) {
       scenarioKey = key
-      list.replaceChildren()
+      list.replaceChildren(picker)
+      alternatives.replaceChildren()
       for (const item of items) {
+        if (item.id !== 'free' && item.id !== 'situation') {
+          const option = document.createElement('button')
+          option.type = 'button'
+          option.className = 'composer__menu-item'
+          option.dataset.scenario = item.id
+          setText(option, item.title)
+          option.addEventListener('click', () => {
+            closePopovers(head)
+            dispatch({ type: 'chat/scenario', id: item.id })
+            picker.focus({ preventScroll: true })
+          })
+          alternatives.append(option)
+          continue
+        }
         const pill = fromTemplate<HTMLLabelElement>('scenario')
         const input = pill.querySelector<HTMLInputElement>('input')!
         input.value = item.id
         input.dataset.act = 'scenario'
         setText(pill.querySelector('.pill__text')!, item.title)
-        list.append(pill)
+        list.insertBefore(pill, picker)
       }
+      show(picker, alternatives.childElementCount > 0)
     }
     for (const input of Array.from(list.querySelectorAll<HTMLInputElement>('input'))) {
       const on = input.value === chosen
       if (input.checked !== on) input.checked = on
       input.closest('.pill')?.classList.toggle('pill--on', on)
     }
+    let otherChosen = false
+    for (const option of alternatives.querySelectorAll<HTMLButtonElement>('button')) {
+      const on = option.dataset.scenario === chosen
+      setAttr(option, 'aria-pressed', String(on))
+      otherChosen ||= on
+    }
+    picker.classList.toggle('pill--on', otherChosen)
     // Arrow keys move the focus and the choice along the radios, but Chromium does not scroll a radio
     // focused that way into view: on a phone the row (it scrolls sideways, ADR-013) brings the focused
     // pill in itself, a whole padding in, clear of its faded ends (#141). Only when the choice moved,
@@ -218,12 +240,9 @@ export function chatScreen(
         setText(chip, line)
         starterBox.append(chip)
       }
-      starterBox.append(checkin)
     }
-    // «Як ви зараз?» is always there before the first message, a scenario without starters of its
-    // own (one the server added later) included.
-    show(starterBox, visible)
-    show(starterRow, visible)
+    show(starterBox, visible && lines.length > 0)
+    show(starterRow, visible && lines.length > 0)
   }
 
   const streamOf = (state: ChatState): StreamView | null => {
@@ -248,7 +267,10 @@ export function chatScreen(
       const state = lastModel?.state
       if (state?.s !== 'chat' || hasUserMessage(state.session, state.pending)) return
       const line = starters(state.session.scenario)[index]
-      if (line !== undefined) composer.insert(line)
+      if (line !== undefined) {
+        closePopovers(composer.element)
+        composer.insert(line)
+      }
     },
     leave() {
       // On a phone the field may hold the keyboard open: let it close before the field goes.

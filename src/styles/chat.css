@@ -705,6 +705,183 @@ html[data-screen='crisis'] .chat__scene {
   box-shadow: none;
 }
 
+/* The open workspace keeps the same sky, typography, and glass controls. */
+html[data-screen='chat'] {
+  --band-h: 0px;
+  --scene-h: 0px;
+  --sheet-cap: 0px;
+}
+
+html[data-screen='chat'] :is(.chat__scene, .ai-chip--sheet, .ai-chip--header, .chat-header .journal-toggle),
+html[data-screen='chat'] .chat__text::before {
+  display: none;
+}
+
+html[data-screen='chat'] .chat__text {
+  --screen-top: clamp(1.5rem, 5.5svh, 3.5rem);
+  --sheet-pad: 0px;
+  width: min(calc(100% - 2rem), clamp(46rem, 50vw, 60rem));
+  border: 0;
+  background: none;
+  box-shadow: none;
+  overflow: visible;
+}
+
+html[data-screen='chat'] :is(.session, .composer)::before {
+  background-color: var(--color-bg);
+  background-image: var(--sky-image);
+  background-attachment: fixed;
+  background-size: 100% 100lvh;
+}
+
+.chat-rail {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.chat-rail .button {
+  gap: 0.6rem;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.875rem;
+}
+
+.chat-rail .button svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chat-rail .chat-rail__new {
+  border-color: var(--color-field-border);
+  background: var(--color-accent-tint);
+  color: var(--color-text);
+}
+
+.chat-rail .chat-rail__new:hover {
+  background: var(--color-accent-tint-strong);
+}
+
+.chat-rail__history,
+.chat-rail__foot {
+  display: none;
+}
+
+@media (max-width: 63.99em) {
+  html[data-screen='chat'] .chat-header:not(:has(.character-toggle)) {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+
+  html[data-screen='chat'] .chat-header:not(:has(.character-toggle)) .help-link {
+    grid-column-end: -1;
+  }
+
+  html[data-screen='chat'] .chat-header:not(:has(.character-toggle)) :is(.theme-pick, .account-toggle) {
+    grid-column: span 2;
+  }
+
+  html[data-screen='chat'] .chat-header:not(:has(.character-toggle)) .media {
+    grid-column: span 4;
+  }
+}
+
+@media (min-width: 64em) {
+  html[data-screen='chat'] {
+    --rail-width: clamp(12rem, 15.25vw, 18.25rem);
+  }
+
+  html[data-screen='chat'] .chat {
+    padding-inline-start: var(--rail-width);
+  }
+
+  html[data-screen='chat'] .chat-header .theme-toggle {
+    width: 2.75rem;
+    padding: 0;
+  }
+
+  html[data-screen='chat'] .chat-header .theme-toggle .header-word {
+    display: none;
+  }
+
+  .chat-rail {
+    position: fixed;
+    z-index: 8;
+    inset: var(--header-h) auto 0 0;
+    width: var(--rail-width);
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 0.9rem;
+    padding: clamp(1rem, 3.5svh, 2rem) 0.9rem 1.25rem;
+    overflow: auto;
+    border-inline-end: 1px solid var(--color-glass-edge);
+    background: var(--color-sheet-solid);
+  }
+
+  .chat-rail .button {
+    justify-content: flex-start;
+    text-align: start;
+    min-height: 3rem;
+    border-radius: var(--radius-field);
+  }
+
+  .chat-rail__history {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem 0.35rem 0;
+    color: var(--color-text-dim);
+    font-size: 0.8125rem;
+  }
+
+  .chat-rail__records {
+    display: grid;
+    gap: 0.25rem;
+    padding: 0;
+    list-style: none;
+  }
+
+  .chat-rail__records:empty {
+    display: none;
+  }
+
+  .chat-rail__record {
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0.45rem 0.55rem;
+    border: 1px solid transparent;
+    border-radius: 0.65rem;
+    background: none;
+    color: var(--color-text);
+    cursor: pointer;
+    text-align: start;
+    overflow-wrap: anywhere;
+  }
+
+  .chat-rail__record:hover {
+    border-color: var(--color-line);
+    background: var(--color-hover);
+  }
+
+  .chat-rail__record[aria-disabled='true'] {
+    color: var(--color-text-dim);
+    cursor: default;
+  }
+
+  .chat-rail__foot {
+    display: block;
+    margin-block-start: auto;
+    padding-inline: 0.35rem;
+    color: var(--color-text-dim);
+    font-size: 0.8125rem;
+  }
+}
+
 /* Rows: the presence (a band on a desktop, the light in the flow on a phone), the chip «AI · не
    людина» on the sheet's top edge (a phone), the sheet. */
 .chat__frame {
@@ -2762,6 +2939,143 @@ html[data-screen='chat'] .chat__text {
   margin-top: auto;
 }
 
+/* Start screen: centred question and privacy choice, with the field at the foot. */
+.screen--chat .compose-head__kicker {
+  justify-self: center;
+  color: var(--color-text-dim);
+  text-transform: none;
+  font-family: var(--font-body);
+  letter-spacing: 0;
+}
+
+.screen--chat .scenarios__list {
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-inline: 0;
+  padding: 6px;
+  overflow: visible;
+  mask-image: none;
+}
+
+.screen--chat .scenario-about {
+  justify-items: center;
+  max-width: 34rem;
+  margin-inline: auto;
+  text-align: center;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+.scenario-picker {
+  cursor: pointer;
+  gap: 0.65rem;
+  font-family: inherit;
+  anchor-name: --scenario-picker;
+}
+
+#scenario-options:popover-open {
+  inset: min(30svh, 13rem) 1rem auto;
+  width: min(24rem, calc(100vw - 2rem));
+  margin-inline: auto;
+  max-height: min(65svh, 26rem);
+  overflow-y: auto;
+}
+
+#scenario-options [aria-pressed='true'] {
+  background: var(--color-pressed);
+  font-weight: 700;
+}
+
+@supports (position-area: bottom) {
+  #scenario-options:popover-open {
+    inset: auto;
+    position-anchor: --scenario-picker;
+    position-area: bottom;
+    position-try-fallbacks: flip-block, flip-inline;
+    margin: 0.5rem 0;
+  }
+}
+
+html[data-talk='off'] .screen--chat > .talk {
+  text-align: center;
+}
+
+html[data-talk='off'] .screen--chat > .talk .said--ai {
+  display: block;
+}
+
+html[data-talk='off'] .screen--chat > .talk :is(.said__mark, .said__who) {
+  display: none;
+}
+
+html[data-talk='off'] .screen--chat > .talk .said__text {
+  max-width: none;
+  color: var(--color-text);
+  font-size: clamp(1.0625rem, 2vw, 1.25rem);
+  overflow-wrap: anywhere;
+}
+
+html[data-talk='off'] .screen--chat > .nosave {
+  justify-content: center;
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+
+.screen--chat .switch__state {
+  display: none;
+}
+
+@media (max-width: 25em) and (max-height: 43em) {
+  html[data-screen='chat'] .chat__text {
+    --screen-top: 0.5rem;
+  }
+
+  .chat-rail {
+    padding-block: 0.25rem;
+  }
+
+  .screen--chat .compose-head__kicker {
+    display: none;
+  }
+
+  .screen--chat,
+  .screen--chat .compose-head {
+    gap: 0.3rem;
+  }
+
+  .screen--chat .scenarios__legend {
+    margin-bottom: 0.25rem;
+  }
+
+  .screen--chat .scenario-about {
+    font-size: 0.875rem;
+  }
+
+  html[data-talk='off'] .screen--chat > .talk .said__text {
+    font-size: 1rem;
+  }
+
+  .screen--chat .scenarios__list .pill {
+    padding-inline: 0.55rem;
+    font-size: 0.8125rem;
+  }
+}
+
+@media (min-width: 64em) {
+  html[data-talk='off'] .screen--chat {
+    gap: clamp(1rem, 3.1svh, 2rem);
+  }
+
+  .screen--chat .compose-head {
+    gap: clamp(0.9rem, 2.4svh, 1.5rem);
+  }
+
+  .chat-page .screen--chat .scenarios__legend {
+    margin-bottom: clamp(0.65rem, 2.2svh, 1.5rem);
+    font-size: clamp(2.125rem, 3.3vw, 3.25rem);
+  }
+}
+
 /* A pill: «Інструменти» on the left, «Надіслати» on the right, both inside the field. */
 .composer__field {
   position: relative;
@@ -2836,38 +3150,6 @@ html[data-screen='chat'] .chat__text {
   color: var(--color-text);
 }
 
-/* «Інструменти» says its word from 64em (a pill at the field's left, ADR-013 §5); below, the icon
-   alone: at 320 px the word would take the room the placeholder needs for one line (#118). */
-.composer__tools-word {
-  display: none;
-}
-
-@media (min-width: 64em) {
-  .composer__field .composer__tools {
-    display: inline-flex;
-    gap: 0.4rem;
-    width: auto;
-    padding: 0 1rem 0 0.75rem;
-    border-radius: 999px;
-    background: var(--color-hover);
-    font-family: var(--font-body);
-    font-size: 0.9375rem;
-    font-weight: 600;
-  }
-
-  .composer__tools-word {
-    display: inline;
-  }
-
-  .composer__field .composer__input {
-    padding-left: 10.25rem;
-  }
-
-  .composer__field .composer__tools:focus-visible {
-    border-radius: 999px;
-  }
-}
-
 .composer__tools:hover,
 .composer__field:has(#composer-tools:popover-open) .composer__tools {
   color: var(--color-text);
@@ -2922,6 +3204,111 @@ html[data-motion='on'] :is(.composer__send, .composer__tools):active {
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* The existing presence and tools share the round control next to Send. */
+.screen--chat .composer__field .composer__input {
+  padding-inline: 1rem 6.6rem;
+}
+
+.screen--chat .composer__field .composer__tools {
+  inset-inline: auto 3.35rem;
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  background: transparent;
+}
+
+.screen--chat .composer__field .composer__tools:is(:hover, :focus-visible) {
+  background: var(--color-hover);
+}
+
+.composer__presence {
+  --slot: 3.1rem;
+  position: absolute;
+  inset-inline-end: 3.175rem;
+  bottom: 3px;
+  width: var(--slot);
+  height: var(--slot);
+  pointer-events: none;
+}
+
+.composer__presence .presence {
+  --slot: 3.1rem;
+  position: static;
+  translate: none;
+}
+
+.composer__presence .orb {
+  background-position: center;
+  transform-origin: center;
+}
+
+.composer__presence .orb::after {
+  translate: none;
+}
+
+.composer__presence .presence__slot::before {
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--orb-sun) 0%, var(--orb-sun-mid) 46%, var(--orb-sun-0) 70%);
+  clip-path: none;
+}
+
+.composer__presence .presence__state,
+html[data-character='off'] .composer__presence,
+html[data-character='on'] .composer__field .composer__tools > svg {
+  display: none;
+}
+
+#composer-tools {
+  width: min(21rem, calc(100vw - 2rem));
+  max-height: min(65svh, 25rem);
+  overflow-y: auto;
+}
+
+#composer-tools .starters-row {
+  padding: 0.25rem 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--color-line);
+  margin-bottom: 0.25rem;
+}
+
+#composer-tools .starters {
+  display: grid;
+}
+
+#composer-tools .starter {
+  min-height: 2.75rem;
+}
+
+#composer-tools .character-toggle {
+  width: 100%;
+  min-height: 2.75rem;
+  justify-content: flex-start;
+  padding-inline: 0.75rem;
+  border-radius: 0.65rem;
+}
+
+#composer-tools .character-toggle .header-word {
+  display: inline;
+}
+
+@supports (position-area: top) {
+  html[data-screen='chat'] #composer-tools:popover-open {
+    position-area: top span-left;
+  }
+}
+
+@media (max-width: 63.99em) {
+  .composer__presence {
+    bottom: 1px;
+  }
+}
+
+@media (forced-colors: active) {
+  html[data-character='on'] .composer__field .composer__tools > svg {
+    display: block;
+  }
 }
 
 .composer__send .composer__stop {
@@ -4564,63 +4951,6 @@ html[data-motion='on'] :is(.confirm, .sheet--side, .sheet--pick)[open]::backdrop
 
 /* ---------- The self-help tools (spec §3.13) ---------- */
 
-/* «Як ви зараз?» after the starters: the same chip with a small face, so it reads as its own kind. */
-.checkin {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  min-height: 2.5rem;
-  max-width: 100%;
-  padding: 0.35rem 0.95rem 0.35rem 0.75rem;
-  border: 1.5px solid var(--color-stroke);
-  border-radius: 1.25rem;
-  background: transparent;
-  font-family: var(--font-body);
-  font-size: 0.9375rem;
-  font-weight: 500;
-  line-height: 1.35;
-  color: var(--color-text);
-  cursor: pointer;
-  transition:
-    color var(--dur-1) var(--ease-standard),
-    background-color var(--dur-1) var(--ease-standard),
-    border-color var(--dur-1) var(--ease-standard);
-}
-
-.checkin:hover {
-  background: var(--color-hover);
-}
-
-.checkin:focus-visible {
-  outline-offset: 2px;
-  border-radius: 1.25rem;
-}
-
-.checkin svg {
-  flex: none;
-  width: 1.125rem;
-  height: 1.125rem;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.4;
-  stroke-linecap: round;
-}
-
-@media (max-width: 63.99em) {
-  .checkin {
-    min-height: 2.75rem;
-    padding: 0.3rem 0.8rem 0.3rem 0.65rem;
-    font-size: 0.875rem;
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  html[data-motion='on'] .starters:not([hidden]) .checkin {
-    animation: rise-in var(--dur-item) var(--ease-decelerate) 160ms backwards;
-    --rise: var(--rise-item);
-  }
-}
-
 /* The signed-out screen and «Якщо важко»: the tools as a quiet row of words. */
 .kit {
   display: grid;
@@ -5033,7 +5363,6 @@ html:has(dialog[open]:is(.sheet--shelter, .sheet--tool[data-shelter])) {
   .jump,
   .confirm,
   .sheet,
-  .checkin,
   .mood__cell,
   .mood__word,
   .shelter__button,
