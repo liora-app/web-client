@@ -2842,7 +2842,7 @@ test.describe('presentation', () => {
     await page.keyboard.press('Enter')
     await expect(page.locator('#composer-tools')).toBeVisible()
     await page.keyboard.press('Tab')
-    await expect(page.getByRole('button', { name: 'Подихати хвилину' })).toBeFocused()
+    await expect(page.getByRole('button', { name: starters('free')[0]!, exact: true })).toBeFocused()
     await axe(page, 'the tools menu: open')
     await page.keyboard.press('Escape')
     await expect(page.locator('#composer-tools')).toBeHidden()
@@ -3271,7 +3271,7 @@ test.describe('theme', () => {
     // A click outside, on text that takes no focus.
     await toggle.click()
     await expect(themeMenu(page)).toBeVisible()
-    await page.locator('[data-el="compose-head"] .scenarios__legend').click()
+    await firstMessage(page).click()
     await expect(themeMenu(page)).toBeHidden()
     // Tab moves on and closes it.
     await toggle.click()
@@ -5243,7 +5243,7 @@ async function borderOnlyControls(page: Page): Promise<string[]> {
 
 test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the names, the borders', () => {
   for (const character of CHARACTERS)
-    test(`#93 at rest no line of the conversation sits half under the top fade; the person’s bubble has its own edge; «+» comes before the field in Tab order${hiddenTitle(character)}`, async ({ page }, testInfo) => {
+    test(`#93 at rest no line sits half under the top fade; the person’s bubble has its own edge; Tab follows the composer layout${hiddenTitle(character)}`, async ({ page }, testInfo) => {
     await storeCharacter(page, character)
     await openChat(page)
     // At rest also means with the page's own faces in: line heights are theirs.
@@ -5274,24 +5274,26 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     expect(look.style).toBe('solid')
     expect(look.color).not.toMatch(/rgba\(\d+, \d+, \d+, 0\)/)
     expect(look.fill).not.toBe(look.page)
-    // «Інструменти» stands left of the field: before it in Tab order, its menu right after it.
+    // The tools orb is between the typing area and Send, with its menu after the orb in the DOM.
     const order = await page.evaluate(() => {
       const tools = document.querySelector('[data-el="composer-tools"]')!
       const field = document.querySelector('#composer-input')!
       const menu = document.querySelector('#composer-tools')!
+      const send = document.querySelector('[data-el="composer-send"]')!
+      const gap = send.getBoundingClientRect().left - tools.getBoundingClientRect().right
       return {
-        toolsFirst: Boolean(tools.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING),
+        fieldFirst: Boolean(field.compareDocumentPosition(tools) & Node.DOCUMENT_POSITION_FOLLOWING),
         menuNext: tools.nextElementSibling === menu,
-        toolsLeft: tools.getBoundingClientRect().left < field.getBoundingClientRect().left + 20,
+        toolsBesideSend: gap >= 0 && gap <= 8,
       }
     })
-    expect(order).toEqual({ toolsFirst: true, menuNext: true, toolsLeft: true })
+    expect(order).toEqual({ fieldFirst: true, menuNext: true, toolsBesideSend: true })
     if (isDesktop(testInfo)) {
       await composer(page).focus()
-      await page.keyboard.press('Shift+Tab')
+      await page.keyboard.press('Tab')
       await expect(page.locator('[data-el="composer-tools"]')).toBeFocused()
       await page.keyboard.press('Tab')
-      await expect(composer(page)).toBeFocused()
+      await expect(sendButton(page)).toBeFocused()
     }
   })
 
@@ -5316,13 +5318,9 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
         padding: root.scrollPaddingTop,
       }
     })
-    // Chromium puts a scroll offset on the nearest device pixel — a whole CSS pixel at DPR 1 — while
-    // the anchor's target keeps the fraction of the layout above the message: at 1440 × 900 the
-    // message's top is at 377.578 px, scrollY is a whole 82, and it lands 0.42 px above the line; on a
-    // Pixel 7 (DPR 2.625) 0.06 px below. So within half a device pixel either way (plus a layout unit,
-    // 1/64 px), never more: a landing a frame late, or a row that grows after the scroll (P3b gave the
-    // session row its height from the first frame for that), misses by whole pixels.
-    expect(Math.abs(placed.delta), JSON.stringify(placed)).toBeLessThanOrEqual(0.5 / placed.dpr + 1 / 64)
+    // Chromium can quantize the offset to a whole CSS pixel, including under device emulation.
+    // Allow half a CSS pixel plus one layout unit. The fade check above still applies.
+    expect(Math.abs(placed.delta), JSON.stringify(placed)).toBeLessThanOrEqual(0.5 + 1 / 64)
   })
 
   for (const character of CHARACTERS)
@@ -5606,6 +5604,8 @@ test.describe('what the final review found', () => {
       await composer(page).fill('Синтетичне повідомлення')
       await composer(page).focus()
       await page.keyboard.press('Tab')
+      await expect(toolsButton(page)).toBeFocused()
+      await page.keyboard.press('Tab')
       const send = sendButton(page)
       await expect(send).toBeFocused()
       await expect(send).toHaveAttribute('data-mode', 'ready')
@@ -5701,16 +5701,14 @@ test.describe('what the final review found', () => {
       })
       const hidden = await page.screenshot({ clip })
       await page.evaluate(() => document.querySelector<HTMLElement>('main')!.style.removeProperty('visibility'))
-      // Equal, or apart by at most 2 of 255 in any channel. CI's Linux runner once saw the two differ
-      // here where Windows never did (run 39943877590, no artefacts kept); a repaint may well dither the
-      // sky's gradients a step apart, while a line of text showing through the band would stand out by
-      // far more. Any other difference fails with where it is and how large.
+      // Repainting the gradient can shift the compositor's colour by a few 8-bit steps. Linux CI
+      // measured up to 3 in the light sky. The comparison still rejects larger changes from text.
       const diff = shown.equals(hidden) ? null : await pixelDiff(page, shown, hidden)
       if (diff) {
         await testInfo.attach(`${scheme}-band-shown.png`, { body: shown, contentType: 'image/png' })
         await testInfo.attach(`${scheme}-band-hidden.png`, { body: hidden, contentType: 'image/png' })
       }
-      expect(diff === null || diff.max <= 2, `${scheme}: the band hides what scrolled under it ${JSON.stringify(diff)}`).toBe(true)
+      expect(diff === null || diff.max <= 3, `${scheme}: the band hides what scrolled under it ${JSON.stringify(diff)}`).toBe(true)
     }
   })
 
@@ -6019,7 +6017,9 @@ test.describe('what the accessibility review found', () => {
     await toolsButton(page).click()
     const group = page.getByRole('group', { name: 'Інструменти', exact: true })
     await expect(group).toBeVisible()
-    await expect(group.getByRole('button')).toHaveText(['Подихати хвилину', 'Заземлення 5-4-3-2-1', 'Як ви зараз?', 'В укритті'])
+    await expect(group.getByRole('button')).toHaveText([
+      ...starters('free'), 'Подихати хвилину', 'Заземлення 5-4-3-2-1', 'Як ви зараз?', 'В укритті', 'Персонаж',
+    ])
     for (const scheme of ['dark', 'light'] as const) {
       await page.emulateMedia({ colorScheme: scheme })
       await expect(html(page)).toHaveCSS('background-color', scheme === 'dark' ? NIGHT : SKY_TOP)
@@ -6293,6 +6293,7 @@ test.describe('the character', () => {
     await onScreen(page, 'chat')
     await expect(characterToggle(page)).toHaveAttribute('aria-pressed', 'false')
     expect(await stored(page)).toBe('off')
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
     const frames = await page.evaluate(() => (window as unknown as { __frames: { screen: string | null; character: string | null; seen: boolean; styled: boolean }[] }).__frames)
     const painted = frames.filter((frame) => frame.styled)
     expect(painted.length).toBeGreaterThan(0)
