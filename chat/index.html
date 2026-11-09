@@ -29,13 +29,28 @@
     <div class="vignette" aria-hidden="true"></div>
 
     <header class="site-header chat-header" data-header>
-      <a class="brand" href="/" data-act="leave-home">
+      <a class="brand" href="https://tryliora.duckdns.org/" data-chat-home data-act="leave-home">
         <span class="brand__mark" aria-hidden="true"></span>
         <span class="brand__name">Liora</span>
       </a>
       <p class="ai-chip ai-chip--header"><span class="ai-chip__ai">AI</span><span class="visually-hidden"> · </span>не людина</p>
 
       <div class="site-header__actions">
+        <!-- «Вигляд» (src/ui/theme-picker.ts): a menu button, not in .media (that group is motion and
+             sound). Hidden without JS. -->
+        <div class="theme-pick" data-theme-pick hidden>
+          <button class="theme-toggle" type="button" data-theme-toggle data-choice="system" aria-haspopup="menu" aria-expanded="false" aria-controls="theme-menu" aria-label="Вигляд: як у системі">
+            <svg class="theme-toggle__icon theme-toggle__auto" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="5.25" /><path class="theme-toggle__half" d="M8 2.75a5.25 5.25 0 0 1 0 10.5z" /></svg>
+            <svg class="theme-toggle__icon theme-toggle__sun" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="2.75" /><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.06 1.06M11.54 11.54l1.06 1.06M3.4 12.6l1.06-1.06M11.54 4.46l1.06-1.06" /></svg>
+            <svg class="theme-toggle__icon theme-toggle__moon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M13.25 9.6A5.5 5.5 0 0 1 6.4 2.75a5.5 5.5 0 1 0 6.85 6.85z" /></svg>
+            <span class="header-word" aria-hidden="true">Вигляд</span>
+          </button>
+          <div class="theme-menu" id="theme-menu" role="menu" aria-label="Вигляд" data-theme-menu hidden>
+            <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="true" tabindex="-1" data-theme-choice="system">Як у системі</button>
+            <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-theme-choice="light">Світла</button>
+            <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-theme-choice="dark">Темна</button>
+          </div>
+        </div>
         <!-- Opens the help dialog over the page: a link to /#safety would wipe the conversation. -->
         <button class="help-link" type="button" data-act="help" aria-haspopup="dialog" aria-controls="help-dialog"><svg class="help-link__icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M5.2 2.5 3.6 2.8c-.6.1-1 .6-1 1.2.2 5.3 4.1 9.2 9.4 9.4.6 0 1.1-.4 1.2-1l.3-1.6c.1-.5-.2-1-.7-1.2l-1.9-.7c-.4-.2-.9 0-1.2.3l-.7.8a8 8 0 0 1-3.5-3.5l.8-.7c.3-.3.5-.8.3-1.2l-.7-1.9c-.2-.5-.7-.8-1.2-.7Z" /></svg>Якщо важко<span class="help-link__numbers" aria-hidden="true">112 · 103</span><span class="visually-hidden">: контакти допомоги, 112 і 103</span></button>
         <button class="journal-toggle" type="button" data-act="journal-open" data-el="journal-toggle" aria-label="Щоденник" hidden>
@@ -54,21 +69,6 @@
             <span class="header-word" aria-hidden="true">Звук</span>
           </button>
         </div>
-        <!-- «Вигляд» (src/ui/theme-picker.ts): a menu button, not in .media (that group is motion and
-             sound). Hidden without JS. -->
-        <div class="theme-pick" data-theme-pick hidden>
-          <button class="theme-toggle" type="button" data-theme-toggle data-choice="system" aria-haspopup="menu" aria-expanded="false" aria-controls="theme-menu" aria-label="Вигляд: як у системі">
-            <svg class="theme-toggle__icon theme-toggle__auto" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="5.25" /><path class="theme-toggle__half" d="M8 2.75a5.25 5.25 0 0 1 0 10.5z" /></svg>
-            <svg class="theme-toggle__icon theme-toggle__sun" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="2.75" /><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.06 1.06M11.54 11.54l1.06 1.06M3.4 12.6l1.06-1.06M11.54 4.46l1.06-1.06" /></svg>
-            <svg class="theme-toggle__icon theme-toggle__moon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M13.25 9.6A5.5 5.5 0 0 1 6.4 2.75a5.5 5.5 0 1 0 6.85 6.85z" /></svg>
-            <span class="header-word" aria-hidden="true">Вигляд</span>
-          </button>
-          <div class="theme-menu" id="theme-menu" role="menu" aria-label="Вигляд" data-theme-menu hidden>
-            <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="true" tabindex="-1" data-theme-choice="system">Як у системі</button>
-            <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-theme-choice="light">Світла</button>
-            <button class="theme-menu__item" type="button" role="menuitemradio" aria-checked="false" tabindex="-1" data-theme-choice="dark">Темна</button>
-          </div>
-        </div>
         <!-- «Персонаж» (src/ui/character.ts): the character shown or hidden, remembered in this browser. A
              toggle with a fixed name (aria-pressed="true": shown), hidden without JS. -->
         <button class="character-toggle" type="button" data-character-toggle aria-pressed="true" aria-label="Персонаж" hidden>
@@ -85,6 +85,22 @@
     </header>
 
     <main id="main" class="chat" tabindex="-1" aria-busy="true">
+      <nav class="chat-rail" aria-label="Розмови" data-chat-rail hidden>
+        <button class="button button--secondary chat-rail__new" type="button" data-act="workspace-new" aria-label="Нова розмова">
+          <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 3v10M3 8h10" /></svg>
+          <span>Нова розмова</span>
+        </button>
+        <button class="button button--secondary" type="button" data-act="journal-open" data-rail-journal>
+          <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3.25 2.75h7.5a2 2 0 0 1 2 2v8.5h-7.5a2 2 0 0 1-2-2zM5.75 5.75h4.5M5.75 8.25h3" /></svg>
+          Щоденник
+        </button>
+        <div class="chat-rail__history">
+          <p>Збережені розмови</p>
+          <ul class="chat-rail__records" data-rail-records role="list"></ul>
+          <p data-rail-note>Тут з’являться тези, які ви вирішите зберегти.</p>
+        </div>
+        <p class="chat-rail__foot">Ваш простір для розмови<br />AI · не людина</p>
+      </nav>
       <div class="chat__frame">
         <!-- «AI · не людина» on a phone, at the sheet's top-left, beside the light when it is there (the
              header's own chip is shown from 64em instead). -->
@@ -137,7 +153,7 @@
               </ol>
             </details>
             <ul class="arrows" role="list">
-              <li><a href="/">На головну</a></li>
+              <li><a href="https://tryliora.duckdns.org/" data-chat-home>На головну</a></li>
             </ul>
             <p class="helpline">Якщо вам зараз дуже важко, не чекайте входу: <a href="tel:112">112</a> або <a href="tel:103">103</a> — цілодобово й безкоштовно.</p>
             <!-- The kit without a conversation (spec §3.13): no sign-in, no request. -->
@@ -163,7 +179,7 @@
                 <a class="button button--secondary" href="/api/v1/auth/google/start?next=/chat/">Увійти іншим акаунтом</a>
               </p>
               <ul class="arrows" role="list">
-                <li><a href="/">На головну</a></li>
+                <li><a href="https://tryliora.duckdns.org/" data-chat-home>На головну</a></li>
               </ul>
             </div>
             <div class="screen__part" data-el="ni-member" hidden>
@@ -321,7 +337,7 @@
               </p>
               <p class="field-error" data-el="consent-op-error" role="alert"></p>
               <ul class="arrows" role="list">
-                <li><a href="/" data-act="leave-home">На головну</a></li>
+                <li><a href="https://tryliora.duckdns.org/" data-chat-home data-act="leave-home">На головну</a></li>
               </ul>
             </div>
             <p class="small">Версія умов від <span data-el="consent-version"></span></p>
@@ -349,9 +365,18 @@
                 <p class="banner__text" data-el="chat-auth-text"></p>
               </div>
               <p class="after-crisis" data-el="after-crisis" hidden>Якщо важко — <a href="tel:112">112</a> або <a href="tel:103">103</a>. Контакти завжди є вгорі: «Якщо важко».</p>
+              <p class="tag compose-head__kicker">Нова розмова</p>
               <fieldset class="scenarios" data-el="scenarios">
                 <legend class="scenarios__legend">З чого почнемо?</legend>
-                <div class="scenarios__list" data-el="scenario-list"></div>
+                <div class="scenarios__list" data-el="scenario-list">
+                  <button class="pill scenario-picker" type="button" popovertarget="scenario-options" data-el="scenario-picker" hidden>
+                    За сценаріями <span aria-hidden="true">↗</span>
+                  </button>
+                </div>
+                <div class="composer__menu scenario-options" id="scenario-options" popover role="group" aria-labelledby="scenario-options-title">
+                  <p class="composer__menu-title" id="scenario-options-title">За сценаріями</p>
+                  <div data-el="scenario-options"></div>
+                </div>
               </fieldset>
               <p class="scenarios__failed" data-el="scenarios-failed" hidden>
                 Інші сценарії зараз не завантажилися.
@@ -369,20 +394,6 @@
             </div>
 
             <ol class="talk" aria-label="Розмова" data-el="talk" data-no-stoplist></ol>
-
-            <!-- Until the first message: a few ways to begin. A chip puts its words into the field; the
-                 person edits them and sends — nothing goes by itself. The group is named by its visible
-                 label (its arrow is drawn by chat.css, outside the name). -->
-            <div class="starters-row" data-el="starters-row" hidden>
-              <p class="starters__label" id="starters-label">Почати зі слів</p>
-              <div class="starters" role="group" aria-labelledby="starters-label" data-el="starters" hidden>
-                <!-- The check-in (spec §3.13): optional; its word goes into the field only on «Додати до розмови». -->
-                <button class="checkin" type="button" data-act="tool" data-tool="mood" aria-haspopup="dialog" data-el="checkin">
-                  <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6.5" /><path d="M7.25 11.75c.7.8 1.6 1.25 2.75 1.25s2.05-.45 2.75-1.25" /></svg>
-                  Як ви зараз?
-                </button>
-              </div>
-            </div>
 
             <div class="nosave" data-el="nosave">
               <button class="switch" type="button" role="switch" aria-checked="false" data-act="no-save" aria-describedby="nosave-hint">
@@ -424,18 +435,17 @@
               </div>
               <label class="visually-hidden" for="composer-input">Ваше повідомлення для AI</label>
               <div class="composer__field">
-                <!-- «Інструменти» stands at the field's left, so it comes before the field in Tab order too:
-                     small exercises beside the conversation (spec §3.13). Each opens its own dialog; none of
-                     them sends anything or starts the conversation. Its menu follows it, so the items come
-                     right after it. A group named by its title: a popover alone is a generic box, and a
-                     generic one may carry no name (ARIA 1.2), so «Інструменти» was dropped. Not a menu:
-                     its items are plain buttons that Tab walks. -->
+                <textarea class="composer__input" id="composer-input" rows="1" autocomplete="off" placeholder="Пишіть, як думаєте…" aria-describedby="composer-note"></textarea>
+                <div class="composer__presence" data-composer-presence aria-hidden="true"></div>
                 <button class="composer__tools" type="button" popovertarget="composer-tools" aria-label="Інструменти" data-el="composer-tools">
                   <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 4.75v10.5M4.75 10h10.5" /></svg>
-                  <span class="composer__tools-word" aria-hidden="true">Інструменти</span>
                 </button>
                 <div class="composer__menu" id="composer-tools" popover role="group" aria-labelledby="composer-tools-title">
                   <p class="composer__menu-title" id="composer-tools-title">Інструменти</p>
+                  <div class="starters-row" data-el="starters-row" hidden>
+                    <p class="starters__label" id="starters-label">Почати зі слів</p>
+                    <div class="starters" role="group" aria-labelledby="starters-label" data-el="starters" hidden></div>
+                  </div>
                   <button class="composer__menu-item" type="button" data-act="tool" data-tool="breathe" aria-haspopup="dialog">
                     <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="2.75" /><circle cx="10" cy="10" r="6.5" /></svg>
                     <span>Подихати хвилину</span>
@@ -453,7 +463,6 @@
                     <span>В укритті</span>
                   </button>
                 </div>
-                <textarea class="composer__input" id="composer-input" rows="1" autocomplete="off" placeholder="Пишіть, як думаєте…" aria-describedby="composer-note"></textarea>
                 <button class="composer__send" type="button" aria-label="Надіслати" aria-disabled="true" data-el="composer-send">
                   <svg class="composer__arrow" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M10 15.5v-11M5.5 9 10 4.5 14.5 9" /></svg>
                   <svg class="composer__stop" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="6" y="6" width="8" height="8" rx="1.5" /></svg>
@@ -534,7 +543,7 @@
             <p class="small">Якщо вам зараз небезпечно, спершу зателефонуйте 112.</p>
             <ul class="arrows arrows--row" role="list">
               <li><button type="button" data-act="new-after-crisis" aria-haspopup="dialog">Почати нову розмову</button></li>
-              <li><a href="/">На головну</a></li>
+              <li><a href="https://tryliora.duckdns.org/" data-chat-home>На головну</a></li>
             </ul>
           </section>
 
@@ -673,7 +682,7 @@
             </p>
             <ul class="arrows arrows--row" role="list">
               <li><button type="button" data-act="journal-open">Відкрити щоденник</button></li>
-              <li><a href="/">На головну</a></li>
+              <li><a href="https://tryliora.duckdns.org/" data-chat-home>На головну</a></li>
             </ul>
           </section>
 
@@ -711,7 +720,7 @@
             </p>
             <ul class="arrows arrows--row" role="list">
               <li><button type="button" data-act="journal-open">Відкрити щоденник</button></li>
-              <li><a href="/">На головну</a></li>
+              <li><a href="https://tryliora.duckdns.org/" data-chat-home>На головну</a></li>
             </ul>
           </section>
 
@@ -779,7 +788,7 @@
               <p data-el="deleted-again">Якщо захочете повернутися, увійдіть знову — це буде новий, порожній акаунт.</p>
             </div>
             <ul class="arrows" role="list">
-              <li><a href="/">На головну</a></li>
+              <li><a href="https://tryliora.duckdns.org/" data-chat-home>На головну</a></li>
             </ul>
             <p class="helpline">Якщо вам зараз дуже важко, не чекайте входу: <a href="tel:112">112</a> або <a href="tel:103">103</a> — цілодобово й безкоштовно.</p>
           </section>
@@ -798,7 +807,7 @@
               <button class="button button--primary" type="button" data-act="retry-boot">Спробувати ще раз</button>
             </p>
             <ul class="arrows" role="list">
-              <li><a href="/">На головну</a></li>
+              <li><a href="https://tryliora.duckdns.org/" data-chat-home>На головну</a></li>
             </ul>
             <p class="helpline">Якщо вам зараз дуже важко — <a href="tel:112">112</a> або <a href="tel:103">103</a>. Ці номери працюють і без інтернету.</p>
           </section>

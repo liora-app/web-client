@@ -32,6 +32,11 @@ import { applyPresence } from './presence'
 import { createView, type View } from './render'
 import { createStore } from './store'
 
+// The hosted chat occupies its own origin's root. In the local build the landing is alongside it.
+const homeLinks = document.querySelectorAll<HTMLAnchorElement>('a[data-chat-home]')
+const homeHref = window.location.origin === 'https://app.tryliora.duckdns.org' ? (homeLinks[0]?.href ?? '/') : '/'
+for (const link of homeLinks) link.href = homeHref
+
 // The theme and the sky preset are on <html> before the first frame (public/theme-init.js); these
 // wire their controls and keep the page in step with a new choice.
 const sky = initSky(document.querySelector<HTMLElement>('[data-sky-pick]'))
@@ -93,6 +98,7 @@ const effects = createEffects({
   model: store.model,
   announcer,
   leave,
+  homeHref,
   composer: (text) => view.chat.composer.put(text),
   clearComposer: () => view.chat.composer.clear(),
 })
@@ -264,11 +270,17 @@ function act(name: string, target: HTMLElement, event: Event): void {
       return dispatch({ type: 'confirm/open', kind: 'new-after-crisis' })
     case 'relogin':
       return dispatch({ type: 'confirm/open', kind: 'relogin' })
-    case 'reload':
+    case 'workspace-new':
+    case 'reload': {
+      const startingNew = name === 'workspace-new'
+      if (startingNew && state.s !== 'chat') return
       // A repeated csrf_failed (§4.3): through «Піти з розмови?» when something would be lost.
-      if (leaveGuard(state)) return dispatch({ type: 'confirm/open', kind: 'leave', leaveTo: 'reload' })
+      if (leaveGuard(state) || (startingNew && view.chat.composer.value().trim() !== '')) {
+        return dispatch({ type: 'confirm/open', kind: 'leave', leaveTo: 'reload' })
+      }
       window.location.reload()
       return
+    }
     case 'revisit-retry': {
       const top = topOverlay(model)
       if (top?.o === 'revisit-pick') dispatch({ type: 'revisit/search', q: top.q })
@@ -311,6 +323,7 @@ function act(name: string, target: HTMLElement, event: Event): void {
     }
     // The diary (§7.7).
     case 'journal-open':
+      view.journal.focusOnOpen(target.dataset.record ?? null)
       return dispatch({ type: 'journal/open', tz: timeZone() })
     case 'journal-back':
       return dispatch({ type: 'journal/back' })

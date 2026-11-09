@@ -11,9 +11,10 @@ import type { SkyControl } from '../../ui/sky'
 import type { SoundControl } from '../../ui/sound'
 import { skipThemeTransition } from '../../ui/theme'
 import type { ThemePicker } from '../../ui/theme-picker'
+import { maskPausedLineInline } from '../core/helplines'
 import { canOpenJournal, hasUserMessage, sessionOf, type Action, type Model, type State } from '../core/state'
 import { createDialogs, type Dialogs } from './dialogs'
-import { finePointer, headingOf, setAttr, show } from './dom'
+import { finePointer, headingOf, setAttr, setText, show } from './dom'
 import { createPresence, type PresenceView } from './presence'
 import { chatScreen, type ChatScreen } from './screens/chat'
 import { consentScreen } from './screens/consent'
@@ -62,8 +63,16 @@ export function createView(dispatch: (action: Action) => void, { gl, character, 
   const main = document.querySelector<HTMLElement>('main')!
   const account = document.querySelector<HTMLElement>('.account-toggle')!
   const journalToggle = document.querySelector<HTMLElement>('[data-el="journal-toggle"]')!
+  const rail = document.querySelector<HTMLElement>('[data-chat-rail]')!
+  const railJournal = rail.querySelector<HTMLElement>('[data-rail-journal]')!
+  const railRecords = rail.querySelector<HTMLElement>('[data-rail-records]')!
+  const railNote = rail.querySelector<HTMLElement>('[data-rail-note]')!
   const help = document.querySelector<HTMLElement>('.help-link')!
   const presenceRoot = document.querySelector<HTMLElement>('.presence')!
+  const scene = presenceRoot.parentElement!
+  const composerDock = document.querySelector<HTMLElement>('[data-composer-presence]')!
+  const composerMenu = document.querySelector<HTMLElement>('#composer-tools')!
+  const characterToggle = document.querySelector<HTMLButtonElement>('[data-character-toggle]')!
   const sections = new Map<string, HTMLElement>(
     Array.from(document.querySelectorAll<HTMLElement>('[data-screen]')).map((section) => [section.dataset.screen!, section]),
   )
@@ -95,18 +104,18 @@ export function createView(dispatch: (action: Action) => void, { gl, character, 
   }
 
   let lastModel: Model | null = null
+  let shownDiary: Model['ctx']['diary'] | null = null
 
-  /** Where the WebGL light runs (§3.1, §9.2 item 6). Desktop: always, in the scene column. Phone:
-   *  only in a new conversation, until the first message — after «Надіслати» it pauses, a new
-   *  conversation resumes it; on the other screens the slot shows the still CSS orb
-   *  (html[data-slot="still"]), and in the crisis there is no light at all, at any width (ADR-013:
-   *  chat.css takes the scene out too). A hidden tab pauses the scene by itself (gl/presence.ts).
-   *  With «Персонаж» off it runs nowhere: the one place that says so, or the next render would
-   *  start it again. */
+  /** Reuse the same light and toggle in the composer, then return them to their original slots. */
   const syncSlot = (model: Model): void => {
     const { state } = model
     const talking = state.s === 'chat' && hasUserMessage(state.session, state.pending)
-    const live = (character?.shown() ?? true) && state.s !== 'crisis' && (WIDE.matches || (state.s === 'chat' && !talking))
+    const docked = state.s === 'chat' && composerDock.isConnected && !chat.composer.element.hidden
+    const mount = docked ? composerDock : scene
+    if (presenceRoot.parentElement !== mount) mount.append(presenceRoot)
+    if (docked && characterToggle.parentElement !== composerMenu) composerMenu.append(characterToggle)
+    if (!docked && characterToggle.parentElement === composerMenu) account.before(characterToggle)
+    const live = (character?.shown() ?? true) && state.s !== 'crisis' && (state.s === 'chat' ? docked : WIDE.matches)
     gl?.setActive(live)
     // Renders come with every token: touch the attributes only when they change.
     setAttr(html, 'data-talk', talking ? 'on' : 'off')
@@ -189,7 +198,32 @@ export function createView(dispatch: (action: Action) => void, { gl, character, 
     // «Щоденник» beside it: there while «Акаунт» is, aria-disabled while the diary cannot open (the AI
     // writes, the theses are open…); pressed then, it says why (main.ts).
     show(journalToggle, signedIn)
-    setAttr(journalToggle, 'aria-disabled', canOpenJournal(model.state) ? null : 'true')
+    const journalDisabled = canOpenJournal(model.state) ? null : 'true'
+    setAttr(journalToggle, 'aria-disabled', journalDisabled)
+    setAttr(railJournal, 'aria-disabled', journalDisabled)
+    show(rail, signedIn && s === 'chat')
+    const diary = signedIn ? model.ctx.diary : null
+    if (diary !== shownDiary) {
+      shownDiary = diary
+      const records = diary?.status === 'ok' ? diary.value.items.slice(0, 12) : []
+      railRecords.replaceChildren()
+      for (const record of records) {
+        const row = document.createElement('li')
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = 'chat-rail__record'
+        button.dataset.act = 'journal-open'
+        button.dataset.record = record.id
+        setText(button, maskPausedLineInline(record.title))
+        row.append(button)
+        railRecords.append(row)
+      }
+      setText(railNote, diary?.status === 'loading' ? 'Завантажуємо тези…' : diary?.status === 'failed'
+        ? 'Тези зараз недоступні. Відкрийте щоденник, щоб спробувати ще раз.'
+        : 'Тут з’являться тези, які ви вирішите зберегти.')
+      show(railNote, records.length === 0)
+    }
+    for (const button of railRecords.querySelectorAll('button')) setAttr(button, 'aria-disabled', journalDisabled)
     setAttr(help, 'aria-current', s === 'crisis' ? 'true' : null)
 
     screens[s].render(model, changed)

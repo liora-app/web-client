@@ -41,7 +41,10 @@ import type { Screen } from './text'
 /** The search goes 300 ms after the last keystroke (§7.7), as in the record picker. */
 const SEARCH_DEBOUNCE_MS = 300
 
-export type JournalScreen = Screen & Readonly<{ act(name: string, target: HTMLElement): boolean }>
+export type JournalScreen = Screen & Readonly<{
+  act(name: string, target: HTMLElement): boolean
+  focusOnOpen(id: string | null): void
+}>
 
 export function journalScreen(dispatch: (action: Action) => void, say: (text: string) => void = () => {}): JournalScreen {
   const root = screenOf('journal')
@@ -50,6 +53,7 @@ export function journalScreen(dispatch: (action: Action) => void, say: (text: st
   const search = el<HTMLInputElement>('journal-q')
   const themes = el('journal-theme-list')
   let last: Model | null = null
+  let openingRecord: string | null = null
   let searchTimer = 0
   let themeKey = ''
   /** The edit open at the last render (its record's id), its issues, and a field to focus next. */
@@ -345,6 +349,9 @@ export function journalScreen(dispatch: (action: Action) => void, say: (text: st
   }
 
   return {
+    focusOnOpen(id) {
+      openingRecord = id
+    },
     act(name, target) {
       const state = current()
       if (state === null) return false
@@ -405,6 +412,14 @@ export function journalScreen(dispatch: (action: Action) => void, say: (text: st
       const fromMore = more.contains(document.activeElement)
       const shownBefore = list.querySelectorAll('li.entry').length
       renderList(state)
+      if (openingRecord !== null && !state.loading) {
+        const heading = entryOf(openingRecord)?.querySelector<HTMLElement>('.entry__title')
+        openingRecord = null
+        if (heading) {
+          heading.tabIndex = -1
+          heading.focus()
+        }
+      }
       show(more, state.list?.nextCursor != null && !state.failed)
       setAttr(more.querySelector('button')!, 'aria-disabled', state.loading ? 'true' : null)
       if (fromMore && more.hidden) {
@@ -438,6 +453,7 @@ export function journalScreen(dispatch: (action: Action) => void, say: (text: st
     // Another screen (the conversation, a sign-out, a consent): the records leave with this one.
     leave() {
       window.clearTimeout(searchTimer)
+      openingRecord = null
       last = null
       editing = null
       weekSaid = null
