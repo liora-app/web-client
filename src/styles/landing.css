@@ -314,7 +314,6 @@ html[data-gl='on'] .chapter { text-shadow: none; }
 .arrow-link { font-family: var(--font-body); font-weight: 600; text-transform: none; letter-spacing: 0; text-underline-offset: 0.22em; }
 
 /* The header is the shared glass capsule (layout.css); the landing's wordmark glows a little. */
-.brand__mark { box-shadow: inset 0 0 0 1.5px var(--brand-ring), 0 0 12px var(--landing-mark-glow); }
 .hud { display: none; }
 
 /* ---------- Hero: «Менше шуму.» · the presence · «Більше себе.» ----------

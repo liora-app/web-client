@@ -4,6 +4,9 @@ Source: https://www.figma.com/design/qPiQYnD0QfdTu2PvTyiLpU/Project_2026?node-id
 
 Designer: Liliia Huhliak. Retrieved 2026-11-12.
 
+Used in the landing and chat header logo as well as the hero and conversation presence.
+The header scales the complete original component; it does not use the former gradient circle.
+
 - `light/*.svg`: original vector layers of sticker `118:6482`.
 - `dark/*.svg`: original vector layers of sticker `118:7523`.
 - `liora-light.png` and `liora-dark.png`: untouched Figma exports used before JavaScript;
