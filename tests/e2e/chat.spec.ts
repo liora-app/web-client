@@ -3539,6 +3539,8 @@ test.describe('diary', () => {
     const journalToggle = page.locator('[data-rail-journal]:visible, .chat-header .journal-toggle:visible')
     await expect(journalToggle).toBeVisible()
     await expect(journalToggle).toHaveAttribute('aria-disabled', 'true')
+    // Let the pending 700 ms progress announcement arrive before checking the button's message.
+    await expect(page.locator('[data-announcer]')).toContainText('AI думає над відповіддю')
     // An aria-disabled button stays focusable and pressable (Playwright's click() waits for «enabled»).
     await journalToggle.focus()
     await page.keyboard.press('Enter')
