@@ -51,7 +51,10 @@ html[data-gl='on'] .hero .hero__orb {
 }
 .hero .hero__orb.mascot::before { content: none; }
 .presence .orb.mascot,
-.orb--mini.mascot { background-image: none; }
+.orb--mini.mascot,
+.brand__mark.mascot { background-image: none; }
+
+.brand__mark { background: var(--mascot-image) center / contain no-repeat; }
 
 .presence .orb,
 .orb--mini {
