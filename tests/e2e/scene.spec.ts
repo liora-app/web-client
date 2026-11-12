@@ -26,13 +26,13 @@ test.describe('WebGL scene', () => {
     expect(timing.chunkStart, 'the scene is a separate lazy chunk').toBeGreaterThan(0)
     expect(timing.chunkStart, 'the scene chunk is requested only after load').toBeGreaterThanOrEqual(timing.loadEnd)
 
-    // The canvas is transparent: lit samples come only from the luminous field.
-    // Wait for the entrance fade rather than sampling the first frame.
+    // The hero is the DOM mascot; sample the decorative field in the final chapter.
+    await centre(page, '#final')
     await expect.poll(() => litSamples(page), { timeout: 8_000 }).toBeGreaterThanOrEqual(2)
     // The animation loop itself runs (sample() draws its own frame, so check the counter).
     await expect.poll(async () => (await sceneStats(page)).frames, { timeout: 5_000 }).toBeGreaterThan(10)
-    // Only one light: the static one has faded out.
-    await expect(page.locator('.hero__orb')).toHaveCSS('opacity', '0')
+    // WebGL never replaces or recolors the original Figma mascot.
+    await expect(page.locator('.hero__orb')).toHaveCSS('opacity', '1')
 
     const stats = await sceneStats(page)
     expect(stats.pixelRatio).toBeLessThanOrEqual(2)
@@ -99,7 +99,7 @@ test.describe('WebGL scene', () => {
     const html = page.locator('html')
     await waitForScene(page)
     const orb = page.locator('.hero__orb')
-    await expect(orb).toHaveCSS('opacity', '0')
+    await expect(orb).toHaveCSS('opacity', '1')
 
     await page.evaluate(() => {
       const gl = document.querySelector('canvas')?.getContext('webgl2')
@@ -115,9 +115,10 @@ test.describe('WebGL scene', () => {
     await expect(html).toHaveAttribute('data-gl', 'on', { timeout: 10_000 })
     // The loop runs again (not only the frame sample() draws itself)…
     await expect.poll(async () => (await sceneStats(page)).frames, { timeout: 5_000 }).toBeGreaterThan(framesWhileLost + 10)
-    // …and the light, which resumes its ignition where the loss froze it, comes back.
+    // The decorative field resumes in its chapter; the DOM mascot stays intact.
+    await centre(page, '#final')
     await expect.poll(() => litSamples(page), { timeout: 8_000 }).toBeGreaterThanOrEqual(2)
-    await expect(orb).toHaveCSS('opacity', '0')
+    await expect(orb).toHaveCSS('opacity', '1')
   })
 
   test('pause button stops the animation and the choice survives a reload', GPU, async ({ page }) => {
@@ -132,7 +133,7 @@ test.describe('WebGL scene', () => {
     await expect(html).toHaveAttribute('data-gl', 'off')
     await expect(html).toHaveAttribute('data-gl-reason', 'user')
     // Paused looks paused: the button is lit and offers to play; smooth scrolling stops too.
-    await expect(toggle).toHaveCSS('background-color', 'rgba(238, 242, 238, 0.14)')
+    await expect(toggle).toHaveCSS('background-color', 'rgba(244, 250, 255, 0.14)')
     await expect(toggle.locator('.motion-toggle__play')).toBeVisible()
     await expect(html).toHaveCSS('scroll-behavior', 'auto')
     const frames = (await sceneStats(page)).frames
@@ -151,13 +152,15 @@ test.describe('WebGL scene', () => {
     await page.goto('/')
     await waitForScene(page)
     expect((await sceneStats(page)).quiet).toBeLessThan(0.05)
-    expect((await sceneStats(page)).activity, 'the sculpture is visible').toBeGreaterThan(0.5)
+    expect((await sceneStats(page)).activity, 'the hero uses the DOM mascot').toBeLessThan(0.05)
     await centre(page, '#safety')
     await expect.poll(async () => (await sceneStats(page)).quiet, { timeout: 6_000 }).toBeGreaterThan(0.6)
     // By the crisis contacts the sculpture is hidden: nothing moves while someone reads the numbers.
     await expect.poll(async () => (await sceneStats(page)).activity, { timeout: 6_000 }).toBeLessThan(0.05)
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
     await expect.poll(async () => (await sceneStats(page)).quiet, { timeout: 6_000 }).toBeLessThan(0.1)
+    await expect.poll(async () => (await sceneStats(page)).activity, { timeout: 6_000 }).toBeLessThan(0.05)
+    await centre(page, '#final')
     await expect.poll(async () => (await sceneStats(page)).activity, { timeout: 6_000 }).toBeGreaterThan(0.5)
   })
 

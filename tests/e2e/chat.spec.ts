@@ -120,7 +120,6 @@ const CSP =
 /** details[].message of a mocked 422 (never shown either). */
 const SERVER_MESSAGE_SHORT = 'Synthetic validation detail'
 const PERMISSIONS = 'camera=(), microphone=(), geolocation=(), payment=(), usb=()'
-const GPU = { tag: '@gpu' }
 
 /** The line under an unsent message for this error code (src/chat/ui/copy.ts). */
 const why = (code: string, revisit = false): string => turnError(uiError(code), 0, null, revisit).why
@@ -2145,7 +2144,7 @@ test.describe('page life', () => {
     await page.locator('[data-motion-toggle]').click()
     await expect(html(page)).toHaveAttribute('data-motion', 'off')
     await expect.poll(running).toBe(0)
-    await expect(html(page)).toHaveAttribute('data-gl', 'off')
+    await expect(page.locator('[data-gl-canvas]')).toHaveCount(0)
   })
 })
 
@@ -2335,7 +2334,7 @@ test.describe('layout', () => {
         expect(orb.x + orb.width, `${size.width} px: ${state}`).toBeLessThanOrEqual(send.x)
         expect(orb.y).toBeGreaterThanOrEqual(field.y)
         expect(orb.y + orb.height).toBeLessThanOrEqual(field.y + field.height)
-        expect(await lightOverText(page, ['.presence__canvas', '.presence .orb'])).toEqual([])
+        expect(await lightOverText(page, ['.presence .orb'])).toEqual([])
       }
     }
   })
@@ -2587,7 +2586,7 @@ test.describe('layout', () => {
         await expect(page.locator('.help-link')).toHaveAttribute('aria-current', 'true')
       }
       const p = await pill()
-      expect(p.fill, where).toBe('rgb(255, 246, 236)')
+      expect(p.fill, where).toBe('rgb(255, 253, 245)')
       expect(p.ink, where).toBe('rgb(143, 52, 20)')
       expect(p.edge, where).toBe('rgb(143, 52, 20)')
       expect(contrast(p.ink, p.fill), where).toBeGreaterThanOrEqual(4.5)
@@ -2617,8 +2616,8 @@ test.describe('layout', () => {
 
   test('#44 forced colors draw every control’s border; without them the fields’ borders are --color-field-border', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'one engine is enough for computed styles')
-    // --color-field-border of the dark theme (#6f7c78, ≥ 3:1 on its surface and its sky).
-    const FIELD_BORDER = 'rgb(148, 170, 165)'
+    // --color-field-border of the dark theme (#9afbf0, ≥ 3:1 on its surface and its sky).
+    const FIELD_BORDER = 'rgb(154, 251, 240)'
     const border = (selector: string) =>
       page.locator(selector).first().evaluate((node) => {
         const style = getComputedStyle(node)
@@ -3119,10 +3118,10 @@ test.describe('accessibility', () => {
 
 // ── The theme (ADR-012): «Як у системі», «Світла», «Темна» ───────────────────────────────────
 
-const SKY_TOP = 'rgb(70, 180, 170)' // --color-bg, light: #46b4aa, the day's first stop (ADR-013)
-const NIGHT = 'rgb(4, 7, 8)' // --color-bg, dark: #040708, the night of both pages
-const SHEET_L = 'rgb(255, 246, 236)' // --color-sheet-solid, light: a sheet that covers the window
-const LAMP = 'rgb(18, 26, 27)' // --color-sheet-solid, dark, and «В укритті» (--color-shelter-bg)
+const SKY_TOP = 'rgb(126, 199, 185)' // --color-bg, light: #7ec7b9, the day's first stop (ADR-013)
+const NIGHT = 'rgb(19, 36, 64)' // --color-bg, dark: #132440, the night of both pages
+const SHEET_L = 'rgb(255, 253, 245)' // --color-sheet-solid, light: a sheet that covers the window
+const LAMP = 'rgb(19, 36, 64)' // --color-sheet-solid, dark, and «В укритті» (--color-shelter-bg)
 const themeToggle = (page: Page): Locator => page.locator('[data-theme-toggle]')
 const themeMenu = (page: Page): Locator => page.getByRole('menu', { name: 'Вигляд' })
 const themeItem = (page: Page, name: string): Locator => themeMenu(page).getByRole('menuitemradio', { name })
@@ -3310,7 +3309,7 @@ test.describe('theme', () => {
     expect(skies.map(([where]) => where)).toEqual(expect.arrayContaining(['.stage', '.chat-header::before', '.chat__text']))
     for (const [where, image] of skies) {
       expect(image, where).not.toContain('radial-gradient')
-      expect(image, where).toContain('linear-gradient(rgb(70, 180, 170) 0%')
+      expect(image, where).toContain('linear-gradient(rgb(126, 199, 185) 0%')
     }
     expect(await page.locator('.chat__text').evaluate((node) => getComputedStyle(node, '::before').display)).toBe('none')
     await storageAudit(page)
@@ -4230,6 +4229,9 @@ test.describe('tools', () => {
     await expect(presence(page)).toHaveAttribute('data-presence', 'breathing')
     await expect(page.locator('[data-presence-label]')).toHaveText('Дихальна вправа')
     const calls = api.calls.length
+    // Keep assertion time from advancing the exercise on a busy CI runner.
+    // From this point only runFor advances the inhale/exhale countdown.
+    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1_000)
     await page.keyboard.press('Enter')
     const stop = dialog.getByRole('button', { name: 'Стоп' })
     await expect(stop).toBeFocused()
@@ -4535,7 +4537,7 @@ test.describe('tools', () => {
     // Dark whatever the theme: the dark theme's background and text, and the gutter beside it.
     expect(await dialog.evaluate((node) => ({ bg: getComputedStyle(node).backgroundColor, text: getComputedStyle(node).color }))).toEqual({
       bg: LAMP,
-      text: 'rgb(243, 239, 232)',
+      text: 'rgb(244, 250, 255)',
     })
     await expect(html(page)).toHaveCSS('background-color', LAMP)
     // The browser's own bar goes dark with it (the one theme-color, still theme.ts's).
@@ -4595,10 +4597,10 @@ test.describe('tools', () => {
       await animationsDone(dialog, { except: '.breathe__circle' })
       // The page under it says which theme is on: its text is --color-text of that theme.
       await page.emulateMedia({ colorScheme: 'dark' })
-      await expect(page.locator('body')).toHaveCSS('color', 'rgb(243, 239, 232)')
+      await expect(page.locator('body')).toHaveCSS('color', 'rgb(244, 250, 255)')
       const dark = await colours(dialog)
       await page.emulateMedia({ colorScheme: 'light' })
-      await expect(page.locator('body')).toHaveCSS('color', 'rgb(11, 39, 41)')
+      await expect(page.locator('body')).toHaveCSS('color', 'rgb(15, 46, 49)')
       expect(await colours(dialog), label).toEqual(dark)
       expect(Object.keys(dark).length, label).toBeGreaterThan(8)
     }
@@ -5398,7 +5400,7 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     await expect.poll(rootBg).toBe(NIGHT)
     await page.locator('.help-link').click()
     await expect(page.locator('#help-dialog')).toBeVisible()
-    await expect.poll(rootBg).toBe(gutter ? 'rgb(3, 5, 6)' : NIGHT)
+    await expect.poll(rootBg).toBe(gutter ? 'rgb(8, 16, 27)' : NIGHT)
     await page.keyboard.press('Escape')
     await expect(page.locator('#help-dialog')).toBeHidden()
     await expect.poll(rootBg).toBe(NIGHT)
@@ -5414,12 +5416,12 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     // A confirm stacked over the sheet scrims both: the gutter takes the scrim's colour again.
     await accountSheet(page).getByRole('button', { name: 'Видалити акаунт…' }).click()
     await expect(confirmDialog(page)).toBeVisible()
-    await expect.poll(rootBg).toBe(gutter ? 'rgb(53, 141, 134)' : SHEET_L)
+    await expect.poll(rootBg).toBe(gutter ? 'rgb(95, 156, 147)' : SHEET_L)
     await confirmDialog(page).getByRole('button', { name: 'Скасувати', exact: true }).click()
     await expect(confirmDialog(page)).toBeHidden()
     await expect.poll(rootBg).toBe(SHEET_L)
     // The scrollbar's thumb is its only shape: the fields' border colour, ≥ 3:1.
-    expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollbarColor)).toMatch(/^rgb\(12, 74, 74\) /)
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollbarColor)).toMatch(/^rgb\(22, 74, 77\) /)
   })
 
   test('#97 WCAG 1.4.11: no control relies on a border under 3:1 — in both themes, on the conversation, the theses, the sheets and the tools', async ({ page }, testInfo) => {
@@ -5804,7 +5806,7 @@ test.describe('what the final review found', () => {
   // ADR-013: the chosen scenario is a solid pill of the accent now (no tint to read), so the warm tint
   // is read where it stays — the marked reply, over its opaque base (--color-sheet-solid) — and the
   // chosen mood cell and the breathing circle take the mark's own warm colour.
-  test('#119 the dark theme’s warm tint is warm: the marked reply, a chosen mood cell and the breathing circle are amber, not olive grey', async ({ page }, testInfo) => {
+  test('#119 the marked reply, chosen mood cell and breathing circle use the original Figma gold', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'computed colours: one engine is enough')
     await openChat(page)
     await exchange(page, USER)
@@ -5820,26 +5822,26 @@ test.describe('what the final review found', () => {
     // Its base is opaque: the tint is warm over it, whatever the sky under the sheet.
     expect(marked.fill).toMatch(/^rgb\(\d+, \d+, \d+\)$/)
     const tint = /rgba?\([^)]*\)/.exec(marked.image)![0]
-    const [r, g, b] = over(tint, marked.fill).match(/\d+/g)!.map(Number) as [number, number, number]
-    // It was rgb(53, 55, 49): green above red, an olive grey.
-    expect(r - g, `${r}, ${g}, ${b}`).toBeGreaterThanOrEqual(5)
-    expect(g - b, `${r}, ${g}, ${b}`).toBeGreaterThanOrEqual(5)
-    // The rule on its left is the mark's colour (#ffc58f at night).
-    expect(marked.rule).toBe('3px rgb(255, 197, 143)')
+    // ADR-016: the original Figma gold lies over the new navy sheet. The composite
+    // keeps the navy undertone; the solid rule and label still identify the mark.
+    expect(marked.fill).toBe(NIGHT)
+    expect(tint.match(/[\d.]+/g)!.slice(0, 3).map(Number)).toEqual([246, 190, 133])
+    // The rule on its left is the mark's colour (#f6be85 at night).
+    expect(marked.rule).toBe('3px rgb(246, 190, 133)')
     // A chosen mood cell and the breathing circle: the mark's own amber.
     await openTool(page, 'Як ви зараз?')
     await moodDialog(page).getByRole('radio', { name: 'Багато сил, неприємно' }).click()
-    await expect.poll(() => moodDialog(page).locator('.mood__cell[aria-checked="true"]').evaluate((node) => getComputedStyle(node).backgroundColor)).toBe('rgb(255, 197, 143)')
+    await expect.poll(() => moodDialog(page).locator('.mood__cell[aria-checked="true"]').evaluate((node) => getComputedStyle(node).backgroundColor)).toBe('rgb(246, 190, 133)')
     await page.keyboard.press('Escape')
     await expect(moodDialog(page)).toBeHidden()
     await openTool(page, 'Подихати хвилину')
-    expect(await breatheDialog(page).locator('.breathe__circle').evaluate((node) => getComputedStyle(node).borderTopColor)).toBe('rgb(255, 197, 143)')
+    expect(await breatheDialog(page).locator('.breathe__circle').evaluate((node) => getComputedStyle(node).borderTopColor)).toBe('rgb(246, 190, 133)')
     await page.keyboard.press('Escape')
     await expect(breatheDialog(page)).toBeHidden()
-    // The light theme keeps its peach (ADR-013: the coral of the day's sky, #ff9a78).
+    // The light theme keeps its peach (ADR-013: the coral of the day's sky, #eb9f74).
     await page.emulateMedia({ colorScheme: 'light' })
     await settled(page)
-    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent-tint').trim())).toMatch(/255,? 154,? 120|ff9a78/i)
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent-tint').trim())).toMatch(/235,? 159,? 116|eb9f74/i)
   })
 })
 
@@ -6517,7 +6519,7 @@ test.describe('the crisis numbers and the band in a low window (review of #24)',
           await page.evaluate(() => document.fonts.ready)
           const label = `${size.width} × ${size.height}, ${scheme}`
           expect(await page.evaluate(() => window.scrollY), label).toBe(0)
-          const [fill, ink] = scheme === 'light' ? ['rgb(255, 246, 236)', 'rgb(143, 52, 20)'] : ['rgba(255, 197, 143, 0)', 'rgb(255, 197, 143)']
+          const [fill, ink] = scheme === 'light' ? ['rgb(255, 253, 245)', 'rgb(143, 52, 20)'] : ['rgba(246, 190, 133, 0)', 'rgb(246, 190, 133)']
           for (const c of await capsules('section[data-screen="crisis"]')) {
             expect(c, label).toEqual({ number: c.number, inView: true, belowHeader: true, onTop: true, fill, ink, edge: ink })
           }
@@ -6584,19 +6586,21 @@ test.describe('the crisis numbers and the band in a low window (review of #24)',
   })
 })
 
-test.describe('the light', () => {
-  test.use({ webgl: true })
-
-  test('the WebGL light fits the composer dock and stays clear of the conversation', GPU, async ({ page }) => {
+test.describe('the Figma mascot', () => {
+  test('the original illustration follows the theme and stays clear of the conversation', async ({ page }) => {
     await openChat(page)
-    await expect(html(page)).toHaveAttribute('data-gl', 'on', { timeout: 15_000 })
-    const canvas = (await page.locator('[data-composer-presence] canvas').boundingBox())!
-    const slot = (await page.locator('[data-composer-presence] [data-presence-slot]').boundingBox())!
-    expect(canvas).toEqual(slot)
-    expect(await lightOverText(page, ['.presence__canvas'])).toEqual([])
+    const dock = page.locator('[data-composer-presence]')
+    await expect(dock.locator('.mascot__art--dark')).toBeVisible()
+    await expect(dock.locator('.mascot__art--light')).toBeHidden()
+    await expect(page.locator('[data-gl-canvas]')).toHaveCount(0)
+    await expect.poll(() => dock.locator('img').evaluateAll(images => images.every(image => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0))).toBe(true)
+    expect(await lightOverText(page, ['.presence .orb'])).toEqual([])
+    await page.emulateMedia({ colorScheme: 'light' })
+    await expect(dock.locator('.mascot__art--light')).toBeVisible()
+    await expect(dock.locator('.mascot__art--dark')).toBeHidden()
     await exchange(page)
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
     await animationsDone(page)
-    expect(await lightOverText(page, ['.presence__canvas'])).toEqual([])
+    expect(await lightOverText(page, ['.presence .orb'])).toEqual([])
   })
 })

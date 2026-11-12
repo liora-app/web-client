@@ -11,30 +11,22 @@
 	encode zstd gzip
 
 	# Three matchers that never overlap, so no-store on the chat does not depend on directive order.
-	# Vite fingerprints everything under /assets/ (and the island's /island/assets/): safe to keep for a year.
-	@assets path /assets/* /island/assets/*
+	# Vite fingerprints everything under /assets/: safe to keep for a year.
+	@assets path /assets/*
 	header @assets Cache-Control "public, max-age=31536000, immutable"
-	# The chat (ADR-007) and the island (ADR-015 §4) hold a conversation in memory: never stored by a cache,
+	# The chat (ADR-007) holds a conversation in memory: never stored by a cache,
 	# nor is the 308 that file_server answers without the slash. The query (?auth_error=…) does not change the path.
-	@chat path /chat /chat/ /chat/index.html /island /island/ /island/index.html
+	@chat path /chat /chat/ /chat/index.html
 	header @chat Cache-Control "no-store"
 	# The landing and unhashed files (favicon, og image) are revalidated on every visit.
-	@other not path /assets/* /island/assets/* /chat /chat/ /chat/index.html /island /island/ /island/index.html
+	@other not path /assets/* /chat /chat/ /chat/index.html
 	header @other Cache-Control "no-cache"
 
-	# Two matchers that never overlap, so each response gets exactly one policy.
 	# The site, "/" and "/chat/" alike: one policy (ADR-007, verbatim). Vite builds without inline
 	# scripts, inline styles or data: URIs (vite.config.ts), and the chat talks only to its own
 	# origin's /api/v1. vite.config.ts mirrors these two headers for the e2e run against preview.
-	@site not path /island /island/*
-	header @site Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
-	header @site Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
-	# The spatial island (spatial-island-local/, a standalone demo with a browser-local chat): WebAssembly
-	# for the meshopt model decoder and blob: for the GLB's embedded texture (ADR-014). No microphone:
-	# voice input is gone (ADR-015 §7). Mirrors spatial-island-local/vite.config.ts preview headers; no API access.
-	@island path /island /island/*
-	header @island Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob:; font-src 'self'; connect-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
-	header @island Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+	header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+	header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
 
 	file_server
 }

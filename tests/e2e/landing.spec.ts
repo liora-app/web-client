@@ -264,7 +264,7 @@ test.describe('navigation and keyboard', () => {
       await expect(page.locator('[data-hud-name]')).toHaveText(name) // retries past the decode
       // The crisis link is marked like the current nav item while its chapter is on screen. ADR-013:
       // the pill keeps its peach outline at all times; the mark is an inner ring of the same colour.
-      if (id === 'safety') await expect(page.locator('.site-header .help-link')).toHaveCSS('box-shadow', 'rgb(255, 197, 143) 0px 0px 0px 1px inset')
+      if (id === 'safety') await expect(page.locator('.site-header .help-link')).toHaveCSS('box-shadow', 'rgb(246, 190, 133) 0px 0px 0px 1px inset')
     }
     // A chapter without a header link clears the mark; the HUD still follows.
     await centre(page, '#diary')
@@ -280,8 +280,8 @@ test.describe('navigation and keyboard', () => {
   test('the example session is read in full at any width, whichever step is in the middle', async ({ page }) => {
     await page.goto('/')
     const transcript = page.locator('[data-transcript]')
-    const TEXT = 'rgb(243, 239, 232)' // --color-text #f3efe8 (the night; the suite's dark theme)
-    const ON_YOU = 'rgb(7, 16, 18)' // --color-on-bubble-you #071012: «Ви» in the chat's bubble
+    const TEXT = 'rgb(244, 250, 255)' // --color-text #f4faff (the night; the suite's dark theme)
+    const ON_YOU = 'rgb(19, 36, 64)' // --color-on-bubble-you #132440: «Ви» in the chat's bubble
     for (const step of ['1', '3', '4']) {
       await centre(page, `[data-step="${step}"]`)
       await expect(transcript).not.toHaveAttribute('data-active-step', /.*/)
@@ -413,16 +413,15 @@ test.describe('layout', () => {
   })
 
   // From scene.spec.ts (ADR-013): no GPU needed — reduced motion keeps the scene off, the test owns
-  // data-gl. The holders of the stills are the hero's light, #mind's portrait and the final's form; the
-  // conversation drawing and the diary's map are gone.
-  test('the static light follows data-gl: shown while loading or off, gone when on', async ({ page }) => {
+  // data-gl. The original mascot stays visible; only the portrait and final stills follow WebGL.
+  test('the original mascot stays visible while the decorative stills follow data-gl', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto('/')
     const orb = page.locator('.hero__orb')
     for (const [status, opacity] of [
       ['loading', '1'],
       ['off', '1'],
-      ['on', '0'],
+      ['on', '1'],
     ] as const) {
       await page.evaluate((value) => (document.documentElement.dataset.gl = value), status)
       await expect(orb).toHaveCSS('opacity', opacity)
@@ -460,21 +459,22 @@ test.describe('layout', () => {
     expect(target).toBe('hero__orb-link')
   })
 
-  test('largest contentful paint is text, not the scene', async ({ page, browserName }) => {
+  test('largest contentful paint is text or the original mascot within 2.5 seconds', async ({ page, browserName }) => {
     test.skip(browserName !== 'chromium', 'LCP entries are Chromium-only')
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     const lcp = await page.evaluate(
       () =>
-        new Promise<{ tag: string; time: number }>((resolve) => {
+        new Promise<{ tag: string; time: number; mascot: boolean }>((resolve) => {
           new PerformanceObserver((list) => {
             const entries = list.getEntries() as (PerformanceEntry & { element?: Element })[]
             const last = entries[entries.length - 1]
-            resolve({ tag: last?.element?.tagName ?? 'none', time: last?.startTime ?? -1 })
+            resolve({ tag: last?.element?.tagName ?? 'none', time: last?.startTime ?? -1, mascot: last?.element?.matches('.hero [data-mascot] img') ?? false })
           }).observe({ type: 'largest-contentful-paint', buffered: true })
         }),
     )
-    expect(['H1', 'P', 'SPAN', 'DIV', 'STRONG', 'EM']).toContain(lcp.tag)
+    if (lcp.tag === 'IMG') expect(lcp.mascot).toBe(true)
+    else expect(['H1', 'P', 'SPAN', 'DIV', 'STRONG', 'EM']).toContain(lcp.tag)
     expect(lcp.time).toBeLessThan(2500)
   })
 })

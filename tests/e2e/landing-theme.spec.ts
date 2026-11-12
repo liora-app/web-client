@@ -8,8 +8,8 @@ import { NO_WEBGL2, animationsDone, throttle, watchConsole } from './helpers'
 // static backdrop (no GPU work here), which is also the state the art checks are about.
 
 // ADR-013: one palette on both pages — the day's sky (its first stop) and the night.
-const DAY = 'rgb(70, 180, 170)' // --color-bg, light (the day's sky, its first stop #46b4aa)
-const NIGHT = 'rgb(4, 7, 8)' // --color-bg, dark (the night #040708, now the chat's as well)
+const DAY = 'rgb(126, 199, 185)' // --color-bg, light (the day's sky, its first stop #7ec7b9)
+const NIGHT = 'rgb(19, 36, 64)' // --color-bg, dark (the night #132440, now the chat's as well)
 const STILL = /-still\.png/
 
 test.beforeEach(async ({ page }) => {
@@ -168,7 +168,7 @@ test.describe('«Вигляд» on the landing', () => {
     })
     const writes = async (): Promise<(string | null)[]> => {
       const olds = await page.evaluate(() => (window as unknown as { __olds: (string | null)[] }).__olds)
-      expect(olds[0], 'the meta ships the night').toBe('#040708')
+      expect(olds[0], 'the meta ships the night').toBe('#132440')
       return [...olds.slice(1), await themeColor(page)]
     }
     // The suite's dark system, no key: the early script writes the night, theme.ts has nothing to change.
@@ -216,7 +216,7 @@ test.describe('«Вигляд» on the landing', () => {
 test.describe('the light theme without WebGL', () => {
   test.use({ colorScheme: 'light' })
 
-  test('draws its art in CSS and never shows (nor loads) the dark stills', async ({ page }) => {
+  test('shows the original light mascot and never shows (nor loads) the dark stills', async ({ page }) => {
     const problems = watchConsole(page)
     const stills: string[] = []
     page.on('request', (request) => {
@@ -226,12 +226,13 @@ test.describe('the light theme without WebGL', () => {
     await staticPage(page)
     await expect(html(page)).toHaveAttribute('data-gl-reason', 'no-webgl2')
     expect(await rootBg(page)).toBe(DAY)
-    // Every holder of a still, shown or not at this width: a CSS drawing, no PNG.
+    await expect(page.locator('.hero .mascot__art--light')).toBeVisible()
+    await expect(page.locator('.hero .mascot__art--dark')).toBeHidden()
+    // The remaining decorative scenes use CSS drawings in the light theme.
     const art = await page.evaluate(() =>
       (
         [
           // ADR-013: the conversation drawing and the diary's map are gone with their holders.
-          ['.hero__orb', '::before'],
           ['.final__art', '::before'],
           ['.mind__still', null],
         ] as const
@@ -291,7 +292,7 @@ test.describe('the dark theme stays the landing’s night', () => {
     await staticPage(page)
     expect(await rootBg(page)).toBe(NIGHT)
     await expect.poll(() => themeColor(page)).toBe(NIGHT)
-    await expect(page.locator('h1')).toHaveCSS('color', 'rgb(243, 239, 232)') // --color-text #f3efe8
+    await expect(page.locator('h1')).toHaveCSS('color', 'rgb(244, 250, 255)') // --color-text #f4faff
     await expect(page.locator('.stage')).toHaveCSS('background-color', NIGHT) // the stage stands on --color-bg
   })
 })

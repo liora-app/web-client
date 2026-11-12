@@ -159,11 +159,11 @@ test.describe('header', () => {
         const style = getComputedStyle(node)
         return { fill: style.backgroundColor, ink: style.color }
       })
-    expect(await pill()).toEqual({ fill: 'rgb(255, 246, 236)', ink: 'rgb(143, 52, 20)' })
+    expect(await pill()).toEqual({ fill: 'rgb(255, 253, 245)', ink: 'rgb(143, 52, 20)' })
     await centre(page, '#safety')
     // The landing marks the chapter in view as a location (src/ui/nav.ts).
     await expect(page.locator('.site-header .help-link')).toHaveAttribute('aria-current', 'location')
-    expect(await pill()).toEqual({ fill: 'rgb(255, 246, 236)', ink: 'rgb(143, 52, 20)' })
+    expect(await pill()).toEqual({ fill: 'rgb(255, 253, 245)', ink: 'rgb(143, 52, 20)' })
   })
 
   test('the header fits at 320 px with the menu and «Вигляд»', async ({ page }, testInfo) => {

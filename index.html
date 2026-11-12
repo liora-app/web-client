@@ -5,7 +5,7 @@
     <!-- One theme-color, before public/theme-init.js. Its hex is this page's dark background, the night: the
          script reads it for the dark theme (paper for the light one) before the first frame, and
          src/ui/theme.ts keeps it on the page's background from then on. -->
-    <meta name="theme-color" content="#040708" />
+    <meta name="theme-color" content="#132440" />
     <!-- First, before any stylesheet: the chosen theme on <html> before the first frame (ADR-012). -->
     <script src="/theme-init.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -127,7 +127,7 @@
     <main id="main" tabindex="-1">
       <!-- ============ Hero ============ -->
       <section class="hero" id="hero" data-gl-state="0" data-chapter="00" data-chapter-name="Liora" aria-labelledby="hero-title">
-        <div class="hero__orb" aria-hidden="true"></div>
+        <div class="hero__orb" data-mascot aria-hidden="true"></div>
         <!-- A click on the light opens the chat. Keyboard and screen readers take the header link with
              the same target, so this one stays out of the tab order and the accessibility tree. -->
         <a class="hero__orb-link" href="/chat/" tabindex="-1" aria-hidden="true"></a>

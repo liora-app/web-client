@@ -487,7 +487,21 @@ test.describe('motion', () => {
   })
 
   test('a FAQ answer opens smoothly with motion and at once on pause', async ({ page }) => {
+    // Slow only this visual transition in the served stylesheet so CI CPU
+    // throttling cannot skip its intermediate frames. Pause still uses the real
+    // no-transition rule, and the production stylesheet is left unchanged.
+    let slowed = false
+    await page.route('**/assets/*.css', async route => {
+      const response = await route.fetch()
+      let body = await response.text()
+      if (body.includes('::details-content')) {
+        body += "\nhtml[data-motion='on'] #faq .qa::details-content { transition-duration: 3s; }"
+        slowed = true
+      }
+      await route.fulfill({ response, body })
+    })
     await page.goto('/')
+    expect(slowed).toBe(true)
     await settled(page)
     const supported = await page.evaluate(() => CSS.supports('interpolate-size', 'allow-keywords'))
     test.skip(!supported, 'this engine opens <details> at once')
@@ -525,6 +539,7 @@ test.describe('motion', () => {
     }
 
     const smooth = await open(0)
+    await page.waitForTimeout(3_200)
     const full = await still(0)
     expect(smooth.early).toBeGreaterThan(smooth.closed)
     expect(smooth.early).toBeLessThan(full - 4)
