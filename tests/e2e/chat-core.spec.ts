@@ -4358,17 +4358,13 @@ test.describe('source rules', () => {
     expect(toggles[0]).toMatch(/\saria-label="Персонаж"/)
     expect(toggles[0]).toMatch(/\shidden(?:\s|>)/)
     expect(chat.match(/data-character-toggle/g)).toHaveLength(1)
-    // Hidden, the light's chunk (three.js) is never fetched: the choice is read before bootGL, and
-    // setActive(false) follows it in the same task, before the scene starts loading (gl/core/boot.ts).
-    // A static guard: a headless run never loads that chunk anyway (no GPU), so no test sees it.
+    // The Figma mascot uses DOM/SVG in every state: showing it must not start a second
+    // procedural character or fetch three.js for the chat.
     const main = readFileSync(join(repo, 'src', 'chat', 'ui', 'main.ts'), 'utf8')
-    const read = main.indexOf('initCharacter(')
-    const boot = main.search(/\bbootGL\s*(?:<[^>]*>)?\s*\(/)
-    const hold = main.indexOf('if (!character.shown()) gl?.setActive(false)')
-    expect(read).toBeGreaterThan(0)
-    expect(boot).toBeGreaterThan(read)
-    expect(hold).toBeGreaterThan(boot)
-    expect(main.slice(boot, hold)).not.toMatch(/\bawait\b|\.then\(/)
+    expect(main).toContain('initCharacter(')
+    expect(main).toContain('initMascots()')
+    expect(main).not.toMatch(/\bbootGL\s*(?:<[^>]*>)?\s*\(/)
+    expect(chat).not.toContain('data-gl-canvas')
     // And every render keeps it so: «live» in render.ts asks the character.
     expect(readFileSync(join(repo, 'src', 'chat', 'ui', 'render.ts'), 'utf8')).toMatch(/const live = \(character\?\.shown\(\) \?\? true\) && /)
   })

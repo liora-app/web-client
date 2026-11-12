@@ -1,0 +1,78 @@
+/* Liliia's original Figma components: 118:6482 (light), 118:7523 (dark).
+   Exported intact: no filters, tinting, clipping or recreated vector paths. */
+:root {
+  --mascot-image: url('/mascot/liora-dark.png');
+}
+
+.mascot { container-type: inline-size; }
+.mascot__art {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 260px;
+  height: 260px;
+  transform: scale(calc(100cqw / 260px));
+  transform-origin: top left;
+  pointer-events: none;
+}
+.mascot__art--light { display: none; }
+@supports (color: light-dark(#000, #fff)) {
+  :root[data-theme='light']:not([data-theme-lock]) .mascot__art--light { display: block; }
+  :root[data-theme='light']:not([data-theme-lock]) .mascot__art--dark { display: none; }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]):not([data-theme-lock]) .mascot__art--light { display: block; }
+    :root:not([data-theme]):not([data-theme-lock]) .mascot__art--dark { display: none; }
+  }
+}
+
+@supports (color: light-dark(#000, #fff)) {
+  :root[data-theme='light']:not([data-theme-lock]) {
+    --mascot-image: url('/mascot/liora-light.png');
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]):not([data-theme-lock]) {
+      --mascot-image: url('/mascot/liora-light.png');
+    }
+  }
+}
+
+/* Preserve the illustration when the decorative WebGL portrait starts. */
+.hero .hero__orb,
+html[data-gl='on'] .hero .hero__orb {
+  opacity: 1;
+}
+.hero .hero__orb::before {
+  inset: 0;
+  padding: 0;
+  border-radius: 0;
+  background: var(--mascot-image) center / contain no-repeat;
+  -webkit-mask: none;
+  mask: none;
+  opacity: 1;
+}
+.hero .hero__orb.mascot::before { content: none; }
+.presence .orb.mascot,
+.orb--mini.mascot { background-image: none; }
+
+.presence .orb,
+.orb--mini {
+  background-image: var(--mascot-image);
+}
+.presence .orb { inset: 0; }
+.presence .orb::after,
+.orb--mini::after,
+.presence__slot::before {
+  content: none;
+}
+
+/* The same illustration stays legible in the compact conversation dock. */
+.composer__presence .presence__slot { overflow: visible; }
+html[data-motion='on'] .hero .hero__orb {
+  animation: mascot-float 7s ease-in-out infinite;
+}
+@keyframes mascot-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-motion='on'] .hero .hero__orb { animation: none; }
+}

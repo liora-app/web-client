@@ -6,10 +6,13 @@ import './styles/layout.css'
 import './styles/components.css'
 import './styles/sections.css'
 import './styles/landing.css'
+import './styles/mascot.css'
+import './styles/mascot-layers.css'
 
 import { bootGL } from './gl/core/boot'
 import { initDecode } from './ui/decode'
 import { initHeroLight } from './ui/hero-light'
+import { initMascots } from './ui/mascot'
 import { initIntro } from './ui/intro'
 import { initMenu } from './ui/menu'
 import { initMotionToggle } from './ui/motion'
@@ -33,6 +36,7 @@ if (authError !== null) {
   // header (the chat's control, src/ui/theme.ts the one writer) and keeps the page in step with it.
   initThemePicker({ root: document.querySelector<HTMLElement>('[data-theme-pick]'), radios: null })
   initHeroLight()
+  initMascots()
   initMotionToggle(document.querySelector<HTMLButtonElement>('[data-motion-toggle]'))
   initTips()
   // Right after the motion choice is on <html>: the hero's cascade starts in the same frame, or not at all.

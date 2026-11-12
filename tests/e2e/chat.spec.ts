@@ -120,7 +120,6 @@ const CSP =
 /** details[].message of a mocked 422 (never shown either). */
 const SERVER_MESSAGE_SHORT = 'Synthetic validation detail'
 const PERMISSIONS = 'camera=(), microphone=(), geolocation=(), payment=(), usb=()'
-const GPU = { tag: '@gpu' }
 
 /** The line under an unsent message for this error code (src/chat/ui/copy.ts). */
 const why = (code: string, revisit = false): string => turnError(uiError(code), 0, null, revisit).why
@@ -2145,7 +2144,7 @@ test.describe('page life', () => {
     await page.locator('[data-motion-toggle]').click()
     await expect(html(page)).toHaveAttribute('data-motion', 'off')
     await expect.poll(running).toBe(0)
-    await expect(html(page)).toHaveAttribute('data-gl', 'off')
+    await expect(page.locator('[data-gl-canvas]')).toHaveCount(0)
   })
 })
 
@@ -2587,7 +2586,7 @@ test.describe('layout', () => {
         await expect(page.locator('.help-link')).toHaveAttribute('aria-current', 'true')
       }
       const p = await pill()
-      expect(p.fill, where).toBe('rgb(255, 246, 236)')
+      expect(p.fill, where).toBe('rgb(255, 253, 245)')
       expect(p.ink, where).toBe('rgb(143, 52, 20)')
       expect(p.edge, where).toBe('rgb(143, 52, 20)')
       expect(contrast(p.ink, p.fill), where).toBeGreaterThanOrEqual(4.5)
@@ -3119,10 +3118,10 @@ test.describe('accessibility', () => {
 
 // ── The theme (ADR-012): «Як у системі», «Світла», «Темна» ───────────────────────────────────
 
-const SKY_TOP = 'rgb(70, 180, 170)' // --color-bg, light: #46b4aa, the day's first stop (ADR-013)
-const NIGHT = 'rgb(4, 7, 8)' // --color-bg, dark: #040708, the night of both pages
-const SHEET_L = 'rgb(255, 246, 236)' // --color-sheet-solid, light: a sheet that covers the window
-const LAMP = 'rgb(18, 26, 27)' // --color-sheet-solid, dark, and «В укритті» (--color-shelter-bg)
+const SKY_TOP = 'rgb(126, 199, 185)' // --color-bg, light: #7ec7b9, the day's first stop (ADR-013)
+const NIGHT = 'rgb(19, 36, 64)' // --color-bg, dark: #132440, the night of both pages
+const SHEET_L = 'rgb(255, 253, 245)' // --color-sheet-solid, light: a sheet that covers the window
+const LAMP = 'rgb(19, 36, 64)' // --color-sheet-solid, dark, and «В укритті» (--color-shelter-bg)
 const themeToggle = (page: Page): Locator => page.locator('[data-theme-toggle]')
 const themeMenu = (page: Page): Locator => page.getByRole('menu', { name: 'Вигляд' })
 const themeItem = (page: Page, name: string): Locator => themeMenu(page).getByRole('menuitemradio', { name })
@@ -3310,7 +3309,7 @@ test.describe('theme', () => {
     expect(skies.map(([where]) => where)).toEqual(expect.arrayContaining(['.stage', '.chat-header::before', '.chat__text']))
     for (const [where, image] of skies) {
       expect(image, where).not.toContain('radial-gradient')
-      expect(image, where).toContain('linear-gradient(rgb(70, 180, 170) 0%')
+      expect(image, where).toContain('linear-gradient(rgb(126, 199, 185) 0%')
     }
     expect(await page.locator('.chat__text').evaluate((node) => getComputedStyle(node, '::before').display)).toBe('none')
     await storageAudit(page)
@@ -4535,7 +4534,7 @@ test.describe('tools', () => {
     // Dark whatever the theme: the dark theme's background and text, and the gutter beside it.
     expect(await dialog.evaluate((node) => ({ bg: getComputedStyle(node).backgroundColor, text: getComputedStyle(node).color }))).toEqual({
       bg: LAMP,
-      text: 'rgb(243, 239, 232)',
+      text: 'rgb(244, 250, 255)',
     })
     await expect(html(page)).toHaveCSS('background-color', LAMP)
     // The browser's own bar goes dark with it (the one theme-color, still theme.ts's).
@@ -4595,10 +4594,10 @@ test.describe('tools', () => {
       await animationsDone(dialog, { except: '.breathe__circle' })
       // The page under it says which theme is on: its text is --color-text of that theme.
       await page.emulateMedia({ colorScheme: 'dark' })
-      await expect(page.locator('body')).toHaveCSS('color', 'rgb(243, 239, 232)')
+      await expect(page.locator('body')).toHaveCSS('color', 'rgb(244, 250, 255)')
       const dark = await colours(dialog)
       await page.emulateMedia({ colorScheme: 'light' })
-      await expect(page.locator('body')).toHaveCSS('color', 'rgb(11, 39, 41)')
+      await expect(page.locator('body')).toHaveCSS('color', 'rgb(15, 46, 49)')
       expect(await colours(dialog), label).toEqual(dark)
       expect(Object.keys(dark).length, label).toBeGreaterThan(8)
     }
@@ -5398,7 +5397,7 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     await expect.poll(rootBg).toBe(NIGHT)
     await page.locator('.help-link').click()
     await expect(page.locator('#help-dialog')).toBeVisible()
-    await expect.poll(rootBg).toBe(gutter ? 'rgb(3, 5, 6)' : NIGHT)
+    await expect.poll(rootBg).toBe(gutter ? 'rgb(8, 16, 27)' : NIGHT)
     await page.keyboard.press('Escape')
     await expect(page.locator('#help-dialog')).toBeHidden()
     await expect.poll(rootBg).toBe(NIGHT)
@@ -5414,7 +5413,7 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     // A confirm stacked over the sheet scrims both: the gutter takes the scrim's colour again.
     await accountSheet(page).getByRole('button', { name: 'Видалити акаунт…' }).click()
     await expect(confirmDialog(page)).toBeVisible()
-    await expect.poll(rootBg).toBe(gutter ? 'rgb(53, 141, 134)' : SHEET_L)
+    await expect.poll(rootBg).toBe(gutter ? 'rgb(95, 156, 147)' : SHEET_L)
     await confirmDialog(page).getByRole('button', { name: 'Скасувати', exact: true }).click()
     await expect(confirmDialog(page)).toBeHidden()
     await expect.poll(rootBg).toBe(SHEET_L)
@@ -6517,7 +6516,7 @@ test.describe('the crisis numbers and the band in a low window (review of #24)',
           await page.evaluate(() => document.fonts.ready)
           const label = `${size.width} × ${size.height}, ${scheme}`
           expect(await page.evaluate(() => window.scrollY), label).toBe(0)
-          const [fill, ink] = scheme === 'light' ? ['rgb(255, 246, 236)', 'rgb(143, 52, 20)'] : ['rgba(255, 197, 143, 0)', 'rgb(255, 197, 143)']
+          const [fill, ink] = scheme === 'light' ? ['rgb(255, 253, 245)', 'rgb(143, 52, 20)'] : ['rgba(255, 197, 143, 0)', 'rgb(255, 197, 143)']
           for (const c of await capsules('section[data-screen="crisis"]')) {
             expect(c, label).toEqual({ number: c.number, inView: true, belowHeader: true, onTop: true, fill, ink, edge: ink })
           }
@@ -6584,19 +6583,21 @@ test.describe('the crisis numbers and the band in a low window (review of #24)',
   })
 })
 
-test.describe('the light', () => {
-  test.use({ webgl: true })
-
-  test('the WebGL light fits the composer dock and stays clear of the conversation', GPU, async ({ page }) => {
+test.describe('the Figma mascot', () => {
+  test('the original illustration follows the theme and stays clear of the conversation', async ({ page }) => {
     await openChat(page)
-    await expect(html(page)).toHaveAttribute('data-gl', 'on', { timeout: 15_000 })
-    const canvas = (await page.locator('[data-composer-presence] canvas').boundingBox())!
-    const slot = (await page.locator('[data-composer-presence] [data-presence-slot]').boundingBox())!
-    expect(canvas).toEqual(slot)
-    expect(await lightOverText(page, ['.presence__canvas'])).toEqual([])
+    const dock = page.locator('[data-composer-presence]')
+    await expect(dock.locator('.mascot__art--dark')).toBeVisible()
+    await expect(dock.locator('.mascot__art--light')).toBeHidden()
+    await expect(page.locator('[data-gl-canvas]')).toHaveCount(0)
+    await expect.poll(() => dock.locator('img').evaluateAll(images => images.every(image => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0))).toBe(true)
+    expect(await lightOverText(page, ['.presence .orb'])).toEqual([])
+    await page.emulateMedia({ colorScheme: 'light' })
+    await expect(dock.locator('.mascot__art--light')).toBeVisible()
+    await expect(dock.locator('.mascot__art--dark')).toBeHidden()
     await exchange(page)
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }))
     await animationsDone(page)
-    expect(await lightOverText(page, ['.presence__canvas'])).toEqual([])
+    expect(await lightOverText(page, ['.presence .orb'])).toEqual([])
   })
 })

@@ -280,8 +280,8 @@ test.describe('navigation and keyboard', () => {
   test('the example session is read in full at any width, whichever step is in the middle', async ({ page }) => {
     await page.goto('/')
     const transcript = page.locator('[data-transcript]')
-    const TEXT = 'rgb(243, 239, 232)' // --color-text #f3efe8 (the night; the suite's dark theme)
-    const ON_YOU = 'rgb(7, 16, 18)' // --color-on-bubble-you #071012: «Ви» in the chat's bubble
+    const TEXT = 'rgb(244, 250, 255)' // --color-text #f4faff (the night; the suite's dark theme)
+    const ON_YOU = 'rgb(19, 36, 64)' // --color-on-bubble-you #132440: «Ви» in the chat's bubble
     for (const step of ['1', '3', '4']) {
       await centre(page, `[data-step="${step}"]`)
       await expect(transcript).not.toHaveAttribute('data-active-step', /.*/)

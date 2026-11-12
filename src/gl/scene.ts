@@ -47,7 +47,7 @@ function poses(width: number, height: number): Pose[] {
   const size = Math.min(width * 0.28, height * 0.43)
   const hidden: Pose = { x: sideX, y: height * 0.5, size, opacity: 0, turn: 0, tilt: 0.2 }
   return [
-    { x: hero.x, y: hero.y, size: hero.d, opacity: 1, turn: -0.48, tilt: 0.4 },
+    { x: hero.x, y: hero.y, size: hero.d, opacity: 0, turn: -0.48, tilt: 0.4 },
     hidden,
     hidden,
     hidden,

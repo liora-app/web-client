@@ -61,76 +61,82 @@ export interface GlPalette {
   scene: ScenePalette
 }
 
-/** Night: the colours the landing's shaders were written with. */
+/** Exact sRGB palette values from Figma 122:2, without linear colour conversion. */
+function rgb(hex: string): Rgb {
+  const value = Number.parseInt(hex.slice(1), 16)
+  return [((value >> 16) & 255) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255]
+}
+
+/** Night: the original dark mascot's aqua, blue and warm gold. */
 const NIGHT_SCENE: ScenePalette = {
   additive: true,
-  field: { blue: [0.12, 0.37, 0.95], mint: [0.26, 0.95, 0.85], gold: [1.0, 0.66, 0.3], flash: [0.87, 0.99, 0.95], alpha: 1 },
-  motes: { cool: [0.34, 0.82, 1.0], warm: [1.0, 0.78, 0.47], alpha: 1 },
-  atmosphere: { cool: [0.07, 0.37, 0.52], warm: [0.8, 0.32, 0.09], alpha: 1 },
+  field: { blue: rgb('#2b5b7c'), mint: rgb('#84f7eb'), gold: rgb('#f6be85'), flash: rgb('#f4faff'), alpha: 1 },
+  motes: { cool: rgb('#9afbf0'), warm: rgb('#f6be85'), alpha: 1 },
+  atmosphere: { cool: rgb('#2b5b7c'), warm: rgb('#8b5a44'), alpha: 1 },
   portrait: {
-    cyan: [0.06, 0.79, 0.94],
-    violet: [0.32, 0.24, 0.83],
-    coral: [1.0, 0.25, 0.16],
-    skin: [0.009, 0.019, 0.033],
-    skinLit: [0.013, 0.056, 0.085],
+    cyan: rgb('#84f7eb'),
+    violet: rgb('#2b5b7c'),
+    coral: rgb('#f6be85'),
+    skin: rgb('#132440'),
+    skinLit: rgb('#1b355c'),
     over: 0,
     lineGain: 1,
     sheen: 0.22,
     rim: 0.11,
   },
-  trails: { violet: [0.48, 0.2, 0.64], teal: [0.07, 0.67, 0.8], alpha: 1 },
+  trails: { violet: rgb('#2b5b7c'), teal: rgb('#84f7eb'), alpha: 1 },
 }
 
-/** Day, «світанок» (ADR-013): the strokes are --color-stroke #0c4a4a and the warm --color-light
+/** Day, «світанок» (ADR-013): the strokes are --color-stroke #164a4d and the warm --color-light
  *  #6b2208 — opaque ink, ≥ 3:1 to every stop of the day's sky and to the sun disc (the light
  *  sphere's translucent lines had 1.53:1 and 1.29:1 on paper); the alpha is raised so a single stroke
- *  is near opaque (the final's text column is protected in field.frag.glsl); a peach head (#ffb185, the
+ *  is near opaque (the final's text column is protected in field.frag.glsl); a peach head (#f8c6a0, the
  *  sky of #mind) drawn in ink; the atmosphere a light wash, not smoke. */
 const DAY_SCENE: ScenePalette = {
   additive: false,
-  field: { blue: [0.047, 0.29, 0.29], mint: [0.047, 0.29, 0.29], gold: [0.42, 0.133, 0.031], flash: [0.42, 0.133, 0.031], alpha: 3 },
-  motes: { cool: [0.05, 0.3, 0.32], warm: [0.6, 0.27, 0.12], alpha: 1.4 },
-  atmosphere: { cool: [0.82, 0.9, 0.88], warm: [0.98, 0.85, 0.72], alpha: 0.6 },
+  field: { blue: rgb('#164a4d'), mint: rgb('#164a4d'), gold: rgb('#6b2208'), flash: rgb('#6b2208'), alpha: 3 },
+  motes: { cool: rgb('#164a4d'), warm: rgb('#8f3414'), alpha: 1.4 },
+  atmosphere: { cool: rgb('#c6e1c8'), warm: rgb('#f7deb6'), alpha: 0.6 },
   portrait: {
-    cyan: [0.047, 0.29, 0.29],
-    violet: [0.11, 0.24, 0.25],
-    coral: [0.42, 0.133, 0.031],
-    skin: [1.0, 0.694, 0.522],
-    skinLit: [0.075, 0.07, 0.065],
+    cyan: rgb('#164a4d'),
+    violet: rgb('#164a4d'),
+    coral: rgb('#6b2208'),
+    skin: rgb('#f8c6a0'),
+    skinLit: rgb('#0f2e31'),
     over: 1,
     lineGain: 0.7,
     sheen: 0,
     rim: 0.45,
   },
-  trails: { violet: [0.3, 0.25, 0.52], teal: [0.05, 0.4, 0.4], alpha: 1 },
+  trails: { violet: rgb('#164a4d'), teal: rgb('#37968e'), alpha: 1 },
 }
 
 export const GL_PALETTES: Readonly<Record<GlTheme, GlPalette>> = {
   dark: {
-    glow: '#ffb070',
+    glow: '#f6be85',
     glowStrength: 1,
-    particleCool: '#a6dde2',
-    particleWarm: '#ffc58f',
-    particleHighlight: '#fff4e2',
-    glassTint: '#d1edf5',
+    particleCool: '#9afbf0',
+    particleWarm: '#f6be85',
+    particleHighlight: '#f4faff',
+    glassTint: '#f4faff',
     intensity: 1,
     additive: true,
     // Out-of-focus light drifting past the camera.
-    bokeh: ['#3fb8a8', '#e8a060', '#8f7cff', '#d97a9c', '#a6dde2'],
+    bokeh: ['#84f7eb', '#f6be85', '#2b5b7c', '#8b5a44', '#9afbf0'],
     scene: NIGHT_SCENE,
   },
   // Day (ADR-013): ink and ember particles on the sun disc — --color-stroke, --color-light,
   // --color-crisis-ink — near opaque; the halo the sun's own peach.
   light: {
-    glow: '#ffb185',
+    glow: '#f8c6a0',
     glowStrength: 0.8,
-    particleCool: '#0c4a4a',
+    particleCool: '#164a4d',
     particleWarm: '#6b2208',
     particleHighlight: '#8f3414',
-    glassTint: '#0c4a4a',
+    glassTint: '#164a4d',
     intensity: 0.9,
     additive: false,
-    bokeh: ['#0c4a4a', '#6b2208', '#1d3d3f', '#8f3414', '#0b3b3c'],
+    bokeh: ['#164a4d', '#6b2208', '#164a4d', '#8f3414', '#164a4d'],
     scene: DAY_SCENE,
   },
 }

@@ -23,6 +23,6 @@
     var day = t ? t === 'light' : matchMedia('(prefers-color-scheme: light)').matches
     var meta = document.querySelector('meta[name="theme-color"]')
     var n = parseInt(meta.content.slice(1), 16)
-    meta.content = day && CSS.supports('color', 'light-dark(#000, #fff)') ? 'rgb(70, 180, 170)' : 'rgb(' + (n >> 16) + ', ' + ((n >> 8) & 255) + ', ' + (n & 255) + ')'
+    meta.content = day && CSS.supports('color', 'light-dark(#000, #fff)') ? 'rgb(126, 199, 185)' : 'rgb(' + (n >> 16) + ', ' + ((n >> 8) & 255) + ', ' + (n & 255) + ')'
   } catch (e) {}
 })()

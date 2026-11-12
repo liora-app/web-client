@@ -5,7 +5,7 @@
     <!-- One theme-color, before the script that sets it to the theme's background (public/theme-init.js; its
          hex is this page's dark background, the night, which the script reads); src/ui/theme.ts keeps it in
          step from then on. -->
-    <meta name="theme-color" content="#040708" />
+    <meta name="theme-color" content="#132440" />
     <!-- First, before any stylesheet: the chosen theme and sky preset on <html> before the first frame. -->
     <script src="/theme-init.js" data-sky></script>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
@@ -110,8 +110,7 @@
         <aside class="chat__scene" aria-hidden="true">
           <div class="presence" data-presence="idle">
             <div class="presence__slot" data-presence-slot>
-              <div class="orb"></div>
-              <canvas class="presence__canvas" data-gl-canvas></canvas>
+              <div class="orb" data-mascot></div>
             </div>
             <p class="presence__state" data-presence-label>Зʼєднуємося</p>
           </div>
@@ -350,7 +349,7 @@
             <!-- From the first message on: what this is and how to end it. «AI, не людина» stays here: on a
                  phone the light is gone from a running conversation (G2). -->
             <div class="session" data-el="session" hidden>
-              <span class="orb orb--mini" aria-hidden="true"></span>
+              <span class="orb orb--mini" data-mascot aria-hidden="true"></span>
               <p class="session__label">
                 <span class="session__title" data-el="session-title"></span><span class="session__sep" aria-hidden="true"> · </span><span class="keep session__ai">AI, не людина</span><span class="session__nosave" data-el="session-nosave" hidden><span class="session__sep" aria-hidden="true"> · </span><span class="keep">Не зберігати</span></span>
               </p>

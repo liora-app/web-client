@@ -9,10 +9,13 @@ import '../../styles/stage.css'
 import '../../styles/layout.css'
 import '../../styles/components.css'
 import '../../styles/chat.css'
+import '../../styles/mascot.css'
+import '../../styles/mascot-layers.css'
 
-import { bootGL } from '../../gl/core/boot'
+import type { GlControl } from '../../gl/core/boot'
 import type { PresenceHandle } from '../../gl/presence'
 import { initCharacter } from '../../ui/character'
+import { initMascots } from '../../ui/mascot'
 import { initMotionToggle } from '../../ui/motion'
 import { initSky } from '../../ui/sky'
 import { initSound } from '../../ui/sound'
@@ -28,7 +31,6 @@ import { COPIED, COPY_FAILED_LABEL, copyFailed, journalLater, sayMarked, sayMark
 import { createEffects } from './effects'
 import { initKeyboard } from './keyboard'
 import { createLeaveGuard } from './leave-guard'
-import { applyPresence } from './presence'
 import { createView, type View } from './render'
 import { createStore } from './store'
 
@@ -50,25 +52,13 @@ initTips()
 const sound = initSound({ follow: 'manual' })
 initKeyboard()
 
-// «Персонаж» before the light: hidden, the light's chunk (three.js) is not even fetched (gl/core/boot.ts:
-// setActive(false) before the scene has started holds the loading back).
+// Apply the stored character preference before mounting the original Figma artwork.
 const character = initCharacter(document.querySelector<HTMLButtonElement>('[data-character-toggle]'))
+initMascots()
 
-const canvas = document.querySelector<HTMLCanvasElement>('[data-gl-canvas]')
-const slot = document.querySelector<HTMLElement>('[data-presence-slot]')
-const presenceRoot = document.querySelector<HTMLElement>('.presence')
-// The light is its own lazy chunk (with three.js): the low tier at DPR 1, sized to its slot.
-const gl =
-  canvas && slot && presenceRoot
-    ? bootGL<PresenceHandle>(canvas, {
-        load: () => import('../../gl/presence'),
-        tier: 'low',
-        dprCap: 1,
-        sizeTo: slot,
-        onReady: (handle) => applyPresence(handle, presenceRoot),
-      })
-    : null
-if (!character.shown()) gl?.setActive(false)
+// The unmodified Figma mascot replaces the procedural light. Presence and character
+// controls still drive the DOM illustration, without loading a second WebGL character.
+const gl: GlControl<PresenceHandle> | null = null
 
 // Called through an arrow: a detached window.fetch throws "Illegal invocation".
 const api = createApi({ fetch: (input, init) => window.fetch(input, init) })

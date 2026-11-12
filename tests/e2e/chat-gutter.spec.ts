@@ -16,10 +16,10 @@ test.use({ launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] } })
 // ADR-013: the page stands on the sky (--color-bg: its top stop by day, the night), and a sheet that
 // covers the window is opaque glass (--color-sheet-solid), no longer the page's own colour: the root
 // takes the sheet's tone while it covers the window, the scrim's where the scrim is in view.
-const SKY_TOP = 'rgb(70, 180, 170)' // --color-bg, light
-const NIGHT = 'rgb(4, 7, 8)' // --color-bg, dark
-const SHEET_L = 'rgb(255, 246, 236)' // --color-sheet-solid, light
-const SHEET_D = 'rgb(18, 26, 27)' // --color-sheet-solid, dark
+const SKY_TOP = 'rgb(126, 199, 185)' // --color-bg, light
+const NIGHT = 'rgb(19, 36, 64)' // --color-bg, dark
+const SHEET_L = 'rgb(255, 253, 245)' // --color-sheet-solid, light
+const SHEET_D = 'rgb(19, 36, 64)' // --color-sheet-solid, dark
 const isDesktop = (testInfo: TestInfo): boolean => testInfo.project.name === 'desktop'
 const accountToggle = (page: Page): Locator => page.locator('.account-toggle')
 const accountSheet = (page: Page): Locator => page.locator('#account-dialog')
@@ -44,7 +44,7 @@ test.describe('a classic scrollbar', () => {
     const beside = (root: string) => ({ gutter: true, root, bar: root })
     const help = page.locator('#help-dialog')
     for (const scheme of ['dark', 'light'] as const) {
-      const [own, sheet, scrim] = scheme === 'dark' ? [NIGHT, SHEET_D, 'rgb(3, 5, 6)'] : [SKY_TOP, SHEET_L, 'rgb(53, 141, 134)']
+      const [own, sheet, scrim] = scheme === 'dark' ? [NIGHT, SHEET_D, 'rgb(8, 16, 27)'] : [SKY_TOP, SHEET_L, 'rgb(95, 156, 147)']
       await page.emulateMedia({ colorScheme: scheme })
       // Under 48em — a window on half a screen, a 200 % zoom: every sheet covers the window, its scrim
       // out of sight. The gutter kept the scrim's colour there: a strip down the window's right edge.
