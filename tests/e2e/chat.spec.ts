@@ -4229,6 +4229,9 @@ test.describe('tools', () => {
     await expect(presence(page)).toHaveAttribute('data-presence', 'breathing')
     await expect(page.locator('[data-presence-label]')).toHaveText('Дихальна вправа')
     const calls = api.calls.length
+    // Keep assertion time from advancing the exercise on a busy CI runner.
+    // From this point only runFor advances the inhale/exhale countdown.
+    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1_000)
     await page.keyboard.press('Enter')
     const stop = dialog.getByRole('button', { name: 'Стоп' })
     await expect(stop).toBeFocused()
