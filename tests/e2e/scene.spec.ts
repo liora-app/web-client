@@ -132,7 +132,7 @@ test.describe('WebGL scene', () => {
     await expect(html).toHaveAttribute('data-gl', 'off')
     await expect(html).toHaveAttribute('data-gl-reason', 'user')
     // Paused looks paused: the button is lit and offers to play; smooth scrolling stops too.
-    await expect(toggle).toHaveCSS('background-color', 'rgba(238, 242, 238, 0.14)')
+    await expect(toggle).toHaveCSS('background-color', 'rgba(244, 250, 255, 0.14)')
     await expect(toggle.locator('.motion-toggle__play')).toBeVisible()
     await expect(html).toHaveCSS('scroll-behavior', 'auto')
     const frames = (await sceneStats(page)).frames

@@ -264,7 +264,7 @@ test.describe('navigation and keyboard', () => {
       await expect(page.locator('[data-hud-name]')).toHaveText(name) // retries past the decode
       // The crisis link is marked like the current nav item while its chapter is on screen. ADR-013:
       // the pill keeps its peach outline at all times; the mark is an inner ring of the same colour.
-      if (id === 'safety') await expect(page.locator('.site-header .help-link')).toHaveCSS('box-shadow', 'rgb(255, 197, 143) 0px 0px 0px 1px inset')
+      if (id === 'safety') await expect(page.locator('.site-header .help-link')).toHaveCSS('box-shadow', 'rgb(246, 190, 133) 0px 0px 0px 1px inset')
     }
     // A chapter without a header link clears the mark; the HUD still follows.
     await centre(page, '#diary')

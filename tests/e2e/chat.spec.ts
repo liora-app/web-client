@@ -2616,8 +2616,8 @@ test.describe('layout', () => {
 
   test('#44 forced colors draw every control’s border; without them the fields’ borders are --color-field-border', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'one engine is enough for computed styles')
-    // --color-field-border of the dark theme (#6f7c78, ≥ 3:1 on its surface and its sky).
-    const FIELD_BORDER = 'rgb(148, 170, 165)'
+    // --color-field-border of the dark theme (#9afbf0, ≥ 3:1 on its surface and its sky).
+    const FIELD_BORDER = 'rgb(154, 251, 240)'
     const border = (selector: string) =>
       page.locator(selector).first().evaluate((node) => {
         const style = getComputedStyle(node)
@@ -5819,26 +5819,26 @@ test.describe('what the final review found', () => {
     // Its base is opaque: the tint is warm over it, whatever the sky under the sheet.
     expect(marked.fill).toMatch(/^rgb\(\d+, \d+, \d+\)$/)
     const tint = /rgba?\([^)]*\)/.exec(marked.image)![0]
-    const [r, g, b] = over(tint, marked.fill).match(/\d+/g)!.map(Number) as [number, number, number]
-    // It was rgb(53, 55, 49): green above red, an olive grey.
-    expect(r - g, `${r}, ${g}, ${b}`).toBeGreaterThanOrEqual(5)
-    expect(g - b, `${r}, ${g}, ${b}`).toBeGreaterThanOrEqual(5)
-    // The rule on its left is the mark's colour (#ffc58f at night).
-    expect(marked.rule).toBe('3px rgb(255, 197, 143)')
+    // ADR-016: the original Figma gold lies over the new navy sheet. The composite
+    // keeps the navy undertone; the solid rule and label still identify the mark.
+    expect(marked.fill).toBe(NIGHT)
+    expect(tint.match(/[\d.]+/g)!.slice(0, 3).map(Number)).toEqual([246, 190, 133])
+    // The rule on its left is the mark's colour (#f6be85 at night).
+    expect(marked.rule).toBe('3px rgb(246, 190, 133)')
     // A chosen mood cell and the breathing circle: the mark's own amber.
     await openTool(page, 'Як ви зараз?')
     await moodDialog(page).getByRole('radio', { name: 'Багато сил, неприємно' }).click()
-    await expect.poll(() => moodDialog(page).locator('.mood__cell[aria-checked="true"]').evaluate((node) => getComputedStyle(node).backgroundColor)).toBe('rgb(255, 197, 143)')
+    await expect.poll(() => moodDialog(page).locator('.mood__cell[aria-checked="true"]').evaluate((node) => getComputedStyle(node).backgroundColor)).toBe('rgb(246, 190, 133)')
     await page.keyboard.press('Escape')
     await expect(moodDialog(page)).toBeHidden()
     await openTool(page, 'Подихати хвилину')
-    expect(await breatheDialog(page).locator('.breathe__circle').evaluate((node) => getComputedStyle(node).borderTopColor)).toBe('rgb(255, 197, 143)')
+    expect(await breatheDialog(page).locator('.breathe__circle').evaluate((node) => getComputedStyle(node).borderTopColor)).toBe('rgb(246, 190, 133)')
     await page.keyboard.press('Escape')
     await expect(breatheDialog(page)).toBeHidden()
-    // The light theme keeps its peach (ADR-013: the coral of the day's sky, #ff9a78).
+    // The light theme keeps its peach (ADR-013: the coral of the day's sky, #eb9f74).
     await page.emulateMedia({ colorScheme: 'light' })
     await settled(page)
-    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent-tint').trim())).toMatch(/255,? 154,? 120|ff9a78/i)
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-accent-tint').trim())).toMatch(/235,? 159,? 116|eb9f74/i)
   })
 })
 
@@ -6516,7 +6516,7 @@ test.describe('the crisis numbers and the band in a low window (review of #24)',
           await page.evaluate(() => document.fonts.ready)
           const label = `${size.width} × ${size.height}, ${scheme}`
           expect(await page.evaluate(() => window.scrollY), label).toBe(0)
-          const [fill, ink] = scheme === 'light' ? ['rgb(255, 253, 245)', 'rgb(143, 52, 20)'] : ['rgba(255, 197, 143, 0)', 'rgb(255, 197, 143)']
+          const [fill, ink] = scheme === 'light' ? ['rgb(255, 253, 245)', 'rgb(143, 52, 20)'] : ['rgba(246, 190, 133, 0)', 'rgb(246, 190, 133)']
           for (const c of await capsules('section[data-screen="crisis"]')) {
             expect(c, label).toEqual({ number: c.number, inView: true, belowHeader: true, onTop: true, fill, ink, edge: ink })
           }
