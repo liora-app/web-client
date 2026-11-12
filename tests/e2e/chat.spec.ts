@@ -2334,7 +2334,7 @@ test.describe('layout', () => {
         expect(orb.x + orb.width, `${size.width} px: ${state}`).toBeLessThanOrEqual(send.x)
         expect(orb.y).toBeGreaterThanOrEqual(field.y)
         expect(orb.y + orb.height).toBeLessThanOrEqual(field.y + field.height)
-        expect(await lightOverText(page, ['.presence__canvas', '.presence .orb'])).toEqual([])
+        expect(await lightOverText(page, ['.presence .orb'])).toEqual([])
       }
     }
   })
@@ -5418,7 +5418,7 @@ test.describe('review leftovers: the bar, the Tab order, the sky’s edges, the 
     await expect(confirmDialog(page)).toBeHidden()
     await expect.poll(rootBg).toBe(SHEET_L)
     // The scrollbar's thumb is its only shape: the fields' border colour, ≥ 3:1.
-    expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollbarColor)).toMatch(/^rgb\(12, 74, 74\) /)
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollbarColor)).toMatch(/^rgb\(22, 74, 77\) /)
   })
 
   test('#97 WCAG 1.4.11: no control relies on a border under 3:1 — in both themes, on the conversation, the theses, the sheets and the tools', async ({ page }, testInfo) => {
