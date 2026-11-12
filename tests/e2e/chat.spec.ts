@@ -5803,7 +5803,7 @@ test.describe('what the final review found', () => {
   // ADR-013: the chosen scenario is a solid pill of the accent now (no tint to read), so the warm tint
   // is read where it stays — the marked reply, over its opaque base (--color-sheet-solid) — and the
   // chosen mood cell and the breathing circle take the mark's own warm colour.
-  test('#119 the dark theme’s warm tint is warm: the marked reply, a chosen mood cell and the breathing circle are amber, not olive grey', async ({ page }, testInfo) => {
+  test('#119 the marked reply, chosen mood cell and breathing circle use the original Figma gold', async ({ page }, testInfo) => {
     test.skip(!isDesktop(testInfo), 'computed colours: one engine is enough')
     await openChat(page)
     await exchange(page, USER)
